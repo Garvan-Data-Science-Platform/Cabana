@@ -15,7 +15,8 @@ from .batch import BatchProcessor
 from sklearn.metrics.pairwise import euclidean_distances
 from skimage.morphology import remove_small_objects, remove_small_holes
 
-from PyQt5.QtWidgets import (QSlider, QWidget, QSplitter, QSplitterHandle, QProgressBar)
+from PyQt5.QtWidgets import (QSlider, QWidget, QSplitter, QSplitterHandle,
+                             QMenu, QAction, QFileDialog, QMessageBox, QProgressBar)
 from PyQt5.QtCore import Qt, QSize, QEvent, QPoint, QRect
 from PyQt5.QtGui import QPixmap, QPainter, QPen, QColor, QDragEnterEvent, QDropEvent, QImage, QFont
 from PyQt5.QtCore import QThread, pyqtSignal
@@ -1473,3 +1474,115 @@ class ImagePanel(QWidget):
             pen.setStyle(Qt.DashLine)
             painter.setPen(pen)
             painter.drawRect(self.rect().adjusted(4, 4, -4, -4))  # Inset by 4 pixels
+
+    def contextMenuEvent(self, event):
+        """Handle right-click context menu events"""
+        # Only show context menu if there's an image loaded
+        if self.image and not self.image.isNull():
+            context_menu = QMenu(self)
+
+            # Apply the same styling as other UI elements
+            context_menu.setStyleSheet(f"""
+                QMenu {{
+                    background-color: {color_to_stylesheet(COLORS['dock'])};
+                    color: {color_to_stylesheet(COLORS['text'])};
+                    border: 1px solid {color_to_stylesheet(COLORS['border'])};
+                    border-radius: 4px;
+                    padding: 4px;
+                }}
+                QMenu::item {{
+                    background-color: transparent;
+                    padding: 6px 12px;
+                    border-radius: 2px;
+                }}
+                QMenu::item:selected {{
+                    background-color: {color_to_stylesheet(COLORS['highlight'])};
+                    color: {color_to_stylesheet(COLORS['background'])};
+                }}
+                QMenu::separator {{
+                    height: 1px;
+                    background-color: {color_to_stylesheet(COLORS['border'])};
+                    margin: 4px 0px;
+                }}
+            """)
+
+            # Create download action
+            download_action = QAction("Save Image As...", self)
+            download_action.triggered.connect(self.saveImage)
+            context_menu.addAction(download_action)
+
+            # Show context menu at cursor position
+            context_menu.exec_(event.globalPos())
+
+    def saveImage(self):
+        """Save the current image to a file"""
+        if not self.image or self.image.isNull():
+            return
+
+        # Open file dialog to choose save location
+        file_dialog = QFileDialog(self)
+        file_dialog.setAcceptMode(QFileDialog.AcceptSave)
+        file_dialog.setDefaultSuffix("png")
+        file_dialog.setNameFilter("PNG Files (*.png);;JPEG Files (*.jpg);;BMP Files (*.bmp);;TIFF Files (*.tiff)")
+        file_dialog.setWindowTitle("Save Image As")
+
+        # Apply dark theme styling to file dialog
+        file_dialog.setStyleSheet(f"""
+            QFileDialog {{
+                background-color: {color_to_stylesheet(COLORS['background'])};
+                color: {color_to_stylesheet(COLORS['text'])};
+            }}
+            QFileDialog QListView {{
+                background-color: {color_to_stylesheet(COLORS['canvas'])};
+                color: {color_to_stylesheet(COLORS['text'])};
+                border: 1px solid {color_to_stylesheet(COLORS['border'])};
+            }}
+            QFileDialog QTreeView {{
+                background-color: {color_to_stylesheet(COLORS['canvas'])};
+                color: {color_to_stylesheet(COLORS['text'])};
+                border: 1px solid {color_to_stylesheet(COLORS['border'])};
+            }}
+            QFileDialog QLineEdit {{
+                background-color: {color_to_stylesheet(COLORS['dock'])};
+                color: {color_to_stylesheet(COLORS['text'])};
+                border: 1px solid {color_to_stylesheet(COLORS['border'])};
+                border-radius: 4px;
+                padding: 4px;
+            }}
+            QFileDialog QPushButton {{
+                {generate_button_style()}
+            }}
+        """)
+
+        if file_dialog.exec_() == QFileDialog.Accepted:
+            file_path = file_dialog.selectedFiles()[0]
+
+            try:
+                # Save the image
+                success = self.image.save(file_path)
+
+                if success:
+                    # Show success message
+                    msg_box = QMessageBox(self)
+                    msg_box.setIcon(QMessageBox.Information)
+                    msg_box.setWindowTitle("Save Successful")
+                    msg_box.setText(f"Image saved successfully to:\n{file_path}")
+                    msg_box.setStyleSheet(generate_messagebox_style())
+                    msg_box.exec_()
+                else:
+                    # Show error message
+                    msg_box = QMessageBox(self)
+                    msg_box.setIcon(QMessageBox.Critical)
+                    msg_box.setWindowTitle("Save Failed")
+                    msg_box.setText("Failed to save the image. Please check the file path and permissions.")
+                    msg_box.setStyleSheet(generate_messagebox_style())
+                    msg_box.exec_()
+
+            except Exception as e:
+                # Show error message for any exceptions
+                msg_box = QMessageBox(self)
+                msg_box.setIcon(QMessageBox.Critical)
+                msg_box.setWindowTitle("Save Error")
+                msg_box.setText(f"An error occurred while saving the image:\n{str(e)}")
+                msg_box.setStyleSheet(generate_messagebox_style())
+                msg_box.exec_()

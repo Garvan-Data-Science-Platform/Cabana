@@ -1227,7 +1227,14 @@ class MainWindow(QMainWindow):
         self.gap_img = result
         self.image_panel.setImage(self.gap_img)
         overlay_img = self.ori_img if (self.seg_img is None or not self.toggle_seg_btn.isChecked()) else self.seg_img
-        self.gap_ovl = cv2.addWeighted(overlay_img, 0.7, self.gap_img, 0.4, 10)
+        # Create mask: True where overlay is NOT white
+        mask = ~((self.gap_img[:, :, 0] == 255) &
+                 (self.gap_img[:, :, 1] == 255) &
+                 (self.gap_img[:, :, 2] == 255))
+        self.gap_ovl = overlay_img.copy()
+        self.gap_ovl[mask] = self.gap_img[mask]
+
+        # self.gap_ovl = cv2.addWeighted(overlay_img, 0.7, self.gap_img, 0.4, 10)
         self.overlay_gaps_cb.setChecked(False)
 
         self.hide_progress_bar()

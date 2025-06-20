@@ -393,6 +393,7 @@ class GapAnalysisWorker(QThread):
         for circle in final_circles:
             final_result = cv2.circle(final_result, (int(circle[1]), int(circle[0])),
                                       int(circle[2]), (0, 255, 255), 1)
+        final_result[self.image == 0] = (255, 255, 0)  # Set background to yellow
         # Emit the completed result
         self.gap_analysis_complete.emit(final_result)
 

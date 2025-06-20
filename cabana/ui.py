@@ -16,9 +16,10 @@ from sklearn.metrics.pairwise import euclidean_distances
 from skimage.morphology import remove_small_objects, remove_small_holes
 
 from PyQt5.QtWidgets import (QSlider, QWidget, QSplitter, QSplitterHandle,
-                             QMenu, QAction, QFileDialog, QMessageBox, QProgressBar)
-from PyQt5.QtCore import Qt, QSize, QEvent, QPoint, QRect
-from PyQt5.QtGui import QPixmap, QPainter, QPen, QColor, QDragEnterEvent, QDropEvent, QImage, QFont
+                             QMenu, QAction, QFileDialog, QMessageBox,
+                             QProgressBar, QSizePolicy)
+from PyQt5.QtCore import Qt, QSize, QEvent, QPoint, QRect, QPropertyAnimation, QEasingCurve, pyqtProperty
+from PyQt5.QtGui import QPixmap, QPainter, QPen, QColor, QDragEnterEvent, QDropEvent, QImage, QBrush, QFont
 from PyQt5.QtCore import QThread, pyqtSignal
 
 
@@ -33,7 +34,8 @@ COLORS = {
     'highlight': QColor(106, 191, 225),  # Highlight color (cyan)
     'secondary': QColor(230, 230, 230),  # Secondary text/icons
     'text': QColor(240, 240, 240),  # Text color
-    'border': QColor(70, 75, 85)  # Border color
+    'border': QColor(70, 75, 85),  # Border color
+    'warning': QColor(240, 70, 70),  # Warning color
 }
 
 
@@ -390,7 +392,7 @@ class GapAnalysisWorker(QThread):
         final_result = cv2.cvtColor(self.image, cv2.COLOR_GRAY2BGR)
         for circle in final_circles:
             final_result = cv2.circle(final_result, (int(circle[1]), int(circle[0])),
-                                      int(circle[2]), (255, 0, 0), 1)
+                                      int(circle[2]), (0, 255, 255), 1)
         # Emit the completed result
         self.gap_analysis_complete.emit(final_result)
 
@@ -1296,10 +1298,27 @@ class ImagePanel(QWidget):
     def wheelEvent(self, event):
         """Handle mouse wheel events for zooming"""
         if self.image and not self.image.isNull():
+            # Get mouse position
+            mouse_x = event.x()
+            mouse_y = event.y()
+
+            # Calculate the point in the image that the mouse is over before zooming
+            center_x = self.width() / 2
+            center_y = self.height() / 2
+
+            # Current image position
+            current_image_x = center_x - (self.image.width() * self.zoom_factor / 2) + self.offset_x
+            current_image_y = center_y - (self.image.height() * self.zoom_factor / 2) + self.offset_y
+
+            # Point in image coordinates (relative to image, not widget)
+            image_point_x = (mouse_x - current_image_x) / self.zoom_factor
+            image_point_y = (mouse_y - current_image_y) / self.zoom_factor
+
             # Calculate zoom delta based on wheel movement
             delta = event.angleDelta().y() / 120  # 120 units per step
 
             # Calculate new zoom factor
+            old_zoom = self.zoom_factor
             new_zoom = self.zoom_factor + (self.zoom_step * delta)
 
             # Clamp zoom factor within limits
@@ -1308,24 +1327,38 @@ class ImagePanel(QWidget):
             # Apply the zoom
             self.zoom_factor = new_zoom
 
-            # Reset offset to keep image centered (no offset)
-            self.offset_x = 0
-            self.offset_y = 0
+            # Calculate new image position after zoom
+            new_image_x = center_x - (self.image.width() * self.zoom_factor / 2)
+            new_image_y = center_y - (self.image.height() * self.zoom_factor / 2)
+
+            # Calculate where the image point would be after zoom
+            new_point_x = new_image_x + (image_point_x * self.zoom_factor)
+            new_point_y = new_image_y + (image_point_y * self.zoom_factor)
+
+            # Adjust offset to keep the mouse point at the same screen position
+            self.offset_x = mouse_x - new_point_x
+            self.offset_y = mouse_y - new_point_y
+
+            # Constrain the offset to keep the image partially visible
+            self.constrain_offset()
 
             # Update the display
             self.update()
 
     def mousePressEvent(self, event):
         """Handle mouse press events for panning"""
-        if self.image and not self.image.isNull() and event.button() == Qt.MiddleButton:
-            self.panning = True
-            self.pan_start_x = event.x()
-            self.pan_start_y = event.y()
-            self.setCursor(Qt.ClosedHandCursor)
+        if self.image and not self.image.isNull():
+            # Support both left and middle mouse button for panning
+            if event.button() == Qt.LeftButton or event.button() == Qt.MiddleButton:
+                self.panning = True
+                self.pan_start_x = event.x()
+                self.pan_start_y = event.y()
+                self.setCursor(Qt.ClosedHandCursor)
 
     def mouseReleaseEvent(self, event):
         """Handle mouse release events for panning"""
-        if event.button() == Qt.MiddleButton:
+        # Support both left and middle mouse button for panning
+        if event.button() == Qt.LeftButton or event.button() == Qt.MiddleButton:
             self.panning = False
             self.setCursor(Qt.ArrowCursor)
 
@@ -1430,11 +1463,11 @@ class ImagePanel(QWidget):
             scaled_width = self.image.width() * self.zoom_factor
             scaled_height = self.image.height() * self.zoom_factor
 
-            # Always position at the center (ignoring offset when zooming)
+            # Calculate position including offset for panning
             center_x = self.width() / 2
             center_y = self.height() / 2
-            x = center_x - (scaled_width / 2)
-            y = center_y - (scaled_height / 2)
+            x = center_x - (scaled_width / 2) + self.offset_x
+            y = center_y - (scaled_height / 2) + self.offset_y
 
             # Create a scaled version of the image
             scaled_pixmap = self.image.scaled(
@@ -1586,3 +1619,167 @@ class ImagePanel(QWidget):
                 msg_box.setText(f"An error occurred while saving the image:\n{str(e)}")
                 msg_box.setStyleSheet(generate_messagebox_style())
                 msg_box.exec_()
+
+
+class ToggleButton(QWidget):
+    """Custom toggle button widget that responds properly to resize events"""
+
+    toggled = pyqtSignal(bool)  # Signal emitted when state changes
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        # Set size policy to prevent layout interference
+        self.setMinimumSize(50, 20)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+
+        self.setCheckable(True)
+        self._checked = False
+        self._enabled = True
+
+        # Initialize slider position BEFORE creating animation
+        self._slider_position = 0.0
+
+        # Animation for smooth toggle
+        self._animation = QPropertyAnimation(self, b"slider_position")
+        self._animation.setDuration(150)
+        self._animation.setEasingCurve(QEasingCurve.OutCubic)
+
+        # Colors
+        self.bg_color_off = QColor(100, 100, 100)
+        self.bg_color_on = COLORS['highlight']
+        self.slider_color_off = COLORS['text']
+        self.slider_color_on = COLORS['text']
+        self.border_color = COLORS['background']
+
+    def setCheckable(self, checkable):
+        """Set whether the button is checkable"""
+        self._checkable = checkable
+
+    def isCheckable(self):
+        """Return whether the button is checkable"""
+        return getattr(self, '_checkable', True)
+
+    def setChecked(self, checked):
+        """Set the checked state"""
+        if self._checked != checked:
+            self._checked = checked
+            self._animate_toggle()
+            self.toggled.emit(checked)
+            self.update()
+
+    def isChecked(self):
+        """Return the checked state"""
+        return self._checked
+
+    def setEnabled(self, enabled):
+        """Override setEnabled to update appearance"""
+        super().setEnabled(enabled)
+        self._enabled = enabled
+        self.update()
+
+    def toggle(self):
+        """Toggle the button state"""
+        if self.isCheckable():
+            self.setChecked(not self._checked)
+
+    def _animate_toggle(self):
+        """Animate the slider movement"""
+        start_pos = self._slider_position
+        end_pos = 1.0 if self._checked else 0.0
+
+        # Only animate if there's actually a change in position
+        if abs(start_pos - end_pos) > 0.01:
+            self._animation.setStartValue(start_pos)
+            self._animation.setEndValue(end_pos)
+            self._animation.start()
+        else:
+            # If no animation needed, just set the final position
+            self._slider_position = end_pos
+            self.update()
+
+    @pyqtProperty(float)
+    def slider_position(self):
+        """Get current slider position for animation"""
+        return getattr(self, '_slider_position', 0.0)
+
+    @slider_position.setter
+    def slider_position(self, position):
+        """Set slider position for animation"""
+        self._slider_position = position
+        self.update()
+
+    def resizeEvent(self, event):
+        """Handle resize events properly"""
+        super().resizeEvent(event)
+        # Force a repaint when resized to ensure proper scaling
+        self.update()
+
+    def sizeHint(self):
+        """Provide a reasonable default size"""
+        return QSize(60, 25)
+
+    def minimumSizeHint(self):
+        """Provide minimum size"""
+        return QSize(50, 20)
+
+    def heightForWidth(self, width):
+        """Calculate height based on width to maintain proportions"""
+        return int(width * 0.43)
+
+    def mousePressEvent(self, event):
+        """Handle mouse press events"""
+        if event.button() == Qt.LeftButton and self._enabled:
+            self.toggle()
+
+    def paintEvent(self, event):
+        """Custom paint event for the toggle button"""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        # Get current dimensions
+        w = self.width()
+        h = self.height()
+
+        # Calculate proportional dimensions
+        radius = h * 0.45
+        track_radius = h * 0.4
+        slider_radius = h * 0.35
+
+        # Track rectangle
+        track_rect = QRect(int(radius), int((h - track_radius * 2) / 2),
+                           int(w - radius * 2), int(track_radius * 2))
+
+        # Background color based on state
+        if self._checked:
+            bg_color = self.bg_color_on
+        else:
+            bg_color = self.bg_color_off
+
+        # Adjust opacity if disabled
+        if not self._enabled:
+            bg_color.setAlpha(100)
+
+        # Draw track background
+        painter.setBrush(QBrush(bg_color))
+        painter.setPen(QPen(self.border_color, 1))
+        painter.drawRoundedRect(track_rect, track_radius, track_radius)
+
+        # Calculate slider position
+        slider_x = radius + (w - radius * 2 - slider_radius * 2) * self._slider_position
+        slider_y = (h - slider_radius * 2) / 2
+
+        # Draw slider with color based on state
+        if self._checked:
+            slider_color = self.slider_color_on  # White when on
+        else:
+            slider_color = self.slider_color_off  # Black when off
+
+        if not self._enabled:
+            slider_color = QColor(slider_color)  # Create copy to avoid modifying original
+            slider_color.setAlpha(150)
+
+        painter.setBrush(QBrush(slider_color))
+        painter.setPen(QPen(COLORS['background'], 1))
+        painter.drawEllipse(int(slider_x), int(slider_y),
+                            int(slider_radius * 2), int(slider_radius * 2))

@@ -61,10 +61,17 @@ class MainWindow(QMainWindow):
         self._setup_styles()
 
         # Add a button to load an image
-        self.load_btn = QPushButton("Load Image")
+        self.load_btn = QPushButton("Load New Image")
         self.load_btn.setStyleSheet(self.btn_style)
         self.load_btn.clicked.connect(self.load_image)
         file_layout.addWidget(self.load_btn)
+
+        self.reload_btn = QPushButton("Reload Image")
+        self.reload_btn.clicked.connect(self.reload_image)
+        self.reload_btn.setEnabled(False)
+        self.reload_btn.setStyleSheet(self.btn_style)
+        self.reload_btn.setToolTip("Reload the original image")
+        file_layout.addWidget(self.reload_btn)
 
         # Export button
         self.export_btn = QPushButton("Export Params")
@@ -149,6 +156,7 @@ class MainWindow(QMainWindow):
         self.frb_img = None
         self.wdt_img = None
         self.gap_img = None
+        self.gap_ovl = None
         self.segmentation_worker = None
         self.detection_worker = None
         self.gap_analysis_worker = None
@@ -434,8 +442,16 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout()
 
         color_group_layout = QVBoxLayout()
+
+        color_toggle_layout = QHBoxLayout()
         color_label = QLabel("Color of Interest:")
-        color_group_layout.addWidget(color_label)
+        self.toggle_seg_label = QLabel()
+        self.toggle_seg_label.setText(
+            f"Segmentation <b><span style='color: {COLORS['highlight'].name()};'>Enabled</span></b>")
+        color_toggle_layout.addWidget(color_label)
+        color_toggle_layout.addStretch()
+        color_toggle_layout.addWidget(self.toggle_seg_label)
+        color_group_layout.addLayout(color_toggle_layout)
 
         color_layout = QHBoxLayout()
         self.color_btn = QPushButton("")
@@ -443,14 +459,22 @@ class MainWindow(QMainWindow):
         self.color_btn.setFixedSize(QSize(30, 30))
         self.color_btn.clicked.connect(self.select_color)
         self.color_btn.setToolTip("Select the color you want to segment.")
-
         color_layout.addWidget(self.color_btn)
 
         self.hue_label = QLabel("Normalized hue: 0.96")
         self.hue_label.setStyleSheet(f"font-weight: bold")
         self.hue_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         color_layout.addWidget(self.hue_label)
+
+        # Toggle segmentation button
+        self.toggle_seg_btn = ToggleButton()
+        self.toggle_seg_btn.setChecked(True)
+        self.toggle_seg_btn.toggled.connect(self.toggle_segmentation)
+        self.toggle_seg_btn.setToolTip("Enable/Disable segmentation and update accordingly in the parameter file.")
+        color_layout.addStretch()
+        color_layout.addWidget(self.toggle_seg_btn)
         color_group_layout.addLayout(color_layout)
+
         layout.addLayout(color_group_layout)
 
         # Color threshold slider
@@ -518,12 +542,16 @@ class MainWindow(QMainWindow):
         self.white_bg_cb.stateChanged.connect(self.update_white_bg)
         self.white_bg_cb.setToolTip("Enable this option when detecting dark fibres in bright backgrounds.")
         h_layout.addWidget(self.white_bg_cb)
-        self.reload_btn = QPushButton("Reload Image")
-        self.reload_btn.clicked.connect(self.reload_image)
-        self.reload_btn.setEnabled(False)
-        self.reload_btn.setStyleSheet(self.btn_style.replace("font-weight: bold;", ""))
-        self.white_bg_cb.setToolTip("Reload the original image")
-        h_layout.addWidget(self.reload_btn)
+
+        # Add toggle checkbox for comparing with the original image
+        self.toggle_img_cb = QCheckBox("Compare With Original")
+        self.toggle_img_cb.setChecked(False)
+        self.toggle_img_cb.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text'])}; ")
+        self.toggle_img_cb.clicked.connect(self.compare_image)
+        self.toggle_img_cb.setToolTip("Toggle to compare with the original image.")
+        h_layout.addStretch()
+        h_layout.addWidget(self.toggle_img_cb)
+
         layout.addLayout(h_layout)
 
         # Segmentation button
@@ -548,13 +576,13 @@ class MainWindow(QMainWindow):
         # Create range slider for line width
         self.line_width_range = RangeSlider(Qt.Horizontal)
         self.line_width_range.setRange(1, 15)
-        self.line_width_range.setValues(3, 5)  # Default values
+        self.line_width_range.setValues(5, 7)  # Default values
         self.line_width_range.valueChanged.connect(self.update_line_width_range)
         self.line_width_range.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.line_width_range.setToolTip("Increase line widths to detect thicker fibers.")
         line_width_layout.addWidget(self.line_width_range, 3)
 
-        self.line_width_value = QLabel("(3, 5)")
+        self.line_width_value = QLabel("(5, 7)")
         self.line_width_value.setFixedWidth(45)
         self.line_width_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
         line_width_layout.addWidget(self.line_width_value)
@@ -628,6 +656,14 @@ class MainWindow(QMainWindow):
         self.extend_line_cb.stateChanged.connect(self.update_extend_line)
         self.extend_line_cb.setToolTip("Enable to detect fibers near junctions.")
         checkbox_layout.addWidget(self.extend_line_cb)
+
+        self.overlay_fibres_cb = QCheckBox("Overlay Fibres")
+        self.overlay_fibres_cb.setChecked(True)
+        self.overlay_fibres_cb.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text'])}; ")
+        self.overlay_fibres_cb.stateChanged.connect(self.update_overlay_fibres)
+        self.overlay_fibres_cb.setToolTip("Toggle to overlay detected fibres on the image.")
+        checkbox_layout.addWidget(self.overlay_fibres_cb)
+
         layout.addLayout(checkbox_layout)
 
         # Detection button
@@ -643,6 +679,22 @@ class MainWindow(QMainWindow):
     def setup_gap_analysis_tab(self):
         """Set up the gap analysis tab UI"""
         layout = QVBoxLayout()
+
+        self.toggle_gap_label = QLabel()
+        self.toggle_gap_label.setText(
+            f"Gap Analysis <b><span style='color: {COLORS['highlight'].name()};'>Enabled</span></b>")
+        # layout.addWidget(self.toggle_gap_label, 0, Qt.AlignRight)
+        toggle_layout = QHBoxLayout()
+
+        self.toggle_gap_btn = ToggleButton()
+        self.toggle_gap_btn.setChecked(True)
+        self.toggle_gap_btn.toggled.connect(self.toggle_gap_analysis)
+        self.toggle_gap_btn.setToolTip("Enable/Disable gap analysis and update accordingly in the parameter file.")
+        # layout.addWidget(self.toggle_gap_btn, 0, Qt.AlignRight)
+        toggle_layout.addStretch()
+        toggle_layout.addWidget(self.toggle_gap_label)
+        toggle_layout.addWidget(self.toggle_gap_btn)
+        layout.addLayout(toggle_layout)
 
         # Minimum gap diameter slider
         min_gap_layout = QHBoxLayout()
@@ -675,6 +727,17 @@ class MainWindow(QMainWindow):
         self.max_hdm_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
         max_hdm_layout.addWidget(self.max_hdm_value)
         layout.addLayout(max_hdm_layout)
+
+        # Overlay checkbox
+        self.overlay_gaps_cb = QCheckBox("Overlay Gaps")
+        self.overlay_gaps_cb.setChecked(False)
+        self.overlay_gaps_cb.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text'])}; ")
+        self.overlay_gaps_cb.stateChanged.connect(self.update_overlay_gaps)
+        self.overlay_gaps_cb.setToolTip("Toggle to overlay gap analysis results on image.")
+        overlay_layout = QHBoxLayout()
+        overlay_layout.addStretch()
+        overlay_layout.addWidget(self.overlay_gaps_cb)
+        layout.addLayout(overlay_layout)
 
         # Analysis button
         self.analyze_btn = QPushButton("Analyze")
@@ -844,6 +907,7 @@ class MainWindow(QMainWindow):
             self.frb_img = None
             self.wdt_img = None
             self.gap_img = None
+            self.gap_ovl = None
         except Exception as e:
             self.ori_img = None
             self.img_path = None
@@ -898,9 +962,11 @@ class MainWindow(QMainWindow):
                 self.frb_img = None
                 self.wdt_img = None
                 self.gap_img = None
+                self.gap_ovl = None
                 self.segment_btn.setEnabled(True)
                 self.detect_btn.setEnabled(True)
                 self.reload_btn.setEnabled(True)
+
     def reload_image(self):
         """Reload the original image"""
         if self.img_path:
@@ -908,6 +974,112 @@ class MainWindow(QMainWindow):
             self.segment_btn.setEnabled(True)
             self.detect_btn.setEnabled(True)
             self.reload_btn.setEnabled(True)
+
+    def compare_image(self):
+        """Toggle the original image for comparison."""
+        show_original = self.toggle_img_cb.isChecked()
+        image = self.ori_img if show_original else self.seg_img
+        label = "original" if show_original else "segmented"
+
+        if image is not None:
+            self.image_panel.setImage(image)
+        else:
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("Warning")
+            msg.setText(f"No {label} image {'loaded' if label == 'original' else 'available'}.")
+            msg.setStyleSheet(f"""
+                QMessageBox {{ 
+                    background-color: {COLORS['background'].name()}; 
+                    color: {COLORS['text'].name()};
+                }}
+            """)
+            msg.exec_()
+
+    def update_overlay_fibres(self):
+        """Overlay fibres on the image"""
+        show_overlay = self.overlay_fibres_cb.isChecked()
+        show_img = self.ori_img if (self.seg_img is None or not self.toggle_seg_btn.isChecked()) else self.seg_img
+        image = self.wdt_img if show_overlay else show_img
+        label = "fibre" if show_overlay else "original"
+
+        if image is not None:
+            self.image_panel.setImage(image)
+        else:
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("Warning")
+            msg.setText(f"No {label} image available.")
+            msg.setStyleSheet(f"""
+                            QMessageBox {{ 
+                                background-color: {COLORS['background'].name()}; 
+                                color: {COLORS['text'].name()};
+                            }}
+                        """)
+            msg.exec_()
+
+    def update_overlay_gaps(self):
+        """Overlay gaps on the image"""
+        show_overlay = self.overlay_gaps_cb.isChecked()
+        image = self.gap_ovl if show_overlay else self.gap_img
+
+        if image is not None:
+            self.image_panel.setImage(image)
+        else:
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("Warning")
+            msg.setText(f"No gap image available.")
+            msg.setStyleSheet(f"""
+                            QMessageBox {{ 
+                                background-color: {COLORS['background'].name()}; 
+                                color: {COLORS['text'].name()};
+                            }}
+                        """)
+            msg.exec_()
+
+    def toggle_segmentation(self):
+        """Disable segmentation and update the UI accordingly"""
+        if not self.toggle_seg_btn.isChecked():
+            self.yml_data["Configs"]["Segmentation"] = False
+            self.toggle_seg_label.setText(
+                        f"Segmentation <b><span style='color: {COLORS['warning'].name()};'>Disabled</span></b>")
+            self.segment_btn.setEnabled(False)
+            self.color_btn.setEnabled(False)
+            self.color_thresh_slider.setEnabled(False)
+            self.num_labels_slider.setEnabled(False)
+            self.max_iters_slider.setEnabled(False)
+            self.white_bg_cb.setEnabled(False)
+            self.toggle_img_cb.setEnabled(False)
+        else:
+            self.yml_data["Configs"]["Segmentation"] = True
+            self.toggle_seg_label.setText(
+                f"Segmentation <b><span style='color: {COLORS['highlight'].name()};'>Enabled</span></b>")
+            self.segment_btn.setEnabled(True)
+            self.segment_btn.setEnabled(True)
+            self.color_btn.setEnabled(True)
+            self.color_thresh_slider.setEnabled(True)
+            self.num_labels_slider.setEnabled(True)
+            self.max_iters_slider.setEnabled(True)
+            self.white_bg_cb.setEnabled(True)
+            self.toggle_img_cb.setEnabled(True)
+
+    def toggle_gap_analysis(self):
+        """Disable gap analysis and update the UI accordingly"""
+        if not self.toggle_gap_btn.isChecked():
+            self.yml_data["Configs"]["Gap Analysis"] = False
+            self.toggle_gap_label.setText(
+                f"Gap Analysis <b><span style='color: {COLORS['warning'].name()};'>Disabled</span></b>")
+            self.analyze_btn.setEnabled(False)
+            self.min_gap_slider.setEnabled(False)
+            self.overlay_gaps_cb.setEnabled(False)
+        else:
+            self.yml_data["Configs"]["Gap Analysis"] = True
+            self.toggle_gap_label.setText(
+                f"Gap Analysis <b><span style='color: {COLORS['highlight'].name()};'>Enabled</span></b>")
+            self.analyze_btn.setEnabled(True)
+            self.min_gap_slider.setEnabled(True)
+            self.overlay_gaps_cb.setEnabled(True)
 
     def run_segmentation(self):
         if self.ori_img is None:
@@ -960,8 +1132,8 @@ class MainWindow(QMainWindow):
         self.frb_img = result[1]
 
         self.wdt_img = result[0]
-
         self.image_panel.setImage(self.wdt_img)
+        self.overlay_fibres_cb.setChecked(True)
 
         # Hide progress bar
         self.hide_progress_bar()
@@ -985,7 +1157,7 @@ class MainWindow(QMainWindow):
             return
 
         # Determine which image to use
-        input_image = self.ori_img if self.seg_img is None else self.seg_img
+        input_image = self.ori_img if (self.seg_img is None or not self.toggle_seg_btn.isChecked()) else self.seg_img
 
         # Disable all buttons during processing
         self.load_btn.setEnabled(False)
@@ -1054,6 +1226,10 @@ class MainWindow(QMainWindow):
         """Handle the completed gap analysis result"""
         self.gap_img = result
         self.image_panel.setImage(self.gap_img)
+        overlay_img = self.ori_img if (self.seg_img is None or not self.toggle_seg_btn.isChecked()) else self.seg_img
+        self.gap_ovl = cv2.addWeighted(overlay_img, 0.7, self.gap_img, 0.4, 10)
+        self.overlay_gaps_cb.setChecked(False)
+
         self.hide_progress_bar()
         self.segment_btn.setEnabled(True)
         self.analyze_btn.setEnabled(True)

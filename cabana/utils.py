@@ -504,11 +504,13 @@ def save_result_video(save_path, rgb_img, all_img_labels, all_mean_imgs, all_abs
                       all_masks):
     imgs = []
     fig = plt.figure(figsize=(15, 10))
+    ori_img = cv2.resize(rgb_img, (512, 512))
     for i in range(len(all_img_labels)):
         ax1 = fig.add_subplot(2, 2, 1)
         ax1.set_title('Original image')
         ax1.axis('off')
-        ax1.imshow(cv2.resize(rgb_img, (512, 512)))
+
+        ax1.imshow(ori_img)
 
         ax2 = fig.add_subplot(2, 2, 2)
         ax2.set_title('Semantic segmentation')
@@ -524,7 +526,7 @@ def save_result_video(save_path, rgb_img, all_img_labels, all_mean_imgs, all_abs
         ax4.set_title('Segmented image')
         ax4.axis('off')
         binary_mask = cv2.resize(all_masks[i], (512, 512))
-        rgb_img_copy = rgb_img.copy()
+        rgb_img_copy = ori_img.copy()
         rgb_img_copy[binary_mask==0] = [224, 224, 224]  # Set background to a light color
         ax4.imshow(rgb_img_copy)
 

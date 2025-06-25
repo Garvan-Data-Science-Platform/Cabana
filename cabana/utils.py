@@ -1137,7 +1137,7 @@ def interpolate_gradient_test(grady, gradx, py, px):
     return gy, gx
 
 
-def fill_gaps(master, slave1, slave2, cont):
+def fill_gaps(master, slave1, slave2, cont, min_value=0.0):
     num_points = cont.num
     i = 0
     while i < num_points:
@@ -1146,57 +1146,61 @@ def fill_gaps(master, slave1, slave2, cont):
             while j < num_points and master[j] == 0:
                 j += 1
 
-            m_s, m_e, s1_s, s1_e, s2_s, s2_e = 0, 0, 0, 0, 0, 0
-            if i > 0 and j < num_points - 1:
-                s, e = i, j - 1
-                m_s, m_e = master[s - 1], master[e + 1]
-                if slave1 is not None:
-                    s1_s, s1_e = slave1[s - 1], slave1[e + 1]
-                if slave2 is not None:
-                    s2_s, s2_e = slave2[s - 1], slave2[e + 1]
-            elif i > 0:
-                s, e = i, num_points - 2
-                m_s, m_e = master[s - 1], master[s - 1]
-                master[e + 1] = m_e
-                if slave1 is not None:
-                    s1_s, s1_e = slave1[s - 1], slave1[s - 1]
-                    slave1[e + 1] = s1_e
-                if slave2 is not None:
-                    s2_s, s2_e = slave2[s - 1], slave2[s - 1]
-                    slave2[e + 1] = s2_e
-            elif j < num_points - 1:
-                s, e = 1, j - 1
-                m_s, m_e = master[e + 1], master[e + 1]
-                master[s - 1] = m_s
-                if slave1 is not None:
-                    s1_s, s1_e = slave1[e + 1], slave1[e + 1]
-                    slave1[s - 1] = s1_s
-                if slave2 is not None:
-                    s2_s, s2_e = slave2[e + 1], slave2[e + 1]
-                    slave2[s - 1] = s2_s
-            else:
-                s, e = 1, num_points - 2
-                m_s, m_e = master[s - 1], master[e + 1]
-                if slave1 is not None:
-                    s1_s, s1_e = slave1[s - 1], slave1[e + 1]
-                if slave2 is not None:
-                    s2_s, s2_e = slave2[s - 1], slave2[e + 1]
+            s = i
+            e = j - 1
 
-            arc_len = np.sum(np.sqrt(np.diff(cont.row[s:e + 2]) ** 2 + np.diff(cont.col[s:e + 2]) ** 2))
-            if arc_len != 0.0:
-                len_ = 0
-                for k in range(s, e + 1):
-                    d_r = cont.row[k] - cont.row[k - 1]
-                    d_c = cont.col[k] - cont.col[k - 1]
-                    len_ += np.sqrt(d_r * d_r + d_c * d_c)
-                    master[k] = (arc_len - len_) / arc_len * m_s + len_ / arc_len * m_e
-                    if slave1 is not None:
-                        slave1[k] = (arc_len - len_) / arc_len * s1_s + len_ / arc_len * s1_e
-                    if slave2 is not None:
-                        slave2[k] = (arc_len - len_) / arc_len * s2_s + len_ / arc_len * s2_e
+            has_start = s > 0
+            has_end = j < num_points
+
+            # Use min_value if one end is missing
+            m_s = master[s - 1] if has_start else min_value
+            m_e = master[j] if has_end else min_value
+
+            if slave1 is not None:
+                s1_s = slave1[s - 1] if has_start else min_value
+                s1_e = slave1[j] if has_end else min_value
+            if slave2 is not None:
+                s2_s = slave2[s - 1] if has_start else min_value
+                s2_e = slave2[j] if has_end else min_value
+
+            # Clamp j to avoid out-of-bounds on cont arrays
+            j_clamped = min(j, num_points - 1)
+
+            # Arc length for the gap segment
+            arc_len = np.sum(np.sqrt(
+                np.diff(cont.row[s - 1 if has_start else s: j_clamped + 1])**2 +
+                np.diff(cont.col[s - 1 if has_start else s: j_clamped + 1])**2
+            ))
+            if arc_len == 0:
+                arc_len = j - s  # fallback to index distance
+
+            len_ = 0
+            for k in range(s, j):  # fill s to j-1
+                d_r = cont.row[k] - cont.row[k - 1] if k > 0 else 0
+                d_c = cont.col[k] - cont.col[k - 1] if k > 0 else 0
+                len_ += np.sqrt(d_r ** 2 + d_c ** 2)
+                w = len_ / arc_len if arc_len > 0 else 0
+
+                master[k] = max((1 - w) * m_s + w * m_e, min_value)
+
+                if slave1 is not None and slave1[k] == 0:
+                    slave1[k] = max((1 - w) * s1_s + w * s1_e, min_value)
+                if slave2 is not None and slave2[k] == 0:
+                    slave2[k] = max((1 - w) * s2_s + w * s2_e, min_value)
+
+            # Also fill j (the right endpoint) if it was zero
+            if j < num_points:
+                if master[j] == 0:
+                    master[j] = max(m_e, min_value)
+                if slave1 is not None and slave1[j] == 0:
+                    slave1[j] = max(s1_e, min_value)
+                if slave2 is not None and slave2[j] == 0:
+                    slave2[j] = max(s2_e, min_value)
+
             i = j
         else:
             i += 1
+
     return master
 
 

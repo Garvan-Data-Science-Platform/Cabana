@@ -439,8 +439,8 @@ class SkeletonAnalyzer:
 
         # Remove small skeletons below threshold
         if self.skel_thresh > 0:
-            segment_sums = ndi.sum(self.skel_image, labels, range(1, num + 1))
-            labels_remove = np.where(segment_sums <= self.skel_thresh * self.FOREGROUND)[0]
+            segment_counts = ndi.sum(self.skel_image > 0, labels, range(1, num + 1))
+            labels_remove = np.where(segment_counts <= self.skel_thresh)[0]
 
             for label in labels_remove:
                 self.skel_image[np.where(labels == label + 1)] = self.BACKGROUND

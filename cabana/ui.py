@@ -4,6 +4,8 @@ import imutils
 from . import convcrf
 import argparse
 import numpy as np
+import tifffile as tiff
+import imageio.v3 as iio
 from skimage import measure
 from .detector import FibreDetector
 from torch.autograd import Variable
@@ -1442,7 +1444,11 @@ class ImagePanel(QWidget):
         for url in event.mimeData().urls():
             file_path = url.toLocalFile()
             if self.isImageFile(file_path):
-                self.setImage(file_path)
+                img = tiff.imread(file_path) if tiff.TiffFile(file_path) else iio.imread(file_path)
+                if img.dtype != np.uint8:
+                    img_data = ((img - img.min()) / (img.max() - img.min()) * 255).astype(np.uint8)
+
+                self.setImage(img_data)
                 self.imageDropped.emit(file_path)
                 event.acceptProposedAction()
                 return

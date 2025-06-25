@@ -3,6 +3,7 @@ os.environ["NUMEXPR_MAX_THREADS"] = "20"
 import sys
 import yaml
 import imageio.v3 as iio
+import tifffile as tiff
 from pathlib import Path
 from .utils import join_path
 
@@ -891,7 +892,9 @@ class MainWindow(QMainWindow):
     def load_original_image(self, path):
         """Load the original image from a file path"""
         try:
-            self.ori_img = iio.imread(path)
+            img = tiff.imread(path) if tiff.TiffFile(path) else iio.imread(path)
+            if img.dtype != np.uint8:
+                self.ori_img = ((img - img.min()) / (img.max() - img.min()) * 255).astype(np.uint8)
             self.img_path = path
             if len(self.ori_img.shape) < 3:
                 self.ori_img = np.repeat(self.ori_img[:, :, np.newaxis], 3, axis=2)
@@ -949,8 +952,10 @@ class MainWindow(QMainWindow):
         if file_dialog.exec_():
             selected_files = file_dialog.selectedFiles()
             if selected_files:
-                self.image_panel.setImage(selected_files[0])
-                self.ori_img = iio.imread(selected_files[0])
+                img = tiff.imread(selected_files[0]) if tiff.TiffFile(selected_files[0]) else iio.imread(selected_files[0])
+                if img.dtype != np.uint8:
+                    self.ori_img = ((img - img.min()) / (img.max() - img.min()) * 255).astype(np.uint8)
+                self.image_panel.setImage(self.ori_img)
                 self.img_path = selected_files[0]
                 if len(self.ori_img.shape) < 3:
                     self.ori_img = np.repeat(self.ori_img[:, :, np.newaxis], 3, axis=2)

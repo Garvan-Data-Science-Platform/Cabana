@@ -895,6 +895,8 @@ class MainWindow(QMainWindow):
             img = tiff.imread(path) if tiff.TiffFile(path) else iio.imread(path)
             if img.dtype != np.uint8:
                 self.ori_img = ((img - img.min()) / (img.max() - img.min()) * 255).astype(np.uint8)
+            else:
+                self.ori_img = img
             self.img_path = path
             if len(self.ori_img.shape) < 3:
                 self.ori_img = np.repeat(self.ori_img[:, :, np.newaxis], 3, axis=2)
@@ -955,6 +957,8 @@ class MainWindow(QMainWindow):
                 img = tiff.imread(selected_files[0]) if tiff.TiffFile(selected_files[0]) else iio.imread(selected_files[0])
                 if img.dtype != np.uint8:
                     self.ori_img = ((img - img.min()) / (img.max() - img.min()) * 255).astype(np.uint8)
+                else:
+                    self.ori_img = img
                 self.image_panel.setImage(self.ori_img)
                 self.img_path = selected_files[0]
                 if len(self.ori_img.shape) < 3:

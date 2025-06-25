@@ -1446,9 +1446,9 @@ class ImagePanel(QWidget):
             if self.isImageFile(file_path):
                 img = tiff.imread(file_path) if tiff.TiffFile(file_path) else iio.imread(file_path)
                 if img.dtype != np.uint8:
-                    img_data = ((img - img.min()) / (img.max() - img.min()) * 255).astype(np.uint8)
+                    img = ((img - img.min()) / (img.max() - img.min()) * 255).astype(np.uint8)
 
-                self.setImage(img_data)
+                self.setImage(img)
                 self.imageDropped.emit(file_path)
                 event.acceptProposedAction()
                 return

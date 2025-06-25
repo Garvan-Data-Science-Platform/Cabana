@@ -27,6 +27,8 @@ from skimage.segmentation import mark_boundaries
 from skimage.morphology import dilation, disk
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.backends.backend_agg import FigureCanvasAgg
+import imageio_ffmpeg
+matplotlib.rcParams['animation.ffmpeg_path'] = imageio_ffmpeg.get_ffmpeg_exe()
 
 read_bar_format = "%s{l_bar}%s{bar}%s{r_bar}" % ("\033[0;34m", "\033[0;34m", "\033[0;34m")
 
@@ -502,30 +504,32 @@ def save_result_video(save_path, rgb_img, all_img_labels, all_mean_imgs, all_abs
                       all_masks):
     imgs = []
     fig = plt.figure(figsize=(15, 10))
-
     for i in range(len(all_img_labels)):
-        ax1 = fig.add_subplot(1, 3, 1)
+        ax1 = fig.add_subplot(2, 2, 1)
         ax1.set_title('Original image')
         ax1.axis('off')
         ax1.imshow(cv2.resize(rgb_img, (512, 512)))
 
-        ax2 = fig.add_subplot(1, 3, 2)
+        ax2 = fig.add_subplot(2, 2, 2)
         ax2.set_title('Semantic segmentation')
         ax2.axis('off')
         ax2.imshow(cv2.resize(all_img_labels[i], (512, 512)))
 
-        ax3 = fig.add_subplot(1, 3, 3)
+        ax3 = fig.add_subplot(2, 2, 3)
         ax3.set_title('Mean image')
         ax3.axis('off')
         ax3.imshow(cv2.resize(all_mean_imgs[i], (512, 512)))
 
-        plt.tight_layout()
-        imgs.append([ax1, ax2, ax3])
+        ax4 = fig.add_subplot(2, 2, 4)
+        ax4.set_title('Segmented image')
+        ax4.axis('off')
+        binary_mask = cv2.resize(all_masks[i], (512, 512))
+        rgb_img_copy = rgb_img.copy()
+        rgb_img_copy[binary_mask==0] = [224, 224, 224]  # Set background to a light color
+        ax4.imshow(rgb_img_copy)
 
-        # ax4 = fig.add_subplot(2, 3, 4)
-        # ax4.set_title('Binary mask')
-        # ax4.axis('off')
-        # ax4.imshow(cv2.resize(all_masks[i], (512, 512)), cmap='gray')
+        plt.tight_layout()
+        imgs.append([ax1, ax2, ax3, ax4])
         #
         # ax5 = fig.add_subplot(2, 3, 5)
         # ax5.set_title('Relative redness')

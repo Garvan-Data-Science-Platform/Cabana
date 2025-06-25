@@ -47,9 +47,9 @@ def parse_args():
         argparse.Namespace: Parsed command line arguments
     """
     parser = argparse.ArgumentParser(description='Self-Supervised Semantic Segmentation')
-    parser.add_argument('--num_channels', default=48, type=int,
+    parser.add_argument('--num_channels', default=32, type=int,
                         help='Number of channels in the segmentation model')
-    parser.add_argument('--max_iter', default=200, type=int,
+    parser.add_argument('--max_iter', default=30, type=int,
                         help='Maximum number of training iterations')
     parser.add_argument('--min_labels', default=2, type=int,
                         help='Minimum number of labels to stop training early')
@@ -59,7 +59,7 @@ def parse_args():
                         help='Learning rate for the segmentation model')
     parser.add_argument('--sz_filter', default=5, type=int,
                         help='CRF filter size')
-    parser.add_argument('--rt', default=0.25, type=float,
+    parser.add_argument('--rt', default=0.2, type=float,
                         help='Relative color threshold for object detection')
     parser.add_argument('--mode', type=str, default="both",
                         help='Processing mode')
@@ -314,48 +314,49 @@ def generate_rois(img, roi, white_background=True, thickness=3):
 
 
 if __name__ == "__main__":
-    # CSV header for results
-    header = ['Image', 'Area', '% Black']
+    # # CSV header for results
+    # header = ['Image', 'Area', '% Black']
     args = parse_args()
-
-    # Process images with specific number of channels
-    for num_labels in [48]:
-        setattr(args, 'num_channels', num_labels)
-        dst_folder = '/Users/lxfhfut/Dropbox/Garvan/Cabana/Test_ROI/'
-        src_folder = '/Users/lxfhfut/Dropbox/Garvan/Cabana/Compressed images/'
-
-        # Find all images in the source folder
-        img_names = glob(os.path.join(src_folder, '*.tif')) \
-                    + glob(os.path.join(src_folder, '.tiff')) \
-                    + glob(os.path.join(src_folder, '*.TIF')) \
-                    + glob(os.path.join(src_folder, '*.TIFF')) \
-                    + glob(os.path.join(src_folder, '*.png')) \
-                    + glob(os.path.join(src_folder, '*.PNG'))
-
-        # Process with specific iteration numbers
-        for iter_num in [30]:
-            setattr(args, 'max_iter', iter_num)
-            output_dir = os.path.join(dst_folder, str(iter_num))
-            setattr(args, 'save_dir', output_dir)
-
-            # Ensure output directories exist
-            os.makedirs(args.roi_dir, exist_ok=True)
-            os.makedirs(args.bin_dir, exist_ok=True)
-
-            # Process each image and write results to CSV
-            with open(os.path.join(output_dir, 'Results_ROI.csv'), 'w', encoding='UTF8') as f:
-                writer = csv.writer(f)
-                writer.writerow(header)
-                for img_name in img_names:
-                    print(f'Processing {img_name}')
-                    setattr(args, 'input', img_name)
-
-                    if not os.path.exists(args.save_dir):
-                        os.makedirs(args.save_dir)
-
-                    # Segment the image and get metrics
-                    area, percent_black = segment_single_image(args)
-                    data = [os.path.basename(img_name), area, percent_black]
-                    writer.writerow(data)
-
-                print(f'Result has been saved in {args.save_dir}')
+    segment_single_image(args)
+    #
+    # # Process images with specific number of channels
+    # for num_labels in [48]:
+    #     setattr(args, 'num_channels', num_labels)
+    #     dst_folder = '/Users/lxfhfut/Dropbox/Garvan/Cabana/Test_ROI/'
+    #     src_folder = '/Users/lxfhfut/Dropbox/Garvan/Cabana/Compressed images/'
+    #
+    #     # Find all images in the source folder
+    #     img_names = glob(os.path.join(src_folder, '*.tif')) \
+    #                 + glob(os.path.join(src_folder, '.tiff')) \
+    #                 + glob(os.path.join(src_folder, '*.TIF')) \
+    #                 + glob(os.path.join(src_folder, '*.TIFF')) \
+    #                 + glob(os.path.join(src_folder, '*.png')) \
+    #                 + glob(os.path.join(src_folder, '*.PNG'))
+    #
+    #     # Process with specific iteration numbers
+    #     for iter_num in [30]:
+    #         setattr(args, 'max_iter', iter_num)
+    #         output_dir = os.path.join(dst_folder, str(iter_num))
+    #         setattr(args, 'save_dir', output_dir)
+    #
+    #         # Ensure output directories exist
+    #         os.makedirs(args.roi_dir, exist_ok=True)
+    #         os.makedirs(args.bin_dir, exist_ok=True)
+    #
+    #         # Process each image and write results to CSV
+    #         with open(os.path.join(output_dir, 'Results_ROI.csv'), 'w', encoding='UTF8') as f:
+    #             writer = csv.writer(f)
+    #             writer.writerow(header)
+    #             for img_name in img_names:
+    #                 print(f'Processing {img_name}')
+    #                 setattr(args, 'input', img_name)
+    #
+    #                 if not os.path.exists(args.save_dir):
+    #                     os.makedirs(args.save_dir)
+    #
+    #                 # Segment the image and get metrics
+    #                 area, percent_black = segment_single_image(args)
+    #                 data = [os.path.basename(img_name), area, percent_black]
+    #                 writer.writerow(data)
+    #
+    #             print(f'Result has been saved in {args.save_dir}')

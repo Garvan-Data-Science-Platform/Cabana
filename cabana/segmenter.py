@@ -177,6 +177,11 @@ def segment_single_image(args):
         image_labels = im_target.reshape(img_size[0], img_size[1]).astype("uint8")
         num_labels = len(np.unique(im_target))
 
+        font = cv2.FONT_HERSHEY_COMPLEX_SMALL
+        font_scale = 1.2
+        thickness = 2
+        color = (255, 255, 255)  # White
+
         # Save intermediate results if video saving is enabled
         if args.save_video and not (batch_idx % args.save_frame_interval):
             im_target_rgb = np.array([label_colours[c % 100] for c in im_target])
@@ -188,6 +193,22 @@ def segment_single_image(args):
             all_absolute_greenness.append(abs_color_dist)
             all_relative_greenness.append(rel_color_dist)
             all_thresholded.append(thresholded)
+            left_text = f"Iter. cycles: {batch_idx+1}"
+            right_text = f"No. labels: {num_labels}"
+
+            # Get text sizes
+            (left_w, left_h), _ = cv2.getTextSize(left_text, font, font_scale, thickness)
+            (right_w, right_h), _ = cv2.getTextSize(right_text, font, font_scale, thickness)
+
+            # Y-coordinate near bottom (with margin)
+            y = im_target_rgb.shape[0] - 10
+
+            # Draw left-aligned text
+            cv2.putText(im_target_rgb, left_text, (10, y), font, font_scale, color, thickness)
+
+            # Draw right-aligned text
+            x_right = img.shape[1] - right_w - 10
+            cv2.putText(im_target_rgb, right_text, (x_right, y), font, font_scale, color, thickness)
             all_image_labels.append(im_target_rgb)
 
         # Backward pass

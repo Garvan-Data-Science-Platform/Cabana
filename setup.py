@@ -8,7 +8,7 @@ with open("requirements.txt", "r") as fh:
 
 setuptools.setup(
     name="cabana",
-    version="0.0.1",
+    version="0.0.2",
     author="Gavin Lin",
     author_email="x.lin@garvan.org.au",
     description="Collagen fibre analyser for quantifying collagen fibre architecture in IHC and fluorescence microscopy images.",

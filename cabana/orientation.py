@@ -346,7 +346,7 @@ class OrientationAnalyzer:
         X = np.frombuffer(s, np.uint8).reshape((height, width, 4))
         return X[..., :3]  # Return RGB image
 
-    def draw_vector_field(self, wgts_map=None, color=(255, 255, 0), thickness=1, size=15, scale=80):
+    def draw_vector_field(self, wgts_map=None, color=(0, 0, 255), thickness=2, size=15, scale=80):
         """
         Draw a vector field visualization of the orientations.
 

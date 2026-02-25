@@ -1444,7 +1444,7 @@ class ImagePanel(QWidget):
         for url in event.mimeData().urls():
             file_path = url.toLocalFile()
             if self.isImageFile(file_path):
-                img = tiff.imread(file_path) if tiff.TiffFile(file_path) else iio.imread(file_path)
+                img = tiff.imread(file_path) if file_path.lower().endswith(('.tif', '.tiff')) else iio.imread(file_path)
                 if img.dtype != np.uint8:
                     img = ((img - img.min()) / (img.max() - img.min()) * 255).astype(np.uint8)
 

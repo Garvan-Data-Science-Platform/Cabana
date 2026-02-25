@@ -892,7 +892,7 @@ class MainWindow(QMainWindow):
     def load_original_image(self, path):
         """Load the original image from a file path"""
         try:
-            img = tiff.imread(path) if tiff.TiffFile(path) else iio.imread(path)
+            img = tiff.imread(path) if path.lower().endswith(('.tif', '.tiff')) else iio.imread(path)
             if img.dtype != np.uint8:
                 self.ori_img = ((img - img.min()) / (img.max() - img.min()) * 255).astype(np.uint8)
             else:
@@ -954,7 +954,7 @@ class MainWindow(QMainWindow):
         if file_dialog.exec_():
             selected_files = file_dialog.selectedFiles()
             if selected_files:
-                img = tiff.imread(selected_files[0]) if tiff.TiffFile(selected_files[0]) else iio.imread(selected_files[0])
+                img = tiff.imread(selected_files[0]) if selected_files[0].lower().endswith(('.tif', '.tiff')) else iio.imread(selected_files[0])
                 if img.dtype != np.uint8:
                     self.ori_img = ((img - img.min()) / (img.max() - img.min()) * 255).astype(np.uint8)
                 else:

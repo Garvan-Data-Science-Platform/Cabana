@@ -858,7 +858,8 @@ class Cabana:
                 os.path.exists(join_path(self.export_img_dir, f"{self.name_wo_ext}_Coherency.tif")):
             orient_map = iio.imread(join_path(self.export_img_dir, f"{self.name_wo_ext}_Orientation.tif"))
             cohere_map = iio.imread(join_path(self.export_img_dir, f"{self.name_wo_ext}_Coherency.tif"))
-            color_survey_with_colorbar(orient_map, cohere_map, cv2.cvtColor(rgb_img, cv2.COLOR_RGB2GRAY) / 255.0,
+            energy_map = iio.imread(join_path(self.export_img_dir, f"{self.name_wo_ext}_Energy.tif"))
+            color_survey_with_colorbar(orient_map, cohere_map, energy_map,
                                        join_path(self.color_img_dir, f"{self.name_wo_ext}_orient_color_survey.png"))
 
         # Copy gap images if they exist

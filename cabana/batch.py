@@ -1017,7 +1017,7 @@ class BatchCabana:
                 overlay_colorbar(rgb_img, curve_map, save_path,
                                  clabel="Curliness", cmap='plasma', dpi=200, font_size=10)
 
-            color_survey_with_colorbar(orient_map, cohere_map, cv2.cvtColor(rgb_img, cv2.COLOR_RGB2GRAY) / 255.0,
+            color_survey_with_colorbar(orient_map, cohere_map, energy_map,
                                        join_path(self.color_dir,
                                                  name_wo_ext,
                                                  name_wo_ext + "_orient_color_survey.png"))

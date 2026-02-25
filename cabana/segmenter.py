@@ -25,6 +25,7 @@ import argparse
 import numpy as np
 import torch.nn.init
 from glob import glob
+from pathlib import Path
 from tqdm import tqdm
 from skimage import measure
 import torch.optim as optim
@@ -228,6 +229,8 @@ def segment_single_image(args):
     # Save results
     if args.save_video:
         # Save video with intermediate results
+        if not os.path.exists(args.bin_dir):
+            Path(args.bin_dir).mkdir(parents=True, exist_ok=True)
         save_result_path = os.path.join(args.bin_dir, img_name + "_result.mp4")
         save_result_video(save_result_path, rgb_image, all_image_labels, all_mean_images,
                           all_absolute_greenness, all_relative_greenness, all_thresholded)

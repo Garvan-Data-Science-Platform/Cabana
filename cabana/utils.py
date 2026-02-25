@@ -500,6 +500,69 @@ def save_result_img(save_path, rgb_img, img_labels, mean_img, absolute_greenness
     # plt.close("all")
 
 
+def add_scale_bar(image, scale_length_pixels, scale_length_units="μm",
+                  position="bottom-right", thickness=3, color=(0, 0, 0),
+                  font_scale=0.55):
+    """
+    Add a scale bar to an image.
+
+    Args:
+        image: Input image (numpy array or file path)
+        scale_length_pixels: Length of scale bar in pixels
+        scale_length_units: What the scale bar represents (e.g., "μm", "mm", "cm")
+        position: Position of scale bar - "bottom-right", "bottom-left", "top-right", "top-left"
+        thickness: Thickness of the scale bar line in pixels
+        color: Color of scale bar (BGR tuple, default white)
+        font_scale: Font size for text label
+
+    Returns:
+        Image with scale bar added
+    """
+
+    # Load image if path is provided
+    if isinstance(image, str):
+        img = cv2.imread(image)
+    else:
+        img = image.copy()
+
+    if img is None:
+        raise ValueError("Could not load image")
+
+    height, width = img.shape[:2]
+
+    # Define position coordinates based on string input
+    margin = 10
+    if position == "bottom-right":
+        x_start = width - scale_length_pixels - margin
+        y_pos = height - margin
+    elif position == "bottom-left":
+        x_start = margin
+        y_pos = height - margin
+    elif position == "top-right":
+        x_start = width - scale_length_pixels - margin
+        y_pos = margin + 15
+    elif position == "top-left":
+        x_start = margin
+        y_pos = margin + 15
+    else:
+        raise ValueError("Position must be 'bottom-right', 'bottom-left', 'top-right', or 'top-left'")
+
+    # Draw the scale bar line
+    cv2.line(img, (x_start, y_pos), (x_start + scale_length_pixels, y_pos),
+             color, thickness)
+
+    # Add text label
+    label = f"50 um"
+    text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_COMPLEX, font_scale, 1)[0]
+    text_x = x_start + (scale_length_pixels - text_size[0]) // 2
+    text_y = y_pos - 10
+
+    cv2.putText(img, label, (text_x, text_y), cv2.FONT_HERSHEY_COMPLEX,
+                font_scale, color, 1, cv2.LINE_AA)
+
+    return img
+
+
 def save_result_video(save_path, rgb_img, all_img_labels, all_mean_imgs, all_absolute_greenness, all_relative_greenness,
                       all_masks):
     imgs = []
@@ -510,7 +573,8 @@ def save_result_video(save_path, rgb_img, all_img_labels, all_mean_imgs, all_abs
         ax1.set_title('Original image')
         ax1.axis('off')
 
-        ax1.imshow(ori_img)
+        ori_img_sb = add_scale_bar(ori_img, 70)
+        ax1.imshow(ori_img_sb)
 
         ax2 = fig.add_subplot(2, 2, 2)
         ax2.set_title('Semantic segmentation')
@@ -547,7 +611,7 @@ def save_result_video(save_path, rgb_img, all_img_labels, all_mean_imgs, all_abs
         # imgs.append([ax1, ax2, ax3, ax4, ax5, ax6])
 
     ani = animation.ArtistAnimation(fig, imgs, interval=80, blit=False)
-    ani.save(save_path, fps=5)
+    ani.save(save_path, fps=3)
 
 
 def save_result_video_old(save_path, rgb_img, gt_mask, all_img_labels, all_mean_imgs, all_greenness, all_masks):

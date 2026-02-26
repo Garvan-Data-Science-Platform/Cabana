@@ -586,15 +586,23 @@ class Cabana:
         area_width = np.sum(width_mask < 128).astype(float)  # WIDTH area
         percent_width = area_width / np.product(width_mask.shape[:2])  # % WIDTH area
 
+        grayscale = (rgb2gray(ori_img) * 255).astype(np.uint8)
         if np.count_nonzero(red_img < 180):
             mean_intensity_roi = np.mean(red_img[(img_mask > 128) & (red_img < 180)])
             mean_intensity_width = np.mean(red_img[(width_mask < 128) & (red_img < 180)])
             mean_intensity_hdm = np.mean(red_img[(hdm_mask > 0) & (red_img < 180)])
         else:
-            grayscale = (rgb2gray(ori_img) * 255).astype(np.uint8)
             mean_intensity_roi = np.mean(grayscale[img_mask > 128])
             mean_intensity_width = np.mean(grayscale[width_mask < 128])
             mean_intensity_hdm = np.mean(grayscale[hdm_mask > 0])
+
+        # Fall back to grayscale intensity if HED-based calculation produced NaN
+        if np.isnan(mean_intensity_roi):
+            mean_intensity_roi = np.mean(grayscale[img_mask > 128]) if np.any(img_mask > 128) else 0
+        if np.isnan(mean_intensity_width):
+            mean_intensity_width = np.mean(grayscale[width_mask < 128]) if np.any(width_mask < 128) else 0
+        if np.isnan(mean_intensity_hdm):
+            mean_intensity_hdm = np.mean(grayscale[hdm_mask > 0]) if np.any(hdm_mask > 0) else 0
 
         # Store metrics
         self.stats.loc[0, 'Area (ROI)'] = area_roi

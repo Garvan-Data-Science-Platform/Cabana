@@ -1,6 +1,7 @@
 import os
 os.environ["NUMEXPR_MAX_THREADS"] = "20"
 import sys
+import colorsys
 import yaml
 import imageio.v3 as iio
 import tifffile as tiff
@@ -62,7 +63,7 @@ class MainWindow(QMainWindow):
         self._setup_styles()
 
         # Add a button to load an image
-        self.load_btn = QPushButton("Load New Image")
+        self.load_btn = QPushButton("Load Image")
         self.load_btn.setStyleSheet(self.btn_style)
         self.load_btn.clicked.connect(self.load_image)
         file_layout.addWidget(self.load_btn)
@@ -74,14 +75,22 @@ class MainWindow(QMainWindow):
         self.reload_btn.setToolTip("Reload the original image")
         file_layout.addWidget(self.reload_btn)
 
-        # Export button
+        # Add buttons to main layout of left dock
+        self.dock_layout.addLayout(file_layout)
+
+        # Second row: Load Params and Export Params
+        params_layout = QHBoxLayout()
+        self.load_params_btn = QPushButton("Load Params")
+        self.load_params_btn.setStyleSheet(self.btn_style)
+        self.load_params_btn.clicked.connect(self.import_parameters)
+        params_layout.addWidget(self.load_params_btn)
+
         self.export_btn = QPushButton("Export Params")
         self.export_btn.setStyleSheet(self.btn_style)
         self.export_btn.clicked.connect(self.export_parameters)
-        file_layout.addWidget(self.export_btn)
+        params_layout.addWidget(self.export_btn)
 
-        # Add buttons to main layout of left dock
-        self.dock_layout.addLayout(file_layout)
+        self.dock_layout.addLayout(params_layout)
 
         # Create tab widget
         self.tabs = QTabWidget()
@@ -888,6 +897,78 @@ class MainWindow(QMainWindow):
         if file_path:
             with open(file_path, 'w') as file:
                 yaml.dump(self.yml_data, file)
+
+    def import_parameters(self):
+        """Import parameters from a YAML file and apply to GUI widgets"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Load Params", "", "YAML Files (*.yml *.yaml)"
+        )
+
+        if not file_path:
+            return
+
+        try:
+            with open(file_path, 'r') as file:
+                data = yaml.safe_load(file)
+            if not isinstance(data, dict):
+                return
+            self.yml_data = data
+            self.apply_params_to_widgets()
+        except Exception as e:
+            print(f"Failed to load parameters: {e}")
+
+    def apply_params_to_widgets(self):
+        """Update all GUI widgets to reflect current yml_data values"""
+        seg = self.yml_data.get("Segmentation", {})
+        det = self.yml_data.get("Detection", {})
+        gap = self.yml_data.get("Gap Analysis", {})
+        quant = self.yml_data.get("Quantification", {})
+        configs = self.yml_data.get("Configs", {})
+
+        # Segmentation widgets
+        if "Color Threshold" in seg:
+            self.color_thresh_slider.setValue(int(seg["Color Threshold"] * 100))
+        if "Number of Labels" in seg:
+            self.num_labels_slider.setValue(seg["Number of Labels"])
+        if "Max Iterations" in seg:
+            self.max_iters_slider.setValue(seg["Max Iterations"])
+        if "Dark Line" in seg:
+            self.white_bg_cb.setChecked(seg["Dark Line"])
+        if "Normalized Hue Value" in seg:
+            hue = seg["Normalized Hue Value"]
+            self.hue_label.setText(f"Normalized hue: {hue:.2f}")
+            # Update color button to reflect the hue
+            r, g, b = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
+            hex_color = f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}"
+            self.color_btn.setStyleSheet(f"background-color: {hex_color}; ")
+
+        # Segmentation toggle
+        if "Segmentation" in configs:
+            self.toggle_seg_btn.setChecked(configs["Segmentation"])
+
+        # Detection widgets
+        if "Min Line Width" in det and "Max Line Width" in det:
+            self.line_width_range.setValues(det["Min Line Width"], det["Max Line Width"])
+        if "Low Contrast" in det and "High Contrast" in det:
+            self.contrast_range.setValues(det["Low Contrast"], det["High Contrast"])
+        if "Line Width Step" in det:
+            self.line_step_slider.setValue(det["Line Width Step"])
+        if "Minimum Line Length" in det:
+            self.min_length_slider.setValue(det["Minimum Line Length"])
+        if "Dark Line" in det:
+            self.dark_line_cb.setChecked(det["Dark Line"])
+        if "Extend Line" in det:
+            self.extend_line_cb.setChecked(det["Extend Line"])
+
+        # Gap analysis widgets
+        if "Minimum Gap Diameter" in gap:
+            self.min_gap_slider.setValue(gap["Minimum Gap Diameter"])
+        if "Gap Analysis" in configs:
+            self.toggle_gap_btn.setChecked(configs["Gap Analysis"])
+
+        # Quantification widgets
+        if "Maximum Display HDM" in quant:
+            self.max_hdm_slider.setValue(quant["Maximum Display HDM"])
 
     def load_original_image(self, path):
         """Load the original image from a file path"""

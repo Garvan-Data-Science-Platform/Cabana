@@ -614,6 +614,7 @@ class RangeSlider(QWidget):
         self.upper_value = max(self.min_val, min(upper, self.max_val))
         self.update_positions()
         self.update()
+        self.valueChanged.emit(self.lower_value, self.upper_value)
 
     def update_positions(self):
         """Update the pixel positions based on values"""

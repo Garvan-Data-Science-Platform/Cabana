@@ -120,13 +120,13 @@ class BatchCabana:
 
                 gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
                 height, width = img.shape[:2]
-                bright_percent = np.sum(gray > 5) / width / height
-                if np.min([height, width]) < 2 * max_line_width or bright_percent <= 0.01:
+                bright_percent = np.sum(gray > 0) / width / height
+                if np.min([height, width]) < 2 * max_line_width or bright_percent <= 0.0001:
                     count_black += 1
                     f.write(img_path + "\n")
-                elif height*width <= max_size**2 and bright_percent > 0.01:
+                elif height*width <= max_size**2 and bright_percent > 0.0001:
                     cv2.imwrite(join_path(self.eligible_dir, os.path.splitext(img_name)[0] + ".png"), img)
-                elif height*width > max_size and bright_percent > 0.01:
+                elif height*width > max_size and bright_percent > 0.0001:
                     if self.ignore_large:
                         count_oversized += 1
                         f.write(img_path+"\n")

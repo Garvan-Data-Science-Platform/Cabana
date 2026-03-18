@@ -308,7 +308,8 @@ class BatchProcessingWorker(QThread):
     batch_complete = pyqtSignal()
 
     def __init__(self, param_file, input_folder, output_folder, batch_size=5,
-                 batch_num=0, resume=False, ignore_large=False):
+                 batch_num=0, resume=False, ignore_large=False,
+                 generate_stats=False, generate_scores=False):
         super().__init__()
         self.param_file = param_file
         self.input_folder = input_folder
@@ -317,13 +318,16 @@ class BatchProcessingWorker(QThread):
         self.batch_num = batch_num
         self.resume = resume
         self.ignore_large = ignore_large
+        self.generate_stats = generate_stats
+        self.generate_scores = generate_scores
 
     def run(self):
         self.progress_updated.emit(1)
         # Initialize the batch processor with our parameters
         batch_processor = BatchProcessor(self.param_file, self.input_folder,
                                          self.output_folder, self.batch_size,
-                                         self.batch_num, self.resume, self.ignore_large)
+                                         self.batch_num, self.resume, self.ignore_large,
+                                         self.generate_stats, self.generate_scores)
 
         # Connect to our progress signal
         batch_processor.progress_callback = self.update_progress

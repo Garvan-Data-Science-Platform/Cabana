@@ -1087,7 +1087,8 @@ class BatchProcessor():
     """
 
     def __init__(self, param_file, input_folder, output_folder, batch_size=5,
-                 batch_num=0, resume=False, ignore_large=False):
+                 batch_num=0, resume=False, ignore_large=False,
+                 generate_stats=False, generate_scores=False):
         """
         Initialize a BatchProcessor with the given parameters.
 
@@ -1107,11 +1108,17 @@ class BatchProcessor():
             Whether to resume from a previous run, by default False
         ignore_large : bool, optional
             Whether to ignore oversized images, by default False
+        generate_stats : bool, optional
+            Whether to generate per-patient MEAN/STD/SEM statistics, by default False
+        generate_scores : bool, optional
+            Whether to generate collagen risk scores, by default False
         """
         self.batch_size = batch_size
         self.batch_num = batch_num
         self.resume = resume
         self.ignore_large = ignore_large
+        self.generate_stats = generate_stats
+        self.generate_scores = generate_scores
         self.param_file = param_file
         self.input_folder = input_folder
         self.output_folder = output_folder
@@ -1426,6 +1433,23 @@ class BatchProcessor():
         if len(results_df) > 0:
             merged_df = pd.concat(results_df, ignore_index=True)
             merged_df.to_csv(join_path(self.output_folder, 'QuantificationResults.csv'), index=False)
+
+        # Generate per-patient statistics and scores
+        if self.generate_stats or self.generate_scores:
+            from .scores import generate_mean_std_sem, compute_scores
+
+            results_csv = join_path(self.output_folder, 'QuantificationResults.csv')
+            if os.path.exists(results_csv):
+                results_data = pd.read_csv(results_csv)
+
+                stats_path = join_path(self.output_folder,
+                    'QuantificationResults_MEAN_STD_SEM.csv') if self.generate_stats else None
+                agg_df = generate_mean_std_sem(results_data, stats_path)
+
+                if self.generate_scores and agg_df is not None and len(agg_df) > 0:
+                    scores_path = join_path(self.output_folder,
+                        'QuantificationResults_SCORES.csv')
+                    compute_scores(agg_df, scores_path)
 
         # Remove checkpoint file on successful completion
         if os.path.exists(join_path(self.output_folder, '.CheckPoint.txt')):

@@ -269,6 +269,30 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(batch_size_layout)
 
+        # Post-processing options
+        options_layout = QHBoxLayout()
+
+        self.stats_cb = QCheckBox("Stats")
+        self.stats_cb.setChecked(False)
+        self.stats_cb.setEnabled(False)
+        self.stats_cb.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text'])};")
+        self.stats_cb.setToolTip(
+            "Generate per-patient MEAN, STD and SEM statistics\n"
+            "(QuantificationResults_MEAN_STD_SEM.csv)")
+
+        self.scores_cb = QCheckBox("Scores")
+        self.scores_cb.setChecked(False)
+        self.scores_cb.setEnabled(False)
+        self.scores_cb.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text'])};")
+        self.scores_cb.setToolTip(
+            "Generate collagen rigidity and bundling risk scores\n"
+            "(QuantificationResults_SCORES.csv)")
+
+        options_layout.addWidget(self.stats_cb)
+        options_layout.addWidget(self.scores_cb)
+        options_layout.addStretch()
+        layout.addLayout(options_layout)
+
         # Batch processing button
         self.process_batch_btn = QPushButton("Process Batch")
         self.process_batch_btn.clicked.connect(self.run_batch_processing)
@@ -340,6 +364,8 @@ class MainWindow(QMainWindow):
         """Check if all necessary paths are selected to enable batch processing"""
         is_ready = hasattr(self, 'param_file') and hasattr(self, 'input_folder') and hasattr(self, 'output_folder')
         self.process_batch_btn.setEnabled(is_ready)
+        self.stats_cb.setEnabled(is_ready)
+        self.scores_cb.setEnabled(is_ready)
 
     def _check_batch_running_status(self):
         checkpoint_path = join_path(self.output_folder, '.CheckPoint.txt')
@@ -409,6 +435,8 @@ class MainWindow(QMainWindow):
         self.param_btn.setEnabled(False)
         self.input_btn.setEnabled(False)
         self.output_btn.setEnabled(False)
+        self.stats_cb.setEnabled(False)
+        self.scores_cb.setEnabled(False)
         self.show_progress_bar()
 
         resume, batch_size, batch_num, ignore_large = self._check_batch_running_status()
@@ -419,7 +447,9 @@ class MainWindow(QMainWindow):
 
         self.batch_worker = BatchProcessingWorker(
             self.param_file, self.input_folder, self.output_folder,
-            batch_size, batch_num, resume, ignore_large
+            batch_size, batch_num, resume, ignore_large,
+            generate_stats=self.stats_cb.isChecked(),
+            generate_scores=self.scores_cb.isChecked()
         )
 
         # Connect signals
@@ -440,6 +470,8 @@ class MainWindow(QMainWindow):
         self.param_btn.setEnabled(True)
         self.input_btn.setEnabled(True)
         self.output_btn.setEnabled(True)
+        self.stats_cb.setEnabled(True)
+        self.scores_cb.setEnabled(True)
 
         # # Show a message box to notify the user
         # QMessageBox.information(

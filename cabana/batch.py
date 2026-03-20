@@ -1129,8 +1129,11 @@ class BatchProcessor():
             print("Invalid parameter file path. Abort!")
             os._exit(1)
 
-        if not os.path.exists(self.input_folder) or not os.listdir(self.input_folder):
-            print("Invalid input directory. Abort!")
+        if not os.path.exists(self.input_folder):
+            print(f"Input folder does not exist: {self.input_folder}. Abort!")
+            os._exit(1)
+        if not os.listdir(self.input_folder):
+            print(f"Input folder is empty (no images found): {self.input_folder}. Abort!")
             os._exit(1)
 
         # Create output directory if it doesn't exist

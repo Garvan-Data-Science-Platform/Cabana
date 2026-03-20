@@ -16,6 +16,7 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 CHANNEL_NAMES = {'original', 'red', 'yellow', 'green'}
+SHAPE_TYPES = {'ellipse', 'rectangle', 'polygon', 'line', 'polyline', 'points'}
 
 
 def parse_image_name(filename):
@@ -52,21 +53,34 @@ def parse_image_name(filename):
             result['patient_id'] = token_match.group(1) if token_match else filename
 
     # Extract image type (BF or POL)
-    type_match = re.search(r'_(BF|POL)_', filename, re.IGNORECASE)
+    type_match = re.search(r'[_\s](BF|POL|XPL)[_\s]', filename, re.IGNORECASE)
     if type_match:
         result['image_type'] = type_match.group(1).upper()
 
-    # Extract tissue type from 'Annotation (...)' pattern
-    tissue_match = re.search(r'Annotation\s*\(([^)]+)\)', filename, re.IGNORECASE)
-    if tissue_match:
-        result['tissue_type'] = tissue_match.group(1).strip()
+    # Extract tissue type: find all (...) groups after 'Annotation' and take the last one.
+    # This handles cases like 'Annotation (Ellipse) (Tumor)' where the shape type precedes
+    # the tissue class, as well as the simple 'Annotation (Tumor)' case.
+    annotation_match = re.search(r'Annotation', filename, re.IGNORECASE)
+    if annotation_match:
+        after_annotation = filename[annotation_match.end():]
+        paren_groups = re.findall(r'\(([^()]+)\)', after_annotation)
+        if paren_groups:
+            tissue = next(
+                (g.strip() for g in reversed(paren_groups)
+                 if g.strip().lower() not in SHAPE_TYPES),
+                paren_groups[-1].strip()  # fallback to last if all are shape types
+            )
+            result['tissue_type'] = tissue
 
-    # Extract ROI number: last standalone integer before _roi (with optional channel) or extension
-    roi_match = re.search(r'_(\d+)(?:_(?:roi|original|red|yellow|green))*\.', filename, re.IGNORECASE)
+    # Extract ROI number: find the first _<digits> after the last ')' in the filename.
+    # This anchors the search to after the tissue annotation parentheses.
+    last_paren = filename.rfind(')')
+    search_from = filename[last_paren:] if last_paren != -1 else filename
+    roi_match = re.search(r'_(\d+)', search_from)
     if roi_match:
         result['roi_number'] = roi_match.group(1)
 
-    # Check for channel names anywhere in filename (case-insensitive)
+    # Check for known channel names anywhere in the filename (case-insensitive substring match).
     filename_lower = filename.lower()
     for channel in CHANNEL_NAMES:
         if channel in filename_lower:

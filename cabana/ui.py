@@ -1377,7 +1377,7 @@ class PanelToggleButton(QPushButton):
         self.setCheckable(True)
         self.setFixedSize(24, 48)
         self.setCursor(Qt.PointingHandCursor)
-        self.setToolTip("Toggle side panel (Ctrl+B)")
+        self.setToolTip("Toggle side panel")
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -1728,7 +1728,7 @@ class ImagePanel(QWidget):
             font = QFont("Arial", 20)  # Family and size
             font.setBold(True)  # Optional: make it bold
             painter.setFont(font)
-            text = "Drag & Drop Image Here\nor press Ctrl+O to open"
+            text = "Drag & Drop Image Here"
             painter.drawText(self.rect(), Qt.AlignCenter, text)
 
         # Draw drag and drop highlight overlay when active

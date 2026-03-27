@@ -11,9 +11,9 @@ from .utils import join_path
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QSpinBox,
                              QVBoxLayout, QHBoxLayout, QTabWidget, QCheckBox,
                              QPushButton, QFileDialog, QSizePolicy, QColorDialog,
-                             QMessageBox, QToolBar, QToolButton, QShortcut,
+                             QMessageBox, QToolBar, QToolButton,
                              QStatusBar, QLineEdit)
-from PyQt5.QtGui import QIcon, QPalette, QFont, QKeySequence
+from PyQt5.QtGui import QIcon, QPalette, QFont
 
 from .ui import *
 
@@ -219,8 +219,6 @@ class MainWindow(QMainWindow):
         # Connect zoom updates from image panel
         self.image_panel.zoomChanged.connect(self._update_zoom_status)
 
-        # --- Keyboard shortcuts ---
-        self._setup_shortcuts()
 
     def _update_zoom_status(self, zoom_factor):
         """Update the zoom display in the status bar"""
@@ -236,14 +234,6 @@ class MainWindow(QMainWindow):
         else:
             self.status_file_label.setText("  No image loaded")
             self.status_dims_label.setText("")
-
-    def _setup_shortcuts(self):
-        """Set up keyboard shortcuts"""
-        QShortcut(QKeySequence("Ctrl+O"), self, self.load_image)
-        QShortcut(QKeySequence("Ctrl+R"), self, self.reload_image)
-        QShortcut(QKeySequence("Ctrl+I"), self, self.import_parameters)
-        QShortcut(QKeySequence("Ctrl+E"), self, self.export_parameters)
-        QShortcut(QKeySequence("Ctrl+B"), self, self.toggle_panel)
 
     def toggle_panel(self):
         if self.panel_visible:

@@ -11,7 +11,7 @@ from .utils import join_path
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QSpinBox,
                              QVBoxLayout, QHBoxLayout, QTabWidget, QCheckBox,
                              QPushButton, QFileDialog, QSizePolicy, QColorDialog, QMessageBox)
-from PyQt5.QtGui import QIcon, QPalette
+from PyQt5.QtGui import QIcon, QPalette, QFont
 
 from .ui import *
 
@@ -51,11 +51,16 @@ class MainWindow(QMainWindow):
         self.dock_contents.setPalette(dock_palette)
 
         self.dock_layout = QVBoxLayout(self.dock_contents)
+        self.dock_layout.setContentsMargins(10, 10, 10, 10)
+        self.dock_layout.setSpacing(6)
 
         # Create a label with Napari-style
         dock_label = QLabel("Configuration Panel")
         dock_label.setStyleSheet(
-            f"color: {color_to_stylesheet(COLORS['text'])}; font-weight: bold; font-size: 14px;")
+            f"color: {color_to_stylesheet(COLORS['text'])}; font-weight: 600; font-size: 15px; "
+            f"padding: 6px 0px 4px 0px; "
+            f"border-bottom: 1px solid {color_to_stylesheet(COLORS['border'])}; "
+            f"margin-bottom: 4px;")
         self.dock_layout.addWidget(dock_label)
 
         # File layout
@@ -206,6 +211,8 @@ class MainWindow(QMainWindow):
     def setup_batch_processing_tab(self):
         """Set up the batch processing tab UI"""
         layout = QVBoxLayout()
+        layout.setContentsMargins(6, 10, 6, 6)
+        layout.setSpacing(6)
 
         # Parameter file selection
         param_layout = QHBoxLayout()
@@ -213,7 +220,7 @@ class MainWindow(QMainWindow):
         param_layout.addWidget(param_label)
 
         self.param_file_path = QLabel("Not selected")
-        self.param_file_path.setStyleSheet("color: gray")
+        self.param_file_path.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text_dim'])}")
         param_layout.addWidget(self.param_file_path, 1)
 
         self.param_btn = QPushButton("Select")
@@ -229,7 +236,7 @@ class MainWindow(QMainWindow):
         input_layout.addWidget(input_label)
 
         self.input_folder_path = QLabel("Not selected")
-        self.input_folder_path.setStyleSheet("color: gray;")
+        self.input_folder_path.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text_dim'])};")
         input_layout.addWidget(self.input_folder_path, 1)
 
         self.input_btn = QPushButton("Select")
@@ -245,7 +252,7 @@ class MainWindow(QMainWindow):
         output_layout.addWidget(output_label)
 
         self.output_folder_path = QLabel("Not selected")
-        self.output_folder_path.setStyleSheet("color: gray;")
+        self.output_folder_path.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text_dim'])};")
         output_layout.addWidget(self.output_folder_path, 1)
 
         self.output_btn = QPushButton("Select")
@@ -275,7 +282,6 @@ class MainWindow(QMainWindow):
         self.stats_cb = QCheckBox("Stats")
         self.stats_cb.setChecked(False)
         self.stats_cb.setEnabled(False)
-        self.stats_cb.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text'])};")
         self.stats_cb.setToolTip(
             "Generate per-patient MEAN, STD and SEM statistics\n"
             "(QuantificationResults_MEAN_STD_SEM.csv)")
@@ -283,7 +289,6 @@ class MainWindow(QMainWindow):
         self.scores_cb = QCheckBox("Scores")
         self.scores_cb.setChecked(False)
         self.scores_cb.setEnabled(False)
-        self.scores_cb.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text'])};")
         self.scores_cb.setToolTip(
             "Generate collagen rigidity and bundling risk scores\n"
             "(QuantificationResults_SCORES.csv)")
@@ -482,6 +487,8 @@ class MainWindow(QMainWindow):
     def setup_segmentation_tab(self):
         """Set up the segmentation tab UI"""
         layout = QVBoxLayout()
+        layout.setContentsMargins(6, 10, 6, 6)
+        layout.setSpacing(6)
 
         color_group_layout = QVBoxLayout()
 
@@ -497,7 +504,8 @@ class MainWindow(QMainWindow):
 
         color_layout = QHBoxLayout()
         self.color_btn = QPushButton("")
-        self.color_btn.setStyleSheet("background-color: #f53282; font-weight: bold; ")
+        self.color_btn.setStyleSheet(
+            f"background-color: #f53282; border: 1px solid {color_to_stylesheet(COLORS['border'])}; border-radius: 4px;")
         self.color_btn.setFixedSize(QSize(30, 30))
         self.color_btn.clicked.connect(self.select_color)
         self.color_btn.setToolTip("Select the color you want to segment.")
@@ -533,8 +541,9 @@ class MainWindow(QMainWindow):
         self.color_thresh_slider.setToolTip("Lower this threshold to preserve more areas of interest.")
         threshold_layout.addWidget(self.color_thresh_slider, 3)
         self.color_thresh_value = QLabel("0.2")
-        self.color_thresh_value.setFixedWidth(30)
+        self.color_thresh_value.setFixedWidth(35)
         self.color_thresh_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
+        self.color_thresh_value.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: 11px;")
         threshold_layout.addWidget(self.color_thresh_value)
         layout.addLayout(threshold_layout)
 
@@ -552,8 +561,9 @@ class MainWindow(QMainWindow):
         self.num_labels_slider.setToolTip("Increase this value for fine-granularity segmentation.")
         num_labels_layout.addWidget(self.num_labels_slider, 3)
         self.num_labels_value = QLabel("32")
-        self.num_labels_value.setFixedWidth(25)
+        self.num_labels_value.setFixedWidth(30)
         self.num_labels_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
+        self.num_labels_value.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: 11px;")
         num_labels_layout.addWidget(self.num_labels_value)
         layout.addLayout(num_labels_layout)
 
@@ -571,8 +581,9 @@ class MainWindow(QMainWindow):
         self.max_iters_slider.setToolTip("Reduce this value for fine-granularity segmentation.")
         max_iters_layout.addWidget(self.max_iters_slider, 3)
         self.max_iters_value = QLabel("30")
-        self.max_iters_value.setFixedWidth(25)
+        self.max_iters_value.setFixedWidth(30)
         self.max_iters_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
+        self.max_iters_value.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: 11px;")
         max_iters_layout.addWidget(self.max_iters_value)
         layout.addLayout(max_iters_layout)
 
@@ -580,7 +591,6 @@ class MainWindow(QMainWindow):
         h_layout = QHBoxLayout()
         self.white_bg_cb = QCheckBox("White Background")
         self.white_bg_cb.setChecked(True)
-        self.white_bg_cb.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text'])}; ")
         self.white_bg_cb.stateChanged.connect(self.update_white_bg)
         self.white_bg_cb.setToolTip("Enable this option when detecting dark fibres in bright backgrounds.")
         h_layout.addWidget(self.white_bg_cb)
@@ -588,7 +598,6 @@ class MainWindow(QMainWindow):
         # Add toggle checkbox for comparing with the original image
         self.toggle_img_cb = QCheckBox("Overlay Original")
         self.toggle_img_cb.setChecked(False)
-        self.toggle_img_cb.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text'])}; ")
         self.toggle_img_cb.clicked.connect(self.compare_image)
         self.toggle_img_cb.setToolTip("Toggle to overlay the original image.")
         h_layout.addStretch()
@@ -609,6 +618,8 @@ class MainWindow(QMainWindow):
     def setup_detection_tab(self):
         """Set up the detection tab UI with range sliders"""
         layout = QVBoxLayout()
+        layout.setContentsMargins(6, 10, 6, 6)
+        layout.setSpacing(6)
 
         # Line width range slider
         line_width_layout = QHBoxLayout()
@@ -625,8 +636,9 @@ class MainWindow(QMainWindow):
         line_width_layout.addWidget(self.line_width_range, 3)
 
         self.line_width_value = QLabel("(5, 7)")
-        self.line_width_value.setFixedWidth(45)
+        self.line_width_value.setFixedWidth(55)
         self.line_width_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
+        self.line_width_value.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: 11px;")
         line_width_layout.addWidget(self.line_width_value)
         layout.addLayout(line_width_layout)
 
@@ -641,8 +653,9 @@ class MainWindow(QMainWindow):
         self.line_step_slider.setToolTip("Reduce this value to detect more fibers.")
         line_step_layout.addWidget(self.line_step_slider)
         self.line_step_value = QLabel("2")
-        self.line_step_value.setFixedWidth(20)
+        self.line_step_value.setFixedWidth(30)
         self.line_step_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
+        self.line_step_value.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: 11px;")
         line_step_layout.addWidget(self.line_step_value)
         layout.addLayout(line_step_layout)
 
@@ -662,8 +675,9 @@ class MainWindow(QMainWindow):
         contrast_layout.addWidget(self.contrast_range, 3)
 
         self.contrast_value = QLabel("(100, 200)")
-        self.contrast_value.setFixedWidth(65)
+        self.contrast_value.setFixedWidth(70)
         self.contrast_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
+        self.contrast_value.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: 11px;")
         contrast_layout.addWidget(self.contrast_value)
         layout.addLayout(contrast_layout)
 
@@ -678,30 +692,29 @@ class MainWindow(QMainWindow):
         self.min_length_slider.setToolTip("Fibers shorter than this length will be ignored.")
         min_length_layout.addWidget(self.min_length_slider)
         self.min_length_value = QLabel("5")
-        self.min_length_value.setFixedWidth(20)
+        self.min_length_value.setFixedWidth(30)
         self.min_length_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
+        self.min_length_value.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: 11px;")
         min_length_layout.addWidget(self.min_length_value)
         layout.addLayout(min_length_layout)
 
         # Checkboxes
+        layout.addWidget(create_separator())
         checkbox_layout = QHBoxLayout()
         self.dark_line_cb = QCheckBox("Dark Line")
         self.dark_line_cb.setChecked(True)
-        self.dark_line_cb.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text'])};")
         self.dark_line_cb.stateChanged.connect(self.update_dark_line)
         self.dark_line_cb.setToolTip("Enable this option to detect dark fibers on bright backgrounds.")
         checkbox_layout.addWidget(self.dark_line_cb)
 
         self.extend_line_cb = QCheckBox("Extend Line")
         self.extend_line_cb.setChecked(False)
-        self.extend_line_cb.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text'])}; ")
         self.extend_line_cb.stateChanged.connect(self.update_extend_line)
         self.extend_line_cb.setToolTip("Enable to detect fibers near junctions.")
         checkbox_layout.addWidget(self.extend_line_cb)
 
         self.overlay_fibres_cb = QCheckBox("Overlay Fibres")
         self.overlay_fibres_cb.setChecked(True)
-        self.overlay_fibres_cb.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text'])}; ")
         self.overlay_fibres_cb.stateChanged.connect(self.update_overlay_fibres)
         self.overlay_fibres_cb.setToolTip("Toggle to overlay detected fibres on the image.")
         checkbox_layout.addWidget(self.overlay_fibres_cb)
@@ -721,6 +734,8 @@ class MainWindow(QMainWindow):
     def setup_gap_analysis_tab(self):
         """Set up the gap analysis tab UI"""
         layout = QVBoxLayout()
+        layout.setContentsMargins(6, 10, 6, 6)
+        layout.setSpacing(6)
 
         self.toggle_gap_label = QLabel()
         self.toggle_gap_label.setText(
@@ -749,8 +764,9 @@ class MainWindow(QMainWindow):
         self.min_gap_slider.setToolTip("Lower this value for more detailed analysis.")
         min_gap_layout.addWidget(self.min_gap_slider)
         self.min_gap_value = QLabel("20")
-        self.min_gap_value.setFixedWidth(25)
+        self.min_gap_value.setFixedWidth(30)
         self.min_gap_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
+        self.min_gap_value.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: 11px;")
         min_gap_layout.addWidget(self.min_gap_value)
         layout.addLayout(min_gap_layout)
 
@@ -765,15 +781,16 @@ class MainWindow(QMainWindow):
         self.max_hdm_slider.setToolTip("Reduce this value to narrow down the HDM area of interest.")
         max_hdm_layout.addWidget(self.max_hdm_slider)
         self.max_hdm_value = QLabel("230")
-        self.max_hdm_value.setFixedWidth(25)
+        self.max_hdm_value.setFixedWidth(30)
         self.max_hdm_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
+        self.max_hdm_value.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: 11px;")
         max_hdm_layout.addWidget(self.max_hdm_value)
         layout.addLayout(max_hdm_layout)
 
         # Overlay checkbox
+        layout.addWidget(create_separator())
         self.overlay_gaps_cb = QCheckBox("Overlay Gaps")
         self.overlay_gaps_cb.setChecked(False)
-        self.overlay_gaps_cb.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text'])}; ")
         self.overlay_gaps_cb.stateChanged.connect(self.update_overlay_gaps)
         self.overlay_gaps_cb.setToolTip("Toggle to overlay gap analysis results on image.")
         overlay_layout = QHBoxLayout()
@@ -810,7 +827,8 @@ class MainWindow(QMainWindow):
 
         if color.isValid():
             hex_color = color.name()
-            self.color_btn.setStyleSheet(f"background-color: {hex_color}; ")
+            self.color_btn.setStyleSheet(
+                f"background-color: {hex_color}; border: 1px solid {color_to_stylesheet(COLORS['border'])}; border-radius: 4px;")
 
             # Calculate hue
             hue = hex_to_hue(hex_color)
@@ -972,7 +990,8 @@ class MainWindow(QMainWindow):
             # Update color button to reflect the hue
             r, g, b = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
             hex_color = f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}"
-            self.color_btn.setStyleSheet(f"background-color: {hex_color}; ")
+            self.color_btn.setStyleSheet(
+                f"background-color: {hex_color}; border: 1px solid {color_to_stylesheet(COLORS['border'])}; border-radius: 4px;")
 
         # Segmentation toggle
         if "Segmentation" in configs:
@@ -1368,6 +1387,17 @@ class MainWindow(QMainWindow):
 
     def set_theme(self):
         """Apply Napari-inspired theme to the application"""
+        # Global font — platform-native for zero overhead
+        app_font = QFont()
+        if sys.platform == 'darwin':
+            app_font.setFamily('.AppleSystemUIFont')
+        elif sys.platform == 'win32':
+            app_font.setFamily('Segoe UI')
+        else:
+            app_font.setFamily('Ubuntu')
+        app_font.setPointSize(12)
+        QApplication.setFont(app_font)
+
         # Set Napari palette
         palette = QPalette()
 
@@ -1376,7 +1406,7 @@ class MainWindow(QMainWindow):
         palette.setColor(QPalette.WindowText, COLORS['text'])
         palette.setColor(QPalette.Base, COLORS['background'])
         palette.setColor(QPalette.AlternateBase, COLORS['dock'])
-        palette.setColor(QPalette.ToolTipBase, COLORS['dock'])
+        palette.setColor(QPalette.ToolTipBase, COLORS['elevated'])
         palette.setColor(QPalette.ToolTipText, COLORS['text'])
         palette.setColor(QPalette.Text, COLORS['text'])
         palette.setColor(QPalette.Button, COLORS['dock'])
@@ -1386,15 +1416,105 @@ class MainWindow(QMainWindow):
         palette.setColor(QPalette.Highlight, COLORS['highlight'])
         palette.setColor(QPalette.HighlightedText, COLORS['background'])
 
+        # Disabled state colors
+        palette.setColor(QPalette.Disabled, QPalette.WindowText, COLORS['text_dim'])
+        palette.setColor(QPalette.Disabled, QPalette.Text, COLORS['text_dim'])
+        palette.setColor(QPalette.Disabled, QPalette.ButtonText, COLORS['text_dim'])
+        palette.setColor(QPalette.Disabled, QPalette.Button, COLORS['background'])
+
         # Apply the palette
         self.setPalette(palette)
 
-        # Additional stylesheet for fine-tuning
+        # Comprehensive stylesheet
         self.setStyleSheet(f"""
-            QToolTip {{ 
-                color: {color_to_stylesheet(COLORS['text'])}; 
-                background-color: {color_to_stylesheet(COLORS['dock'])}; 
-                border: 1px solid {color_to_stylesheet(COLORS['border'])}; 
+            /* Tooltips */
+            QToolTip {{
+                color: {color_to_stylesheet(COLORS['text'])};
+                background-color: {color_to_stylesheet(COLORS['elevated'])};
+                border: 1px solid {color_to_stylesheet(COLORS['border'])};
+                border-radius: 3px;
+                padding: 4px 6px;
+                font-size: 12px;
             }}
-            QLabel {{ color: {color_to_stylesheet(COLORS['text'])}; }}
+
+            /* Labels */
+            QLabel {{
+                color: {color_to_stylesheet(COLORS['text'])};
+                font-size: 12px;
+            }}
+
+            /* Checkbox indicators */
+            QCheckBox {{
+                color: {color_to_stylesheet(COLORS['text'])};
+                spacing: 6px;
+                font-size: 12px;
+            }}
+            QCheckBox::indicator {{
+                width: 16px;
+                height: 16px;
+                border: 1px solid {color_to_stylesheet(COLORS['border'])};
+                border-radius: 3px;
+                background-color: {color_to_stylesheet(COLORS['dock'])};
+            }}
+            QCheckBox::indicator:hover {{
+                border-color: {color_to_stylesheet(COLORS['highlight'])};
+                background-color: {color_to_stylesheet(COLORS['elevated'])};
+            }}
+            QCheckBox::indicator:checked {{
+                background-color: {color_to_stylesheet(COLORS['highlight'])};
+                border-color: {color_to_stylesheet(COLORS['highlight'])};
+            }}
+            QCheckBox::indicator:disabled {{
+                background-color: {color_to_stylesheet(COLORS['background'])};
+                border-color: {color_to_stylesheet(QColor(50, 53, 60))};
+            }}
+            QCheckBox:disabled {{
+                color: {color_to_stylesheet(COLORS['text_dim'])};
+            }}
+
+            /* Scrollbars — vertical */
+            QScrollBar:vertical {{
+                background: {color_to_stylesheet(COLORS['background'])};
+                width: 10px;
+                margin: 0;
+                border: none;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {color_to_stylesheet(COLORS['border'])};
+                min-height: 30px;
+                border-radius: 4px;
+                margin: 2px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: {color_to_stylesheet(COLORS['elevated'])};
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
+            }}
+
+            /* Scrollbars — horizontal */
+            QScrollBar:horizontal {{
+                background: {color_to_stylesheet(COLORS['background'])};
+                height: 10px;
+                margin: 0;
+                border: none;
+            }}
+            QScrollBar::handle:horizontal {{
+                background: {color_to_stylesheet(COLORS['border'])};
+                min-width: 30px;
+                border-radius: 4px;
+                margin: 2px;
+            }}
+            QScrollBar::handle:horizontal:hover {{
+                background: {color_to_stylesheet(COLORS['elevated'])};
+            }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+                width: 0;
+            }}
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+                background: none;
+            }}
         """)

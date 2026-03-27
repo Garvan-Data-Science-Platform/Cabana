@@ -30,14 +30,18 @@ torch.use_deterministic_algorithms(True)
 
 # Color scheme
 COLORS = {
-    'background': QColor(38, 41, 48),  # Main background
-    'canvas': QColor(40, 40, 50),  # Canvas/image area
-    'dock': QColor(60, 64, 72),  # Dock/sidebar
-    'highlight': QColor(106, 191, 225),  # Highlight color (cyan)
-    'secondary': QColor(230, 230, 230),  # Secondary text/icons
-    'text': QColor(240, 240, 240),  # Text color
-    'border': QColor(70, 75, 85),  # Border color
-    'warning': QColor(240, 70, 70),  # Warning color
+    'background': QColor(30, 33, 39),   # Main background (deepened)
+    'surface':    QColor(42, 45, 53),    # Intermediate surface (tab panes)
+    'canvas':     QColor(28, 28, 36),    # Image area (darkest layer)
+    'dock':       QColor(53, 57, 65),    # Dock/sidebar
+    'elevated':   QColor(68, 72, 82),    # Elevated surface (hover states)
+    'highlight':  QColor(100, 185, 220), # Highlight color (cyan)
+    'secondary':  QColor(190, 195, 200), # Secondary text/icons
+    'text':       QColor(225, 228, 232), # Text color (softer white)
+    'text_dim':   QColor(140, 145, 155), # Dim text (disabled/values)
+    'border':     QColor(62, 67, 78),    # Border color
+    'warning':    QColor(235, 75, 75),   # Warning color
+    'success':    QColor(80, 190, 130),  # Success color
 }
 
 
@@ -94,21 +98,27 @@ def generate_spinner_style(bg_color=COLORS['dock'],
                     width: 0;
                     height: 0;
                     border-style: solid;
-                    border-width: 0 6px 6px 6px;
-                    border-bottom: 7px solid rgb({highlight_color.red()}, {highlight_color.green()}, {highlight_color.blue()});
+                    border-width: 0 5px 5px 5px;
+                    border-bottom: 6px solid rgb({highlight_color.red()}, {highlight_color.green()}, {highlight_color.blue()});
                 }}
-                
+
         QSpinBox::down-arrow {{
             image: none;
             width: 0;
             height: 0;
             border-style: solid;
-            border-width: 6px 6px 0 6px;
-            border-top: 7px solid rgb({highlight_color.red()}, {highlight_color.green()}, {highlight_color.blue()});
+            border-width: 5px 5px 0 5px;
+            border-top: 6px solid rgb({highlight_color.red()}, {highlight_color.green()}, {highlight_color.blue()});
         }}
 
         QSpinBox:focus {{
             border: 1px solid rgb({highlight_text_color.red()}, {highlight_text_color.green()}, {highlight_text_color.blue()});
+        }}
+
+        QSpinBox:disabled {{
+            background-color: {color_to_stylesheet(COLORS['background'])};
+            color: {color_to_stylesheet(COLORS['text_dim'])};
+            border-color: {color_to_stylesheet(QColor(50, 53, 60))};
         }}
     """
 
@@ -126,14 +136,21 @@ def generate_button_style(bg_color=COLORS['dock'],
             border-radius: 4px;
             padding: 6px 12px;
             font-size: 13px;
-            font-weight: bold;
+            font-weight: 600;
         }}
         QPushButton:hover {{
             background-color: {color_to_stylesheet(highlight_color)};
             color: {color_to_stylesheet(highlight_text_color)};
+            border-color: {color_to_stylesheet(highlight_color)};
         }}
         QPushButton:pressed {{
-            background-color: {color_to_stylesheet(QColor(80, 160, 190))};
+            background-color: {color_to_stylesheet(highlight_color.darker(120))};
+            color: {color_to_stylesheet(highlight_text_color)};
+        }}
+        QPushButton:disabled {{
+            background-color: {color_to_stylesheet(COLORS['background'])};
+            color: {color_to_stylesheet(COLORS['text_dim'])};
+            border-color: {color_to_stylesheet(QColor(50, 53, 60))};
         }}
     """
 
@@ -145,29 +162,32 @@ def generate_tab_style(bg_color=COLORS['dock'],
                        highlight_text_color=COLORS['background']):
     """Generate tab widget stylesheet with specified colors"""
     return f"""
-        QTabWidget::pane {{ 
+        QTabWidget::pane {{
             border: 1px solid {color_to_stylesheet(border_color)};
-            background-color: {color_to_stylesheet(bg_color)};
+            border-top: none;
+            background-color: {color_to_stylesheet(COLORS['surface'])};
+            padding: 8px;
         }}
 
         QTabBar::tab {{
-            background-color: {color_to_stylesheet(bg_color)};
-            color: {color_to_stylesheet(text_color)};
-            border: 1px solid {color_to_stylesheet(border_color)};
-            border-bottom-color: {color_to_stylesheet(border_color)};
-            border-top-left-radius: 4px;
-            border-top-right-radius: 4px;
-            padding: 6px 12px;
-            font-weight: 300;
+            background-color: transparent;
+            color: {color_to_stylesheet(COLORS['text_dim'])};
+            border: none;
+            border-bottom: 2px solid transparent;
+            padding: 8px 14px;
+            font-size: 12px;
+            font-weight: 500;
+            margin-right: 2px;
         }}
 
-        QTabBar::tab:selected, QTabBar::tab:hover {{
-            background-color: {color_to_stylesheet(highlight_color)};
-            color: {color_to_stylesheet(highlight_text_color)};
+        QTabBar::tab:hover {{
+            color: {color_to_stylesheet(text_color)};
+            border-bottom: 2px solid {color_to_stylesheet(COLORS['elevated'])};
         }}
 
         QTabBar::tab:selected {{
-            border-bottom-color: {color_to_stylesheet(highlight_color)};
+            color: {color_to_stylesheet(highlight_color)};
+            border-bottom: 2px solid {color_to_stylesheet(highlight_color)};
         }}
     """
 
@@ -194,10 +214,15 @@ def generate_progressbar_style(bg_color=COLORS['background'],
             border: 1px solid {color_to_stylesheet(border_color)};
             border-radius: 5px;
             text-align: center;
+            font-size: 11px;
+            font-weight: 600;
+            min-height: 18px;
         }}
 
         QProgressBar::chunk {{
-            background-color: {color_to_stylesheet(progress_color)};
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 {color_to_stylesheet(progress_color.darker(110))},
+                stop:1 {color_to_stylesheet(progress_color)});
             border-radius: 5px;
         }}
     """
@@ -289,6 +314,17 @@ def generate_messagebox_style(bg_color=COLORS['background'],
             border-radius: 3px;
         }}
     """
+
+def create_separator(color=COLORS['border']):
+    """Create a thin horizontal separator line"""
+    from PyQt5.QtWidgets import QFrame
+    sep = QFrame()
+    sep.setFrameShape(QFrame.HLine)
+    sep.setFrameShadow(QFrame.Plain)
+    sep.setFixedHeight(1)
+    sep.setStyleSheet(f"background-color: {color_to_stylesheet(color)}; border: none;")
+    return sep
+
 
 class PercentageProgressBar(QProgressBar):
     def __init__(self, parent=None):
@@ -657,18 +693,23 @@ class RangeSlider(QWidget):
         if self.orientation == Qt.Horizontal:
             track_height = 4
             track_y = (self.height() - track_height) // 2
-            painter.drawRect(self.handle_radius, track_y, self.width() - 2 * self.handle_radius, track_height)
+            painter.drawRoundedRect(self.handle_radius, track_y, self.width() - 2 * self.handle_radius, track_height, 2, 2)
 
             # Draw active range
             highlight_color = COLORS['highlight']
             painter.setBrush(highlight_color)
-            painter.drawRect(self.handle_radius + self.lower_pos, track_y,
-                             self.upper_pos - self.lower_pos, track_height)
+            painter.drawRoundedRect(self.handle_radius + self.lower_pos, track_y,
+                             self.upper_pos - self.lower_pos, track_height, 2, 2)
 
             # Draw handles
             lower_handle_x = self.handle_radius + self.lower_pos
             upper_handle_x = self.handle_radius + self.upper_pos
             handle_y = self.height() // 2
+
+            # Draw upper handle shadow
+            painter.setBrush(QColor(0, 0, 0, 40))
+            painter.setPen(Qt.NoPen)
+            painter.drawEllipse(QPoint(upper_handle_x, handle_y + 1), self.handle_radius, self.handle_radius)
 
             # Draw upper handle (so lower is on top)
             if self.hover_handle == 2 or self.moving_upper:
@@ -678,6 +719,11 @@ class RangeSlider(QWidget):
                 painter.setBrush(COLORS['highlight'])
                 painter.setPen(QPen(COLORS['text'], 1))
             painter.drawEllipse(QPoint(upper_handle_x, handle_y), self.handle_radius, self.handle_radius)
+
+            # Draw lower handle shadow
+            painter.setBrush(QColor(0, 0, 0, 40))
+            painter.setPen(Qt.NoPen)
+            painter.drawEllipse(QPoint(lower_handle_x, handle_y + 1), self.handle_radius, self.handle_radius)
 
             # Draw lower handle
             if self.hover_handle == 1 or self.moving_lower:
@@ -691,18 +737,23 @@ class RangeSlider(QWidget):
         else:  # Vertical orientation
             track_width = 4
             track_x = (self.width() - track_width) // 2
-            painter.drawRect(track_x, self.handle_radius, track_width, self.height() - 2 * self.handle_radius)
+            painter.drawRoundedRect(track_x, self.handle_radius, track_width, self.height() - 2 * self.handle_radius, 2, 2)
 
             # Draw active range
             highlight_color = COLORS['highlight']
             painter.setBrush(highlight_color)
-            painter.drawRect(track_x, self.handle_radius + self.upper_pos,
-                             track_width, self.lower_pos - self.upper_pos)
+            painter.drawRoundedRect(track_x, self.handle_radius + self.upper_pos,
+                             track_width, self.lower_pos - self.upper_pos, 2, 2)
 
             # Draw handles
             handle_x = self.width() // 2
             lower_handle_y = self.handle_radius + self.lower_pos
             upper_handle_y = self.handle_radius + self.upper_pos
+
+            # Draw upper handle shadow
+            painter.setBrush(QColor(0, 0, 0, 40))
+            painter.setPen(Qt.NoPen)
+            painter.drawEllipse(QPoint(handle_x, upper_handle_y + 1), self.handle_radius, self.handle_radius)
 
             # Draw upper handle (top)
             if self.hover_handle == 2 or self.moving_upper:
@@ -712,6 +763,11 @@ class RangeSlider(QWidget):
                 painter.setBrush(COLORS['highlight'])
                 painter.setPen(QPen(COLORS['text'], 1))
             painter.drawEllipse(QPoint(handle_x, upper_handle_y), self.handle_radius, self.handle_radius)
+
+            # Draw lower handle shadow
+            painter.setBrush(QColor(0, 0, 0, 40))
+            painter.setPen(Qt.NoPen)
+            painter.drawEllipse(QPoint(handle_x, lower_handle_y + 1), self.handle_radius, self.handle_radius)
 
             # Draw lower handle (bottom)
             if self.hover_handle == 1 or self.moving_lower:
@@ -899,17 +955,22 @@ class CustomSlider(QSlider):
             track_height = 4
             track_y = (self.height() - track_height) // 2
             track_width = self.width() - 2 * self.handle_radius
-            painter.drawRect(self.handle_radius, track_y, track_width, track_height)
+            painter.drawRoundedRect(self.handle_radius, track_y, track_width, track_height, 2, 2)
 
             # Draw active portion of the track
             highlight_color = COLORS['highlight']
             painter.setBrush(highlight_color)
             handle_pos = int(normalized_position * track_width)
-            painter.drawRect(self.handle_radius, track_y, handle_pos, track_height)
+            painter.drawRoundedRect(self.handle_radius, track_y, handle_pos, track_height, 2, 2)
 
             # Draw handle
             handle_x = self.handle_radius + handle_pos
             handle_y = self.height() // 2
+
+            # Draw subtle handle shadow
+            painter.setBrush(QColor(0, 0, 0, 40))
+            painter.setPen(Qt.NoPen)
+            painter.drawEllipse(QPoint(handle_x, handle_y + 1), self.handle_radius, self.handle_radius)
 
             # Set handle appearance based on hover/drag state
             if self.hover or self.is_dragging:
@@ -925,17 +986,22 @@ class CustomSlider(QSlider):
             track_width = 4
             track_x = (self.width() - track_width) // 2
             track_height = self.height() - 2 * self.handle_radius
-            painter.drawRect(track_x, self.handle_radius, track_width, track_height)
+            painter.drawRoundedRect(track_x, self.handle_radius, track_width, track_height, 2, 2)
 
             # Draw active portion of the track
             highlight_color = COLORS['highlight']
             painter.setBrush(highlight_color)
             handle_pos = int((1 - normalized_position) * track_height)
-            painter.drawRect(track_x, self.handle_radius + handle_pos, track_width, track_height - handle_pos)
+            painter.drawRoundedRect(track_x, self.handle_radius + handle_pos, track_width, track_height - handle_pos, 2, 2)
 
             # Draw handle
             handle_x = self.width() // 2
             handle_y = self.handle_radius + handle_pos
+
+            # Draw subtle handle shadow
+            painter.setBrush(QColor(0, 0, 0, 40))
+            painter.setPen(Qt.NoPen)
+            painter.drawEllipse(QPoint(handle_x, handle_y + 1), self.handle_radius, self.handle_radius)
 
             # Set handle appearance based on hover/drag state
             if self.hover or self.is_dragging:

@@ -59,11 +59,18 @@ class MainWindow(QMainWindow):
 
         self._setup_styles()
 
-        # --- File toolbar ---
+        # --- File toolbar with labeled groups ---
         self.file_toolbar = QToolBar("File")
         self.file_toolbar.setMovable(False)
         self.file_toolbar.setIconSize(QSize(16, 16))
         self.file_toolbar.setStyleSheet(self.toolbar_style)
+
+        # "Image" group
+        image_group_label = QLabel(" Image:")
+        image_group_label.setStyleSheet(
+            f"color: {color_to_stylesheet(COLORS['text_dim'])}; "
+            f"font-size: {FONT_SIZES['small']}px; font-weight: 600;")
+        self.file_toolbar.addWidget(image_group_label)
 
         self.load_btn = QToolButton()
         self.load_btn.setText("Open")
@@ -79,6 +86,13 @@ class MainWindow(QMainWindow):
         self.file_toolbar.addWidget(self.reload_btn)
 
         self.file_toolbar.addSeparator()
+
+        # "Parameter File" group
+        params_group_label = QLabel("Params:")
+        params_group_label.setStyleSheet(
+            f"color: {color_to_stylesheet(COLORS['text_dim'])}; "
+            f"font-size: {FONT_SIZES['small']}px; font-weight: 600;")
+        self.file_toolbar.addWidget(params_group_label)
 
         self.load_params_btn = QToolButton()
         self.load_params_btn.setText("Import")

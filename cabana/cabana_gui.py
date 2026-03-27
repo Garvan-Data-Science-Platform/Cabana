@@ -299,7 +299,7 @@ class MainWindow(QMainWindow):
             f"QLineEdit {{ background-color: {color_to_stylesheet(COLORS['background'])}; "
             f"color: {color_to_stylesheet(COLORS['text_dim'])}; "
             f"border: 1px solid {color_to_stylesheet(COLORS['border'])}; "
-            f"border-radius: 3px; padding: 5px 6px; "
+            f"border-radius: 3px; padding: 8px 6px; "
             f"font-size: {FONT_SIZES['small']}px; }}"
         )
 

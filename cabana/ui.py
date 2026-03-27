@@ -1392,13 +1392,13 @@ class CustomSplitter(QSplitter):
 
 
 class PanelToggleButton(QPushButton):
-    """A toggle button that draws a chevron arrow pointing left (panel visible)
+    """A toggle button that draws a guillemet arrow pointing left (panel visible)
     or right (panel hidden)."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setCheckable(True)
-        self.setFixedSize(24, 48)
+        self.setFixedSize(20, 36)
         self.setCursor(Qt.PointingHandCursor)
         self.setToolTip("Toggle side panel")
 
@@ -1412,20 +1412,14 @@ class PanelToggleButton(QPushButton):
         painter.setPen(Qt.NoPen)
         painter.drawRoundedRect(self.rect(), 4, 4)
 
-        # Draw chevron
-        painter.setPen(QPen(COLORS['highlight'] if self.underMouse() else COLORS['secondary'], 2))
-        w, h = self.width(), self.height()
-        cx, cy = w // 2, h // 2
-        arrow_h = 8  # half-height of chevron
-
-        if self.isChecked():
-            # Panel hidden → arrow points right (open)
-            painter.drawLine(cx - 3, cy - arrow_h, cx + 3, cy)
-            painter.drawLine(cx + 3, cy, cx - 3, cy + arrow_h)
-        else:
-            # Panel visible → arrow points left (close)
-            painter.drawLine(cx + 3, cy - arrow_h, cx - 3, cy)
-            painter.drawLine(cx - 3, cy, cx + 3, cy + arrow_h)
+        # Draw guillemet
+        color = COLORS['highlight'] if self.underMouse() else COLORS['secondary']
+        painter.setPen(QPen(color, 1))
+        font = painter.font()
+        font.setPixelSize(14)
+        painter.setFont(font)
+        symbol = '»' if self.isChecked() else '«'
+        painter.drawText(self.rect(), Qt.AlignCenter, symbol)
 
     def enterEvent(self, event):
         self.update()

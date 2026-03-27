@@ -215,6 +215,42 @@ def generate_tab_style(bg_color=COLORS['dock'],
     """
 
 
+def generate_primary_button_style(bg_color=COLORS['highlight'],
+                                  text_color=COLORS['background'],
+                                  border_color=COLORS['highlight'],
+                                  hover_color=None,
+                                  pressed_color=None):
+    """Generate a filled primary action button stylesheet"""
+    if hover_color is None:
+        hover_color = bg_color.lighter(120)
+    if pressed_color is None:
+        pressed_color = bg_color.darker(120)
+    return f"""
+        QPushButton {{
+            background-color: {color_to_stylesheet(bg_color)};
+            color: {color_to_stylesheet(text_color)};
+            border: 1px solid {color_to_stylesheet(border_color)};
+            border-radius: 4px;
+            padding: 7px 12px;
+            font-size: {FONT_SIZES['base']}px;
+            font-weight: 700;
+        }}
+        QPushButton:hover {{
+            background-color: {color_to_stylesheet(hover_color)};
+            border-color: {color_to_stylesheet(hover_color)};
+        }}
+        QPushButton:pressed {{
+            background-color: {color_to_stylesheet(pressed_color)};
+            border-color: {color_to_stylesheet(pressed_color)};
+        }}
+        QPushButton:disabled {{
+            background-color: {color_to_stylesheet(COLORS['background'])};
+            color: {color_to_stylesheet(COLORS['text_dim'])};
+            border-color: {color_to_stylesheet(QColor(50, 53, 60))};
+        }}
+    """
+
+
 def generate_progressbar_style(bg_color=COLORS['background'],
                                text_color=COLORS['text'],
                                border_color=COLORS['border'],

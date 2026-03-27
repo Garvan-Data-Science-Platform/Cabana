@@ -235,6 +235,9 @@ class MainWindow(QMainWindow):
         # Messagebox style
         self.msgbox_style = generate_messagebox_style()
 
+        # Primary action button style (filled highlight)
+        self.primary_btn_style = generate_primary_button_style()
+
     def setup_batch_processing_tab(self):
         """Set up the batch processing tab UI"""
         layout = QVBoxLayout()
@@ -329,7 +332,7 @@ class MainWindow(QMainWindow):
         self.process_batch_btn = QPushButton("Process Batch")
         self.process_batch_btn.clicked.connect(self.run_batch_processing)
         self.process_batch_btn.setEnabled(False)
-        self.process_batch_btn.setStyleSheet(self.btn_style)
+        self.process_batch_btn.setStyleSheet(self.primary_btn_style)
         layout.addWidget(self.process_batch_btn)
 
         layout.addStretch()
@@ -639,7 +642,7 @@ class MainWindow(QMainWindow):
         self.segment_btn = QPushButton("Segment")
         self.segment_btn.clicked.connect(self.run_segmentation)
         self.segment_btn.setEnabled(False)
-        self.segment_btn.setStyleSheet(self.btn_style)
+        self.segment_btn.setStyleSheet(self.primary_btn_style)
         layout.addWidget(self.segment_btn)
 
         layout.addStretch()
@@ -759,7 +762,7 @@ class MainWindow(QMainWindow):
         self.detect_btn = QPushButton("Detect")
         self.detect_btn.clicked.connect(self.run_detection)
         self.detect_btn.setEnabled(False)
-        self.detect_btn.setStyleSheet(self.btn_style)
+        self.detect_btn.setStyleSheet(self.primary_btn_style)
         layout.addWidget(self.detect_btn)
 
         layout.addStretch()
@@ -838,7 +841,7 @@ class MainWindow(QMainWindow):
         self.analyze_btn = QPushButton("Analyze")
         self.analyze_btn.clicked.connect(self.run_gap_analysis)
         self.analyze_btn.setEnabled(False)
-        self.analyze_btn.setStyleSheet(self.btn_style)
+        self.analyze_btn.setStyleSheet(self.primary_btn_style)
         layout.addWidget(self.analyze_btn)
 
         layout.addStretch()

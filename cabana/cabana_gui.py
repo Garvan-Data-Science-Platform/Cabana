@@ -11,11 +11,13 @@ from .utils import join_path
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QSpinBox,
                              QVBoxLayout, QHBoxLayout, QTabWidget, QCheckBox,
                              QPushButton, QFileDialog, QSizePolicy, QColorDialog,
-                             QMessageBox,
+                             QMessageBox, QGroupBox, QComboBox, QWidget,
                              QStatusBar, QLineEdit)
 from PyQt5.QtGui import QIcon, QPalette, QFont
+from PyQt5.QtCore import QSettings
 
 from .ui import *
+from .themes import THEMES, DEFAULT_THEME
 
 
 class MainWindow(QMainWindow):
@@ -29,7 +31,12 @@ class MainWindow(QMainWindow):
         # Make window full screen when starting
         self.showMaximized()  # This will maximize the window to full screen
 
-        # Apply Napari-inspired theme to the entire application
+        # Load saved theme and apply
+        settings = QSettings('Cabana', 'CabanaGUI')
+        self._current_theme = settings.value('theme', DEFAULT_THEME)
+        if self._current_theme not in THEMES:
+            self._current_theme = DEFAULT_THEME
+        apply_theme(self._current_theme)
         self.set_theme()
 
         # Create the central widget with a splitter
@@ -54,18 +61,16 @@ class MainWindow(QMainWindow):
         self.dock_contents.setPalette(dock_palette)
 
         self.dock_layout = QVBoxLayout(self.dock_contents)
-        self.dock_layout.setContentsMargins(0, 0, 0, 10)
-        self.dock_layout.setSpacing(6)
+        self.dock_layout.setContentsMargins(6, 8, 6, 10)
+        self.dock_layout.setSpacing(4)
 
         self._setup_styles()
 
-        # --- Image section ---
-        image_label = QLabel("  Image")
-        image_label.setStyleSheet(generate_section_header_style())
-        self.dock_layout.addWidget(image_label)
-
-        image_btn_layout = QHBoxLayout()
-        image_btn_layout.setContentsMargins(10, 4, 10, 4)
+        # --- Image group ---
+        self.image_group = QGroupBox("Image")
+        self.image_group.setStyleSheet(self.group_style)
+        image_btn_layout = QHBoxLayout(self.image_group)
+        image_btn_layout.setContentsMargins(8, 4, 8, 4)
 
         self.load_btn = QPushButton("Open")
         self.load_btn.setStyleSheet(self.btn_style)
@@ -80,15 +85,13 @@ class MainWindow(QMainWindow):
         self.reload_btn.setEnabled(False)
         image_btn_layout.addWidget(self.reload_btn)
 
-        self.dock_layout.addLayout(image_btn_layout)
+        self.dock_layout.addWidget(self.image_group)
 
-        # --- Parameter File section ---
-        params_label = QLabel("  Parameter File")
-        params_label.setStyleSheet(generate_section_header_style())
-        self.dock_layout.addWidget(params_label)
-
-        params_btn_layout = QHBoxLayout()
-        params_btn_layout.setContentsMargins(10, 4, 10, 4)
+        # --- Parameters group ---
+        self.params_group = QGroupBox("Parameters")
+        self.params_group.setStyleSheet(self.group_style)
+        params_btn_layout = QHBoxLayout(self.params_group)
+        params_btn_layout.setContentsMargins(8, 4, 8, 4)
 
         self.load_params_btn = QPushButton("Import")
         self.load_params_btn.setStyleSheet(self.btn_style)
@@ -102,26 +105,22 @@ class MainWindow(QMainWindow):
         self.export_btn.clicked.connect(self.export_parameters)
         params_btn_layout.addWidget(self.export_btn)
 
-        self.dock_layout.addLayout(params_btn_layout)
+        self.dock_layout.addWidget(self.params_group)
+        self.dock_layout.addSpacing(6)
 
-        # --- Analysis Settings section ---
-        settings_label = QLabel("  Analysis Settings")
-        settings_label.setStyleSheet(generate_section_header_style())
-        self.dock_layout.addWidget(settings_label)
-
-        # Inner content area with padding for tabs and controls
-        self.dock_inner = QWidget()
-        self.dock_inner_layout = QVBoxLayout(self.dock_inner)
-        self.dock_inner_layout.setContentsMargins(10, 6, 10, 0)
+        # --- Analysis group ---
+        self.analysis_group = QGroupBox("Analysis")
+        self.analysis_group.setStyleSheet(self.group_style)
+        self.dock_inner_layout = QVBoxLayout(self.analysis_group)
+        self.dock_inner_layout.setContentsMargins(6, 10, 6, 6)
         self.dock_inner_layout.setSpacing(6)
-        self.dock_layout.addWidget(self.dock_inner, 1)
+        self.dock_layout.addWidget(self.analysis_group, 1)
 
         # Create tab widget
         self.tabs = QTabWidget()
         self.tabs.setTabBar(AutoWidthTabBar())
         self.tabs.setUsesScrollButtons(False)
-        self.tabs.tabBar().setExpanding(False)
-        self.tabs.tabBar().setElideMode(Qt.ElideNone)
+        self.tabs.tabBar().setElideMode(Qt.ElideRight)
         self.tabs.setStyleSheet(self.tab_style)
 
         # Create tabs
@@ -137,10 +136,10 @@ class MainWindow(QMainWindow):
         self.setup_batch_processing_tab()
 
         # Add tabs to widget
-        self.tabs.addTab(self.seg_tab, "Segmentation")
-        self.tabs.addTab(self.det_tab, "Fibre Detection")
-        self.tabs.addTab(self.gap_tab, "Gap Analysis")
-        self.tabs.addTab(self.bat_tab, "Batch Processing")
+        self.tabs.addTab(self.seg_tab, "Segment")
+        self.tabs.addTab(self.det_tab, "Detect Fibres")
+        self.tabs.addTab(self.gap_tab, "Analyse Gaps")
+        self.tabs.addTab(self.bat_tab, "Batch Run")
 
         self.dock_inner_layout.addWidget(self.tabs)
 
@@ -178,15 +177,22 @@ class MainWindow(QMainWindow):
         self.splitter.setStretchFactor(1, 1)  # image: stretch to fill
 
         # Compute the minimum dock width so tab labels are never clipped.
-        # Ensure stylesheet metrics are resolved before measuring.
+        # Match main-branch behavior: let the default tab bar manage elision inside the available width.
+        self.dock_contents.setMinimumWidth(200)
+
+        # Set initial sizes so the left panel opens wide enough for the full Analysis tab labels.
         self.tabs.tabBar().adjustSize()
         dock_margins = self.dock_layout.contentsMargins()
-        dock_min_width = (self.tabs.sizeHint().width()
-                          + dock_margins.left() + dock_margins.right())
-        self.dock_contents.setMinimumWidth(dock_min_width)
-
-        # Set initial sizes based on computed minimum
-        self.splitter.setSizes([dock_min_width, 800])
+        group_margins = self.analysis_group.contentsMargins()
+        inner_margins = self.dock_inner_layout.contentsMargins()
+        initial_dock_width = max(
+            self.dock_contents.minimumWidth(),
+            self.tabs.tabBar().sizeHint().width()
+            + dock_margins.left() + dock_margins.right()
+            + group_margins.left() + group_margins.right()
+            + inner_margins.left() + inner_margins.right(),
+        )
+        self.splitter.setSizes([initial_dock_width, 800])
 
         # Add splitter to the main layout
         self.main_layout.addWidget(self.splitter)
@@ -212,12 +218,7 @@ class MainWindow(QMainWindow):
 
         # --- Status bar ---
         self.status_bar = QStatusBar()
-        self.status_bar.setStyleSheet(
-            f"QStatusBar {{ background-color: {color_to_stylesheet(COLORS['background'])}; "
-            f"color: {color_to_stylesheet(COLORS['text_dim'])}; "
-            f"border-top: 1px solid {color_to_stylesheet(COLORS['border'])}; "
-            f"font-size: {FONT_SIZES['small']}px; padding: 2px 8px; }}"
-            f"QStatusBar::item {{ border: none; }}")
+        self.status_bar.setStyleSheet(self.status_bar_style)
         self.setStatusBar(self.status_bar)
         self.status_file_label = QLabel("No image loaded")
         self.status_dims_label = QLabel("")
@@ -225,6 +226,15 @@ class MainWindow(QMainWindow):
         self.status_bar.addWidget(self.status_file_label, 1)
         self.status_bar.addPermanentWidget(self.status_dims_label)
         self.status_bar.addPermanentWidget(self.status_zoom_label)
+
+        # Theme switcher
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(THEMES.keys())
+        self.theme_combo.setCurrentText(self._current_theme)
+        self.theme_combo.setFixedWidth(100)
+        self.theme_combo.setStyleSheet(self.theme_combo_style)
+        self.theme_combo.currentTextChanged.connect(self._on_theme_changed)
+        self.status_bar.addPermanentWidget(self.theme_combo)
 
         # Connect zoom updates from image panel
         self.image_panel.zoomChanged.connect(self._update_zoom_status)
@@ -274,6 +284,12 @@ class MainWindow(QMainWindow):
         # Primary action button style (filled highlight)
         self.primary_btn_style = generate_primary_button_style()
 
+        # Checkbox style
+        self.checkbox_style = generate_checkbox_style()
+
+        # Group box style
+        self.group_style = generate_group_box_style()
+
         # Read-only path line edit style
         self.path_edit_style = (
             f"QLineEdit {{ background-color: {color_to_stylesheet(COLORS['background'])}; "
@@ -283,11 +299,43 @@ class MainWindow(QMainWindow):
             f"font-size: {FONT_SIZES['small']}px; }}"
         )
 
+        # Value label style (slider readouts)
+        self.value_label_style = (
+            f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: {FONT_SIZES['small']}px;"
+        )
+
+        # Status bar style
+        self.status_bar_style = (
+            f"QStatusBar {{ background-color: {color_to_stylesheet(COLORS['background'])}; "
+            f"color: {color_to_stylesheet(COLORS['text_dim'])}; "
+            f"border-top: 1px solid {color_to_stylesheet(COLORS['border'])}; "
+            f"font-size: {FONT_SIZES['small']}px; padding: 2px 8px; }}"
+            f"QStatusBar::item {{ border: none; }}"
+        )
+
+        # Theme combo style
+        self.theme_combo_style = (
+            f"QComboBox {{ background-color: {color_to_stylesheet(COLORS['dock'])}; "
+            f"color: {color_to_stylesheet(COLORS['text'])}; "
+            f"border: 1px solid {color_to_stylesheet(COLORS['border'])}; "
+            f"border-radius: 3px; padding: 2px 6px; "
+            f"font-size: {FONT_SIZES['small']}px; }}"
+            f"QComboBox::drop-down {{ border: none; width: 16px; }}"
+            f"QComboBox::down-arrow {{ image: none; border-left: 4px solid transparent; "
+            f"border-right: 4px solid transparent; "
+            f"border-top: 5px solid {color_to_stylesheet(COLORS['text_dim'])}; }}"
+            f"QComboBox QAbstractItemView {{ background-color: {color_to_stylesheet(COLORS['elevated'])}; "
+            f"color: {color_to_stylesheet(COLORS['text'])}; "
+            f"border: 1px solid {color_to_stylesheet(COLORS['border'])}; "
+            f"selection-background-color: {color_to_stylesheet(COLORS['highlight'])}; "
+            f"selection-color: {color_to_stylesheet(COLORS['background'])}; }}"
+        )
+
     def setup_batch_processing_tab(self):
         """Set up the batch processing tab UI"""
         layout = QVBoxLayout()
         layout.setContentsMargins(6, 10, 6, 6)
-        layout.setSpacing(6)
+        layout.setSpacing(12)
 
         # Parameter file selection
         param_layout = QHBoxLayout()
@@ -364,6 +412,7 @@ class MainWindow(QMainWindow):
         self.stats_cb = QCheckBox("Stats")
         self.stats_cb.setChecked(False)
         self.stats_cb.setEnabled(False)
+        self.stats_cb.setStyleSheet(self.checkbox_style)
         self.stats_cb.setToolTip(
             "Generate per-patient MEAN, STD and SEM statistics\n"
             "(QuantificationResults_MEAN_STD_SEM.csv)")
@@ -371,6 +420,7 @@ class MainWindow(QMainWindow):
         self.scores_cb = QCheckBox("Scores")
         self.scores_cb.setChecked(False)
         self.scores_cb.setEnabled(False)
+        self.scores_cb.setStyleSheet(self.checkbox_style)
         self.scores_cb.setToolTip(
             "Generate collagen rigidity and bundling risk scores\n"
             "(QuantificationResults_SCORES.csv)")
@@ -550,7 +600,7 @@ class MainWindow(QMainWindow):
         """Set up the segmentation tab UI"""
         layout = QVBoxLayout()
         layout.setContentsMargins(6, 10, 6, 6)
-        layout.setSpacing(10)
+        layout.setSpacing(12)
 
         color_group_layout = QVBoxLayout()
 
@@ -606,7 +656,7 @@ class MainWindow(QMainWindow):
         self.color_thresh_value.setFixedWidth(35)
         self.color_thresh_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
         self.color_thresh_value.setStyleSheet(
-            f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: {FONT_SIZES['small']}px;")
+            self.value_label_style)
         threshold_layout.addWidget(self.color_thresh_value)
         layout.addLayout(threshold_layout)
 
@@ -627,7 +677,7 @@ class MainWindow(QMainWindow):
         self.num_labels_value.setFixedWidth(30)
         self.num_labels_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
         self.num_labels_value.setStyleSheet(
-            f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: {FONT_SIZES['small']}px;")
+            self.value_label_style)
         num_labels_layout.addWidget(self.num_labels_value)
         layout.addLayout(num_labels_layout)
 
@@ -648,7 +698,7 @@ class MainWindow(QMainWindow):
         self.max_iters_value.setFixedWidth(30)
         self.max_iters_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
         self.max_iters_value.setStyleSheet(
-            f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: {FONT_SIZES['small']}px;")
+            self.value_label_style)
         max_iters_layout.addWidget(self.max_iters_value)
         layout.addLayout(max_iters_layout)
 
@@ -656,6 +706,7 @@ class MainWindow(QMainWindow):
         h_layout = QHBoxLayout()
         self.white_bg_cb = QCheckBox("White Background")
         self.white_bg_cb.setChecked(True)
+        self.white_bg_cb.setStyleSheet(self.checkbox_style)
         self.white_bg_cb.stateChanged.connect(self.update_white_bg)
         self.white_bg_cb.setToolTip("Enable this option when detecting dark fibres in bright backgrounds.")
         h_layout.addWidget(self.white_bg_cb)
@@ -663,6 +714,7 @@ class MainWindow(QMainWindow):
         # Add toggle checkbox for comparing with the original image
         self.toggle_img_cb = QCheckBox("Overlay Original")
         self.toggle_img_cb.setChecked(False)
+        self.toggle_img_cb.setStyleSheet(self.checkbox_style)
         self.toggle_img_cb.clicked.connect(self.compare_image)
         self.toggle_img_cb.setToolTip("Toggle to overlay the original image.")
         h_layout.addStretch()
@@ -684,7 +736,7 @@ class MainWindow(QMainWindow):
         """Set up the detection tab UI with range sliders"""
         layout = QVBoxLayout()
         layout.setContentsMargins(6, 10, 6, 6)
-        layout.setSpacing(10)
+        layout.setSpacing(12)
 
         # Line width range slider
         line_width_layout = QHBoxLayout()
@@ -704,7 +756,7 @@ class MainWindow(QMainWindow):
         self.line_width_value.setFixedWidth(55)
         self.line_width_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
         self.line_width_value.setStyleSheet(
-            f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: {FONT_SIZES['small']}px;")
+            self.value_label_style)
         line_width_layout.addWidget(self.line_width_value)
         layout.addLayout(line_width_layout)
 
@@ -722,7 +774,7 @@ class MainWindow(QMainWindow):
         self.line_step_value.setFixedWidth(30)
         self.line_step_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
         self.line_step_value.setStyleSheet(
-            f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: {FONT_SIZES['small']}px;")
+            self.value_label_style)
         line_step_layout.addWidget(self.line_step_value)
         layout.addLayout(line_step_layout)
 
@@ -745,7 +797,7 @@ class MainWindow(QMainWindow):
         self.contrast_value.setFixedWidth(70)
         self.contrast_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
         self.contrast_value.setStyleSheet(
-            f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: {FONT_SIZES['small']}px;")
+            self.value_label_style)
         contrast_layout.addWidget(self.contrast_value)
         layout.addLayout(contrast_layout)
 
@@ -763,7 +815,7 @@ class MainWindow(QMainWindow):
         self.min_length_value.setFixedWidth(30)
         self.min_length_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
         self.min_length_value.setStyleSheet(
-            f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: {FONT_SIZES['small']}px;")
+            self.value_label_style)
         min_length_layout.addWidget(self.min_length_value)
         layout.addLayout(min_length_layout)
 
@@ -772,18 +824,21 @@ class MainWindow(QMainWindow):
         checkbox_layout = QHBoxLayout()
         self.dark_line_cb = QCheckBox("Dark Line")
         self.dark_line_cb.setChecked(True)
+        self.dark_line_cb.setStyleSheet(self.checkbox_style)
         self.dark_line_cb.stateChanged.connect(self.update_dark_line)
         self.dark_line_cb.setToolTip("Enable this option to detect dark fibers on bright backgrounds.")
         checkbox_layout.addWidget(self.dark_line_cb)
 
         self.extend_line_cb = QCheckBox("Extend Line")
         self.extend_line_cb.setChecked(False)
+        self.extend_line_cb.setStyleSheet(self.checkbox_style)
         self.extend_line_cb.stateChanged.connect(self.update_extend_line)
         self.extend_line_cb.setToolTip("Enable to detect fibers near junctions.")
         checkbox_layout.addWidget(self.extend_line_cb)
 
         self.overlay_fibres_cb = QCheckBox("Overlay Fibres")
         self.overlay_fibres_cb.setChecked(True)
+        self.overlay_fibres_cb.setStyleSheet(self.checkbox_style)
         self.overlay_fibres_cb.stateChanged.connect(self.update_overlay_fibres)
         self.overlay_fibres_cb.setToolTip("Toggle to overlay detected fibres on the image.")
         checkbox_layout.addWidget(self.overlay_fibres_cb)
@@ -804,7 +859,7 @@ class MainWindow(QMainWindow):
         """Set up the gap analysis tab UI"""
         layout = QVBoxLayout()
         layout.setContentsMargins(6, 10, 6, 6)
-        layout.setSpacing(10)
+        layout.setSpacing(12)
 
         self.toggle_gap_label = QLabel()
         self.toggle_gap_label.setText(
@@ -836,7 +891,7 @@ class MainWindow(QMainWindow):
         self.min_gap_value.setFixedWidth(30)
         self.min_gap_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
         self.min_gap_value.setStyleSheet(
-            f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: {FONT_SIZES['small']}px;")
+            self.value_label_style)
         min_gap_layout.addWidget(self.min_gap_value)
         layout.addLayout(min_gap_layout)
 
@@ -854,7 +909,7 @@ class MainWindow(QMainWindow):
         self.max_hdm_value.setFixedWidth(30)
         self.max_hdm_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
         self.max_hdm_value.setStyleSheet(
-            f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: {FONT_SIZES['small']}px;")
+            self.value_label_style)
         max_hdm_layout.addWidget(self.max_hdm_value)
         layout.addLayout(max_hdm_layout)
 
@@ -862,6 +917,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(create_separator())
         self.overlay_gaps_cb = QCheckBox("Overlay Gaps")
         self.overlay_gaps_cb.setChecked(False)
+        self.overlay_gaps_cb.setStyleSheet(self.checkbox_style)
         self.overlay_gaps_cb.stateChanged.connect(self.update_overlay_gaps)
         self.overlay_gaps_cb.setToolTip("Toggle to overlay gap analysis results on image.")
         overlay_layout = QHBoxLayout()
@@ -1514,7 +1570,7 @@ class MainWindow(QMainWindow):
             }}
             QCheckBox::indicator:disabled {{
                 background-color: {color_to_stylesheet(COLORS['background'])};
-                border-color: {color_to_stylesheet(QColor(50, 53, 60))};
+                border-color: {color_to_stylesheet(COLORS['border_subtle'])};
             }}
             QCheckBox:disabled {{
                 color: {color_to_stylesheet(COLORS['text_dim'])};
@@ -1566,3 +1622,82 @@ class MainWindow(QMainWindow):
                 background: none;
             }}
         """)
+
+    def _on_theme_changed(self, theme_name: str) -> None:
+        """Handle theme selection from combo box."""
+        if theme_name == self._current_theme:
+            return
+        apply_theme(theme_name)
+        self._current_theme = theme_name
+        QSettings('Cabana', 'CabanaGUI').setValue('theme', theme_name)
+        self._setup_styles()
+        self.set_theme()
+        self._reapply_widget_styles()
+
+    def _reapply_widget_styles(self) -> None:
+        """Re-apply cached styles to all individually-styled widgets after theme change."""
+        # Group boxes
+        for group in (self.image_group, self.params_group, self.analysis_group):
+            group.setStyleSheet(self.group_style)
+
+        # Buttons
+        for btn in (self.load_btn, self.reload_btn, self.load_params_btn, self.export_btn,
+                     self.param_btn, self.input_btn, self.output_btn):
+            btn.setStyleSheet(self.btn_style)
+
+        # Primary buttons
+        for btn in (self.segment_btn, self.detect_btn, self.analyze_btn, self.process_batch_btn):
+            btn.setStyleSheet(self.primary_btn_style)
+
+        # Tabs
+        self.tabs.setStyleSheet(self.tab_style)
+
+        # Progress bar
+        self.progress_bar.setStyleSheet(self.progressbar_style)
+
+        # Spinboxes
+        self.batch_size_spinner.setStyleSheet(self.spinner_style)
+
+        # Checkboxes
+        for cb in (self.white_bg_cb, self.toggle_img_cb, self.dark_line_cb,
+                   self.extend_line_cb, self.overlay_fibres_cb, self.overlay_gaps_cb,
+                   self.stats_cb, self.scores_cb):
+            cb.setStyleSheet(self.checkbox_style)
+
+        # Path edits
+        for edit in (self.param_file_path, self.input_folder_path, self.output_folder_path):
+            edit.setStyleSheet(self.path_edit_style)
+
+        # Value labels (slider readouts)
+        for label in (self.color_thresh_value, self.num_labels_value, self.max_iters_value,
+                      self.line_width_value, self.line_step_value, self.contrast_value,
+                      self.min_length_value, self.min_gap_value, self.max_hdm_value):
+            label.setStyleSheet(self.value_label_style)
+
+        # Status bar
+        self.status_bar.setStyleSheet(self.status_bar_style)
+
+        # Theme combo
+        self.theme_combo.setStyleSheet(self.theme_combo_style)
+
+        # Dock panel palette
+        dock_palette = self.dock_contents.palette()
+        dock_palette.setColor(QPalette.Window, COLORS['dock'])
+        self.dock_contents.setPalette(dock_palette)
+
+        # Image panel palette
+        img_palette = self.image_panel.palette()
+        img_palette.setColor(self.image_panel.backgroundRole(), COLORS['canvas'])
+        self.image_panel.setPalette(img_palette)
+
+        # Update toggle labels with current theme colors
+        if hasattr(self, 'toggle_seg_btn') and self.toggle_seg_btn.isChecked():
+            self.toggle_seg_label.setText(
+                f"Segmentation <b><span style='color: {COLORS['highlight'].name()};'>Enabled</span></b>")
+        if hasattr(self, 'toggle_gap_btn') and self.toggle_gap_btn.isChecked():
+            self.toggle_gap_label.setText(
+                f"Gap Analysis <b><span style='color: {COLORS['highlight'].name()};'>Enabled</span></b>")
+
+        # Force repaint on all widgets
+        for widget in self.findChildren(QWidget):
+            widget.update()

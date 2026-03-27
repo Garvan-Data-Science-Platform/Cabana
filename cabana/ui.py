@@ -28,21 +28,19 @@ from PyQt5.QtCore import QThread, pyqtSignal
 SEED = 0
 torch.use_deterministic_algorithms(True)
 
-# Color scheme
-COLORS = {
-    'background': QColor(30, 33, 39),   # Main background (deepened)
-    'surface':    QColor(42, 45, 53),    # Intermediate surface (tab panes)
-    'canvas':     QColor(28, 28, 36),    # Image area (darkest layer)
-    'dock':       QColor(53, 57, 65),    # Dock/sidebar
-    'elevated':   QColor(68, 72, 82),    # Elevated surface (hover states)
-    'highlight':  QColor(100, 185, 220), # Highlight color (cyan)
-    'secondary':  QColor(190, 195, 200), # Secondary text/icons
-    'text':       QColor(225, 228, 232), # Text color (softer white)
-    'text_dim':   QColor(140, 145, 155), # Dim text (disabled/values)
-    'border':     QColor(62, 67, 78),    # Border color
-    'warning':    QColor(235, 75, 75),   # Warning color
-    'success':    QColor(80, 190, 130),  # Success color
-}
+# Color scheme — mutable dict, repopulated by apply_theme()
+from .themes import THEMES, DEFAULT_THEME
+
+COLORS = {}
+
+def apply_theme(theme_name: str) -> None:
+    """Replace COLORS contents with the given theme's QColor values."""
+    theme_data = THEMES[theme_name]
+    COLORS.clear()
+    for key, value in theme_data.items():
+        COLORS[key] = QColor(*value)
+
+apply_theme(DEFAULT_THEME)
 
 FONT_SIZES = {
     'base': 12,
@@ -52,45 +50,33 @@ FONT_SIZES = {
 
 
 def color_to_stylesheet(color: QColor) -> str:
-    """Convert QColor to style sheet color string"""
+    """Convert QColor to stylesheet color string, with alpha support."""
+    if color.alpha() < 255:
+        return f"rgba({color.red()}, {color.green()}, {color.blue()}, {color.alpha() / 255:.2f})"
     return f"rgb({color.red()}, {color.green()}, {color.blue()})"
 
 
 class AutoWidthTabBar(QTabBar):
-    """Ensure each tab is wide enough to display its full label."""
+    """Give tabs a larger ideal width while allowing elision when space is tight."""
 
-    TAB_HORIZONTAL_PADDING = 28
+    EXTRA_TAB_WIDTH = 16
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setElideMode(Qt.ElideRight)
 
     def tabSizeHint(self, index):
         size = super().tabSizeHint(index)
-        text_width = self.fontMetrics().horizontalAdvance(self.tabText(index))
-        size.setWidth(max(size.width(), text_width + self.TAB_HORIZONTAL_PADDING))
+        size.setWidth(size.width() + self.EXTRA_TAB_WIDTH)
         return size
 
 
-def generate_spinner_style(bg_color=COLORS['dock'],
-                          text_color=COLORS['text'],
-                          border_color=COLORS['border'],
-                          highlight_color=COLORS['highlight'],
-                          highlight_text_color=COLORS['background']):
-    """Generate a styled QSpinBox with theme colors
-
-    Parameters:
-    ----------
-    background_color : QColor
-        Background color for the spinbox
-    text_color : QColor
-        Text color for the spinbox
-    border_color : QColor
-        Border color for the spinbox
-    highlight_color : QColor
-        Highlight color for hover and focus states
-
-    Returns:
-    -------
-    str
-        CSS stylesheet for the spinbox
-    """
+def generate_spinner_style():
+    """Generate a styled QSpinBox with theme colors."""
+    bg_color = COLORS['dock']
+    text_color = COLORS['text']
+    border_color = COLORS['border']
+    highlight_color = COLORS['highlight']
     return f"""
         QSpinBox {{
             background-color: rgb({bg_color.red()}, {bg_color.green()}, {bg_color.blue()});
@@ -131,55 +117,54 @@ def generate_spinner_style(bg_color=COLORS['dock'],
         }}
 
         QSpinBox:focus {{
-            border: 1px solid rgb({highlight_text_color.red()}, {highlight_text_color.green()}, {highlight_text_color.blue()});
+            border: 1px solid {color_to_stylesheet(highlight_color)};
         }}
 
         QSpinBox:disabled {{
             background-color: {color_to_stylesheet(COLORS['background'])};
             color: {color_to_stylesheet(COLORS['text_dim'])};
-            border-color: {color_to_stylesheet(QColor(50, 53, 60))};
+            border-color: {color_to_stylesheet(COLORS['border_subtle'])};
         }}
     """
 
-def generate_button_style(bg_color=COLORS['dock'],
-                          text_color=COLORS['text'],
-                          border_color=COLORS['border'],
-                          highlight_color=COLORS['highlight'],
-                          highlight_text_color=COLORS['background']):
-    """Generate button stylesheet with specified colors"""
+def generate_button_style():
+    """Generate button stylesheet with specified colors."""
+    bg_color = COLORS['dock']
+    text_color = COLORS['text']
+    border_color = COLORS['border']
+    highlight_color = COLORS['highlight']
     return f"""
         QPushButton {{
             background-color: {color_to_stylesheet(bg_color)};
             color: {color_to_stylesheet(text_color)};
             border: 1px solid {color_to_stylesheet(border_color)};
             border-radius: 4px;
-            padding: 6px 12px;
+            padding: 8px 12px;
             font-size: {FONT_SIZES['base']}px;
             font-weight: 600;
         }}
         QPushButton:hover {{
-            background-color: {color_to_stylesheet(highlight_color)};
-            color: {color_to_stylesheet(highlight_text_color)};
+            background-color: {color_to_stylesheet(COLORS['hover'])};
+            color: {color_to_stylesheet(highlight_color)};
             border-color: {color_to_stylesheet(highlight_color)};
         }}
         QPushButton:pressed {{
-            background-color: {color_to_stylesheet(highlight_color.darker(120))};
-            color: {color_to_stylesheet(highlight_text_color)};
+            background-color: {color_to_stylesheet(COLORS['active'])};
+            color: {color_to_stylesheet(highlight_color)};
+            border-color: {color_to_stylesheet(highlight_color)};
         }}
         QPushButton:disabled {{
-            background-color: {color_to_stylesheet(COLORS['background'])};
-            color: {color_to_stylesheet(COLORS['text_dim'])};
-            border-color: {color_to_stylesheet(QColor(50, 53, 60))};
+            background-color: {color_to_stylesheet(COLORS['surface'])};
+            color: {color_to_stylesheet(COLORS['text_muted'])};
+            border-color: {color_to_stylesheet(COLORS['border_subtle'])};
         }}
     """
 
 
-def generate_tab_style(bg_color=COLORS['dock'],
-                       text_color=COLORS['text'],
-                       border_color=COLORS['border'],
-                       highlight_color=COLORS['highlight'],
-                       highlight_text_color=COLORS['background']):
-    """Generate tab widget stylesheet with specified colors"""
+def generate_tab_style():
+    """Generate tab widget stylesheet with specified colors."""
+    border_color = COLORS['border']
+    highlight_color = COLORS['highlight']
     return f"""
         QTabWidget::pane {{
             border: 1px solid {color_to_stylesheet(border_color)};
@@ -197,15 +182,16 @@ def generate_tab_style(bg_color=COLORS['dock'],
             color: {color_to_stylesheet(COLORS['text_dim'])};
             border: none;
             border-bottom: 2px solid transparent;
-            padding: 6px 10px;
+            padding: 6px 12px;
             font-size: {FONT_SIZES['base']}px;
             font-weight: 500;
-            margin-right: 2px;
+            margin: 0px;
         }}
 
         QTabBar::tab:hover {{
-            color: {color_to_stylesheet(text_color)};
-            border-bottom: 2px solid {color_to_stylesheet(COLORS['elevated'])};
+            background-color: {color_to_stylesheet(COLORS['hover'])};
+            color: {color_to_stylesheet(highlight_color)};
+            border-bottom: 2px solid {color_to_stylesheet(highlight_color)};
         }}
 
         QTabBar::tab:selected {{
@@ -215,23 +201,20 @@ def generate_tab_style(bg_color=COLORS['dock'],
     """
 
 
-def generate_primary_button_style(bg_color=COLORS['highlight'],
-                                  text_color=COLORS['background'],
-                                  border_color=COLORS['highlight'],
-                                  hover_color=None,
-                                  pressed_color=None):
-    """Generate a filled primary action button stylesheet"""
-    if hover_color is None:
-        hover_color = bg_color.lighter(120)
-    if pressed_color is None:
-        pressed_color = bg_color.darker(120)
+def generate_primary_button_style():
+    """Generate a filled primary action button stylesheet."""
+    bg_color = COLORS['highlight']
+    text_color = COLORS['background']
+    border_color = COLORS['highlight']
+    hover_color = COLORS['highlight_hover']
+    pressed_color = COLORS['highlight_dim']
     return f"""
         QPushButton {{
             background-color: {color_to_stylesheet(bg_color)};
             color: {color_to_stylesheet(text_color)};
             border: 1px solid {color_to_stylesheet(border_color)};
             border-radius: 4px;
-            padding: 7px 12px;
+            padding: 9px 12px;
             font-size: {FONT_SIZES['base']}px;
             font-weight: 700;
         }}
@@ -244,28 +227,19 @@ def generate_primary_button_style(bg_color=COLORS['highlight'],
             border-color: {color_to_stylesheet(pressed_color)};
         }}
         QPushButton:disabled {{
-            background-color: {color_to_stylesheet(COLORS['background'])};
-            color: {color_to_stylesheet(COLORS['text_dim'])};
-            border-color: {color_to_stylesheet(QColor(50, 53, 60))};
+            background-color: {color_to_stylesheet(COLORS['surface'])};
+            color: {color_to_stylesheet(COLORS['text_muted'])};
+            border-color: {color_to_stylesheet(COLORS['border_subtle'])};
         }}
     """
 
 
-def generate_progressbar_style(bg_color=COLORS['background'],
-                               text_color=COLORS['text'],
-                               border_color=COLORS['border'],
-                               progress_color=COLORS['highlight']):
-    """Generate progress bar stylesheet with specified colors
-
-    Args:
-        bg_color: Background color for the progress bar
-        text_color: Text color for the progress text
-        border_color: Border color for the progress bar
-        progress_color: Color for the progress indicator (chunk)
-
-    Returns:
-        Stylesheet string for progress bars
-    """
+def generate_progressbar_style():
+    """Generate progress bar stylesheet with specified colors."""
+    bg_color = COLORS['background']
+    text_color = COLORS['text']
+    border_color = COLORS['border']
+    progress_color = COLORS['highlight']
     return f"""
         QProgressBar {{
             background-color: {color_to_stylesheet(bg_color)};
@@ -287,34 +261,14 @@ def generate_progressbar_style(bg_color=COLORS['background'],
     """
 
 
-def generate_messagebox_style(bg_color=COLORS['background'],
-                              text_color=COLORS['text'],
-                              border_color=COLORS['border'],
-                              highlight_color=COLORS['highlight'],
-                              highlight_text_color=COLORS['background'],
-                              button_bg_color=COLORS['dock']):
-    """Generate QMessageBox stylesheet with specified colors
-
-    Parameters:
-    ----------
-    bg_color : QColor
-        Background color for the message box
-    text_color : QColor
-        Text color for the message box content
-    border_color : QColor
-        Border color for the message box
-    highlight_color : QColor
-        Highlight color for interactive elements
-    highlight_text_color : QColor
-        Text color for highlighted elements
-    button_bg_color : QColor
-        Background color for buttons
-
-    Returns:
-    -------
-    str
-        CSS stylesheet for QMessageBox
-    """
+def generate_messagebox_style():
+    """Generate QMessageBox stylesheet with specified colors."""
+    bg_color = COLORS['background']
+    text_color = COLORS['text']
+    border_color = COLORS['border']
+    highlight_color = COLORS['highlight']
+    highlight_text_color = COLORS['background']
+    button_bg_color = COLORS['dock']
     return f"""
         QMessageBox {{
             background-color: {color_to_stylesheet(bg_color)};
@@ -345,7 +299,7 @@ def generate_messagebox_style(bg_color=COLORS['background'],
         }}
 
         QMessageBox QPushButton:pressed {{
-            background-color: {color_to_stylesheet(QColor(80, 160, 190))};
+            background-color: {color_to_stylesheet(highlight_color.darker(120))};
         }}
 
         QMessageBox QCheckBox {{
@@ -374,12 +328,13 @@ def generate_messagebox_style(bg_color=COLORS['background'],
         }}
     """
 
-def generate_toolbar_style(bg_color=COLORS['dock'],
-                           text_color=COLORS['text'],
-                           border_color=COLORS['border'],
-                           highlight_color=COLORS['highlight'],
-                           highlight_text_color=COLORS['background']):
-    """Generate a compact toolbar stylesheet"""
+def generate_toolbar_style():
+    """Generate a compact toolbar stylesheet."""
+    bg_color = COLORS['dock']
+    text_color = COLORS['text']
+    border_color = COLORS['border']
+    highlight_color = COLORS['highlight']
+    highlight_text_color = COLORS['background']
     return f"""
         QToolBar {{
             background-color: {color_to_stylesheet(bg_color)};
@@ -417,9 +372,10 @@ def generate_toolbar_style(bg_color=COLORS['dock'],
     """
 
 
-def generate_section_header_style(text_color=COLORS['text'],
-                                  border_color=COLORS['border']):
-    """Generate a section header label stylesheet"""
+def generate_section_header_style():
+    """Generate a section header label stylesheet."""
+    text_color = COLORS['text']
+    border_color = COLORS['border']
     return (f"color: {color_to_stylesheet(text_color)}; font-weight: 600; "
             f"font-size: {FONT_SIZES['title']}px; "
             f"padding: 4px 0px 2px 0px; "
@@ -427,14 +383,82 @@ def generate_section_header_style(text_color=COLORS['text'],
             f"margin-bottom: 2px;")
 
 
-def create_separator(color=COLORS['border']):
-    """Create a thin horizontal separator line"""
+def generate_checkbox_style():
+    """Generate a styled QCheckBox with hover and checked states."""
+    text_color = COLORS['text']
+    border_color = COLORS['border']
+    bg_color = COLORS['dock']
+    highlight_color = COLORS['highlight']
+    highlight_text_color = COLORS['background']
+    return f"""
+        QCheckBox {{
+            color: {color_to_stylesheet(text_color)};
+            spacing: 6px;
+            padding: 4px 6px;
+            border-radius: 4px;
+            font-size: {FONT_SIZES['base']}px;
+        }}
+        QCheckBox:hover {{
+            color: {color_to_stylesheet(highlight_color)};
+            background-color: {color_to_stylesheet(COLORS['hover'])};
+            border-radius: 4px;
+        }}
+        QCheckBox::indicator {{
+            width: 16px;
+            height: 16px;
+            border: 1px solid {color_to_stylesheet(border_color)};
+            border-radius: 3px;
+            background-color: {color_to_stylesheet(bg_color)};
+        }}
+        QCheckBox::indicator:hover {{
+            border-color: {color_to_stylesheet(highlight_color)};
+        }}
+        QCheckBox::indicator:checked {{
+            background-color: {color_to_stylesheet(highlight_color)};
+            border-color: {color_to_stylesheet(highlight_color)};
+            image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%23{highlight_text_color.red():02x}{highlight_text_color.green():02x}{highlight_text_color.blue():02x}' d='M1,5 L3.5,7.5 L9,2'/%3E%3C/svg%3E");
+        }}
+        QCheckBox:disabled {{
+            color: {color_to_stylesheet(COLORS['text_muted'])};
+        }}
+        QCheckBox::indicator:disabled {{
+            background-color: {color_to_stylesheet(COLORS['background'])};
+            border-color: {color_to_stylesheet(COLORS['border_subtle'])};
+        }}
+    """
+
+
+def generate_group_box_style():
+    """Generate a QGroupBox stylesheet with thin border and inset title."""
+    text_color = COLORS['text_dim']
+    border_color = COLORS['border']
+    return f"""
+        QGroupBox {{
+            border: 1px solid {color_to_stylesheet(border_color)};
+            border-radius: 6px;
+            margin-top: 6px;
+            padding: 14px 8px 8px 8px;
+            font-size: {FONT_SIZES['base']}px;
+            font-weight: 600;
+            color: {color_to_stylesheet(text_color)};
+        }}
+        QGroupBox::title {{
+            subcontrol-origin: margin;
+            subcontrol-position: top left;
+            padding: 0 6px;
+            left: 10px;
+        }}
+    """
+
+
+def create_separator():
+    """Create a thin horizontal separator line."""
     from PyQt5.QtWidgets import QFrame
     sep = QFrame()
     sep.setFrameShape(QFrame.HLine)
     sep.setFrameShadow(QFrame.Plain)
     sep.setFixedHeight(1)
-    sep.setStyleSheet(f"background-color: {color_to_stylesheet(color)}; border: none;")
+    sep.setStyleSheet(f"background-color: {color_to_stylesheet(COLORS['border'])}; border: none;")
     return sep
 
 
@@ -1271,11 +1295,10 @@ class CustomSplitterHandle(QSplitterHandle):
         """Override paint event to draw the handle based on hover state"""
         painter = QPainter(self)
 
-        # Set background transparent by default
+        # Set background to border color by default (blends with both dark/light themes)
         if not self.is_hover:
-            # When not hovering, just draw the dots
-            # Clear the background first (make it transparent)
-            painter.fillRect(self.rect(), Qt.transparent)
+            # When not hovering, draw subtle border-colored background with dots
+            painter.fillRect(self.rect(), COLORS['border'])
 
             # Set up the painter for the dots - only when hovering
             painter.setBrush(COLORS['secondary'])
@@ -1877,12 +1900,8 @@ class ToggleButton(QWidget):
         self._animation.setDuration(150)
         self._animation.setEasingCurve(QEasingCurve.OutCubic)
 
-        # Colors
+        # Colors — read from COLORS at paint time for theme support
         self.bg_color_off = QColor(100, 100, 100)
-        self.bg_color_on = COLORS['highlight']
-        self.slider_color_off = COLORS['text']
-        self.slider_color_on = COLORS['text']
-        self.border_color = COLORS['background']
 
     def setCheckable(self, checkable):
         """Set whether the button is checkable"""
@@ -1984,9 +2003,9 @@ class ToggleButton(QWidget):
 
         # Background color based on state
         if self._checked:
-            bg_color = self.bg_color_on
+            bg_color = QColor(COLORS['highlight'])
         else:
-            bg_color = self.bg_color_off
+            bg_color = QColor(self.bg_color_off)
 
         # Adjust opacity if disabled
         if not self._enabled:
@@ -1994,7 +2013,7 @@ class ToggleButton(QWidget):
 
         # Draw track background
         painter.setBrush(QBrush(bg_color))
-        painter.setPen(QPen(self.border_color, 1))
+        painter.setPen(QPen(COLORS['background'], 1))
         painter.drawRoundedRect(track_rect, track_radius, track_radius)
 
         # Calculate slider position
@@ -2002,10 +2021,7 @@ class ToggleButton(QWidget):
         slider_y = (h - slider_radius * 2) / 2
 
         # Draw slider with color based on state
-        if self._checked:
-            slider_color = self.slider_color_on  # White when on
-        else:
-            slider_color = self.slider_color_off  # Black when off
+        slider_color = QColor(COLORS['text'])
 
         if not self._enabled:
             slider_color = QColor(slider_color)  # Create copy to avoid modifying original

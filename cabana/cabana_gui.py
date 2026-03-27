@@ -11,7 +11,7 @@ from .utils import join_path
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QSpinBox,
                              QVBoxLayout, QHBoxLayout, QTabWidget, QCheckBox,
                              QPushButton, QFileDialog, QSizePolicy, QColorDialog,
-                             QMessageBox, QToolBar, QToolButton,
+                             QMessageBox,
                              QStatusBar, QLineEdit)
 from PyQt5.QtGui import QIcon, QPalette, QFont
 
@@ -59,56 +59,52 @@ class MainWindow(QMainWindow):
 
         self._setup_styles()
 
-        # --- File toolbar with labeled groups ---
-        self.file_toolbar = QToolBar("File")
-        self.file_toolbar.setMovable(False)
-        self.file_toolbar.setIconSize(QSize(16, 16))
-        self.file_toolbar.setStyleSheet(self.toolbar_style)
+        # --- Image section ---
+        image_label = QLabel("  Image")
+        image_label.setStyleSheet(generate_section_header_style())
+        self.dock_layout.addWidget(image_label)
 
-        # "Image" group
-        image_group_label = QLabel(" Image:")
-        image_group_label.setStyleSheet(
-            f"color: {color_to_stylesheet(COLORS['text_dim'])}; "
-            f"font-size: {FONT_SIZES['small']}px; font-weight: 600;")
-        self.file_toolbar.addWidget(image_group_label)
+        image_btn_layout = QHBoxLayout()
+        image_btn_layout.setContentsMargins(10, 4, 10, 4)
 
-        self.load_btn = QToolButton()
-        self.load_btn.setText("Open")
+        self.load_btn = QPushButton("Open")
+        self.load_btn.setStyleSheet(self.btn_style)
         self.load_btn.setToolTip("Load an image file")
         self.load_btn.clicked.connect(self.load_image)
-        self.file_toolbar.addWidget(self.load_btn)
+        image_btn_layout.addWidget(self.load_btn)
 
-        self.reload_btn = QToolButton()
-        self.reload_btn.setText("Reload")
+        self.reload_btn = QPushButton("Reload")
+        self.reload_btn.setStyleSheet(self.btn_style)
         self.reload_btn.setToolTip("Reload the original image")
         self.reload_btn.clicked.connect(self.reload_image)
         self.reload_btn.setEnabled(False)
-        self.file_toolbar.addWidget(self.reload_btn)
+        image_btn_layout.addWidget(self.reload_btn)
 
-        self.file_toolbar.addSeparator()
+        self.dock_layout.addLayout(image_btn_layout)
 
-        # "Parameter File" group
-        params_group_label = QLabel("Params:")
-        params_group_label.setStyleSheet(
-            f"color: {color_to_stylesheet(COLORS['text_dim'])}; "
-            f"font-size: {FONT_SIZES['small']}px; font-weight: 600;")
-        self.file_toolbar.addWidget(params_group_label)
+        # --- Parameter File section ---
+        params_label = QLabel("  Parameter File")
+        params_label.setStyleSheet(generate_section_header_style())
+        self.dock_layout.addWidget(params_label)
 
-        self.load_params_btn = QToolButton()
-        self.load_params_btn.setText("Import")
+        params_btn_layout = QHBoxLayout()
+        params_btn_layout.setContentsMargins(10, 4, 10, 4)
+
+        self.load_params_btn = QPushButton("Import")
+        self.load_params_btn.setStyleSheet(self.btn_style)
         self.load_params_btn.setToolTip("Load parameters from YAML file")
         self.load_params_btn.clicked.connect(self.import_parameters)
-        self.file_toolbar.addWidget(self.load_params_btn)
+        params_btn_layout.addWidget(self.load_params_btn)
 
-        self.export_btn = QToolButton()
-        self.export_btn.setText("Export")
+        self.export_btn = QPushButton("Export")
+        self.export_btn.setStyleSheet(self.btn_style)
         self.export_btn.setToolTip("Export parameters to YAML file")
         self.export_btn.clicked.connect(self.export_parameters)
-        self.file_toolbar.addWidget(self.export_btn)
+        params_btn_layout.addWidget(self.export_btn)
 
-        self.dock_layout.addWidget(self.file_toolbar)
+        self.dock_layout.addLayout(params_btn_layout)
 
-        # --- Analysis Settings header ---
+        # --- Analysis Settings section ---
         settings_label = QLabel("  Analysis Settings")
         settings_label.setStyleSheet(generate_section_header_style())
         self.dock_layout.addWidget(settings_label)
@@ -262,9 +258,6 @@ class MainWindow(QMainWindow):
         """Set up all style sheets"""
         # Button style
         self.btn_style = generate_button_style()
-
-        # Toolbar style
-        self.toolbar_style = generate_toolbar_style()
 
         # Tab style
         self.tab_style = generate_tab_style()

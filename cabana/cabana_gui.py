@@ -152,10 +152,7 @@ class MainWindow(QMainWindow):
         content_layout = QVBoxLayout(self.image_panel)
 
         # Create toggle button
-        self.toggle_button = QPushButton("|☰")
-        self.toggle_button.setCheckable(True)
-        self.toggle_button.setFixedWidth(40)
-        self.toggle_button.setStyleSheet(self.btn_style)
+        self.toggle_button = PanelToggleButton()
         self.toggle_button.clicked.connect(self.toggle_panel)
 
         # Add toggle button and some content to the main area
@@ -250,15 +247,11 @@ class MainWindow(QMainWindow):
 
     def toggle_panel(self):
         if self.panel_visible:
-            # Hide panel
             self.dock_contents.hide()
-            self.toggle_button.setText("☰|")
         else:
-            # Show panel
             self.dock_contents.show()
-            self.toggle_button.setText("|☰")
-
         self.panel_visible = not self.panel_visible
+        self.toggle_button.setChecked(not self.panel_visible)
 
 
     def _setup_styles(self) -> None:

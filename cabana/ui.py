@@ -19,7 +19,7 @@ from skimage.morphology import remove_small_objects, remove_small_holes
 
 from PyQt5.QtWidgets import (QSlider, QWidget, QSplitter, QSplitterHandle,
                              QMenu, QAction, QFileDialog, QMessageBox,
-                             QProgressBar, QSizePolicy, QTabBar)
+                             QProgressBar, QSizePolicy, QTabBar, QPushButton)
 from PyQt5.QtCore import Qt, QSize, QEvent, QPoint, QRect, QPropertyAnimation, QEasingCurve, pyqtProperty
 from PyQt5.QtGui import QPixmap, QPainter, QPen, QColor, QDragEnterEvent, QDropEvent, QImage, QBrush, QFont
 from PyQt5.QtCore import QThread, pyqtSignal
@@ -1366,6 +1366,51 @@ class CustomSplitter(QSplitter):
     def createHandle(self):
         """Override to create our custom handle with the three dots"""
         return CustomSplitterHandle(self.orientation(), self)
+
+
+class PanelToggleButton(QPushButton):
+    """A toggle button that draws a chevron arrow pointing left (panel visible)
+    or right (panel hidden)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCheckable(True)
+        self.setFixedSize(24, 48)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setToolTip("Toggle side panel (Ctrl+B)")
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        # Background
+        bg = COLORS['dock'] if not self.underMouse() else COLORS['elevated']
+        painter.setBrush(bg)
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(self.rect(), 4, 4)
+
+        # Draw chevron
+        painter.setPen(QPen(COLORS['highlight'] if self.underMouse() else COLORS['secondary'], 2))
+        w, h = self.width(), self.height()
+        cx, cy = w // 2, h // 2
+        arrow_h = 8  # half-height of chevron
+
+        if self.isChecked():
+            # Panel hidden → arrow points right (open)
+            painter.drawLine(cx - 3, cy - arrow_h, cx + 3, cy)
+            painter.drawLine(cx + 3, cy, cx - 3, cy + arrow_h)
+        else:
+            # Panel visible → arrow points left (close)
+            painter.drawLine(cx + 3, cy - arrow_h, cx - 3, cy)
+            painter.drawLine(cx - 3, cy, cx + 3, cy + arrow_h)
+
+    def enterEvent(self, event):
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.update()
+        super().leaveEvent(event)
 
 
 class ImagePanel(QWidget):

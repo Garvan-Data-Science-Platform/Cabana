@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QSpinBox,
                              QVBoxLayout, QHBoxLayout, QTabWidget, QCheckBox,
                              QPushButton, QFileDialog, QSizePolicy, QColorDialog,
                              QMessageBox, QToolBar, QToolButton, QShortcut,
-                             QStatusBar)
+                             QStatusBar, QLineEdit)
 from PyQt5.QtGui import QIcon, QPalette, QFont, QKeySequence
 
 from .ui import *
@@ -277,6 +277,15 @@ class MainWindow(QMainWindow):
         # Primary action button style (filled highlight)
         self.primary_btn_style = generate_primary_button_style()
 
+        # Read-only path line edit style
+        self.path_edit_style = (
+            f"QLineEdit {{ background-color: {color_to_stylesheet(COLORS['background'])}; "
+            f"color: {color_to_stylesheet(COLORS['text_dim'])}; "
+            f"border: 1px solid {color_to_stylesheet(COLORS['border'])}; "
+            f"border-radius: 3px; padding: 3px 6px; "
+            f"font-size: {FONT_SIZES['small']}px; }}"
+        )
+
     def setup_batch_processing_tab(self):
         """Set up the batch processing tab UI"""
         layout = QVBoxLayout()
@@ -288,8 +297,9 @@ class MainWindow(QMainWindow):
         param_label = QLabel("Parameter File:")
         param_layout.addWidget(param_label)
 
-        self.param_file_path = QLabel("Not selected")
-        self.param_file_path.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text_dim'])}")
+        self.param_file_path = QLineEdit("Not selected")
+        self.param_file_path.setReadOnly(True)
+        self.param_file_path.setStyleSheet(self.path_edit_style)
         param_layout.addWidget(self.param_file_path, 1)
 
         self.param_btn = QPushButton("Select")
@@ -304,8 +314,9 @@ class MainWindow(QMainWindow):
         input_label = QLabel("Input Folder:")
         input_layout.addWidget(input_label)
 
-        self.input_folder_path = QLabel("Not selected")
-        self.input_folder_path.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text_dim'])};")
+        self.input_folder_path = QLineEdit("Not selected")
+        self.input_folder_path.setReadOnly(True)
+        self.input_folder_path.setStyleSheet(self.path_edit_style)
         input_layout.addWidget(self.input_folder_path, 1)
 
         self.input_btn = QPushButton("Select")
@@ -320,8 +331,9 @@ class MainWindow(QMainWindow):
         output_label = QLabel("Output Folder:")
         output_layout.addWidget(output_label)
 
-        self.output_folder_path = QLabel("Not selected")
-        self.output_folder_path.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text_dim'])};")
+        self.output_folder_path = QLineEdit("Not selected")
+        self.output_folder_path.setReadOnly(True)
+        self.output_folder_path.setStyleSheet(self.path_edit_style)
         output_layout.addWidget(self.output_folder_path, 1)
 
         self.output_btn = QPushButton("Select")
@@ -397,11 +409,8 @@ class MainWindow(QMainWindow):
             selected_files = file_dialog.selectedFiles()
             if selected_files:
                 self.param_file = selected_files[0]
-                self.param_file_path.setText(
-                    selected_files[0] if len(selected_files[0]) <= 40 else selected_files[0][:16] + "..." + selected_files[0][-16:]
-                )
+                self.param_file_path.setText(selected_files[0])
                 self.param_file_path.setToolTip(selected_files[0])
-                self.param_file_path.setStyleSheet("color: white;")
                 self._check_batch_processing_ready()
 
     def select_input_folder(self):
@@ -412,11 +421,8 @@ class MainWindow(QMainWindow):
 
         if folder:
             self.input_folder = folder
-            self.input_folder_path.setText(
-                folder if len(folder) <= 40 else folder[:16] + "..." + folder[-16:]
-            )
+            self.input_folder_path.setText(folder)
             self.input_folder_path.setToolTip(folder)
-            self.input_folder_path.setStyleSheet("color: white;")
             self._check_batch_processing_ready()
 
     def select_output_folder(self):
@@ -427,11 +433,8 @@ class MainWindow(QMainWindow):
 
         if folder:
             self.output_folder = folder
-            self.output_folder_path.setText(
-                folder if len(folder) <= 40 else folder[:16] + "..." + folder[-16:]
-            )
+            self.output_folder_path.setText(folder)
             self.output_folder_path.setToolTip(folder)
-            self.output_folder_path.setStyleSheet("color: white;")
             self._check_batch_processing_ready()
 
     def _check_batch_processing_ready(self):

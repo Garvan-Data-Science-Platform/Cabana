@@ -1458,6 +1458,11 @@ class BatchProcessor():
         if os.path.exists(join_path(self.output_folder, '.CheckPoint.txt')):
             os.remove(join_path(self.output_folder, '.CheckPoint.txt'))
 
+        # Remove intermediate batch folders after successful merge
+        batches_path = join_path(self.output_folder, 'Batches')
+        if os.path.exists(batches_path):
+            shutil.rmtree(batches_path)
+
         # Final progress update for post-processing
         self.update_progress(99)  # Set to 99% - final 100% will be set in the run() method
 

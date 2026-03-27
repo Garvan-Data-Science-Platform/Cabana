@@ -586,11 +586,11 @@ class MainWindow(QMainWindow):
         h_layout.addWidget(self.white_bg_cb)
 
         # Add toggle checkbox for comparing with the original image
-        self.toggle_img_cb = QCheckBox("Compare With Original")
+        self.toggle_img_cb = QCheckBox("Overlay Original")
         self.toggle_img_cb.setChecked(False)
         self.toggle_img_cb.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text'])}; ")
         self.toggle_img_cb.clicked.connect(self.compare_image)
-        self.toggle_img_cb.setToolTip("Toggle to compare with the original image.")
+        self.toggle_img_cb.setToolTip("Toggle to overlay the original image.")
         h_layout.addStretch()
         h_layout.addWidget(self.toggle_img_cb)
 
@@ -1104,15 +1104,15 @@ class MainWindow(QMainWindow):
         label = "original" if show_original else "segmented"
 
         if image is not None:
-            self.image_panel.setImage(image)
+            self.image_panel.setImage(image, preserve_view=True)
         else:
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Warning)
             msg.setWindowTitle("Warning")
             msg.setText(f"No {label} image {'loaded' if label == 'original' else 'available'}.")
             msg.setStyleSheet(f"""
-                QMessageBox {{ 
-                    background-color: {COLORS['background'].name()}; 
+                QMessageBox {{
+                    background-color: {COLORS['background'].name()};
                     color: {COLORS['text'].name()};
                 }}
             """)
@@ -1126,15 +1126,15 @@ class MainWindow(QMainWindow):
         label = "fibre" if show_overlay else "original"
 
         if image is not None:
-            self.image_panel.setImage(image)
+            self.image_panel.setImage(image, preserve_view=True)
         else:
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Warning)
             msg.setWindowTitle("Warning")
             msg.setText(f"No {label} image available.")
             msg.setStyleSheet(f"""
-                            QMessageBox {{ 
-                                background-color: {COLORS['background'].name()}; 
+                            QMessageBox {{
+                                background-color: {COLORS['background'].name()};
                                 color: {COLORS['text'].name()};
                             }}
                         """)
@@ -1146,7 +1146,7 @@ class MainWindow(QMainWindow):
         image = self.gap_ovl if show_overlay else self.gap_img
 
         if image is not None:
-            self.image_panel.setImage(image)
+            self.image_panel.setImage(image, preserve_view=True)
         else:
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Warning)

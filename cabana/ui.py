@@ -1229,7 +1229,7 @@ class ImagePanel(QWidget):
         # Enable mouse tracking for zoom and pan operations
         self.setMouseTracking(True)
 
-    def setImage(self, image):
+    def setImage(self, image, preserve_view=False):
         """
         Set an image to display - accepts either a file path string or numpy array
 
@@ -1237,20 +1237,24 @@ class ImagePanel(QWidget):
         -----------
         image : str or numpy.ndarray
             Either a path to an image file, or a numpy array containing image data
+        preserve_view : bool
+            If True, keep the current zoom factor and pan offsets
         """
         if image is None:
             return
 
-        # Reset offset to 0 when setting a new image
-        self.offset_x = 0
-        self.offset_y = 0
+        if not preserve_view:
+            # Reset offset to 0 when setting a new image
+            self.offset_x = 0
+            self.offset_y = 0
 
         if isinstance(image, str):
             # If image is a file path
             self.image = QPixmap(image)
             if not self.image.isNull():
-                # Calculate zoom factor to fit the image in the panel
-                self.calculateFitZoomFactor()
+                if not preserve_view:
+                    # Calculate zoom factor to fit the image in the panel
+                    self.calculateFitZoomFactor()
                 self.update()
         else:
             # If image is a numpy array
@@ -1273,8 +1277,9 @@ class ImagePanel(QWidget):
 
                 # Convert QImage to QPixmap
                 self.image = QPixmap.fromImage(q_image)
-                # Calculate zoom factor to fit the image in the panel
-                self.calculateFitZoomFactor()
+                if not preserve_view:
+                    # Calculate zoom factor to fit the image in the panel
+                    self.calculateFitZoomFactor()
                 self.update()  # Trigger a repaint
             except Exception as e:
                 print(f"Error converting numpy array to QPixmap: {str(e)}")

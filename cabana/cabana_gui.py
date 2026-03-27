@@ -391,27 +391,16 @@ class MainWindow(QMainWindow):
 
     def select_param_file(self):
         """Open a file dialog to select a parameter file"""
-        file_dialog = QFileDialog(self)
-        file_dialog.setNameFilter("YAML Files (*.yml *.yaml)")
-        file_dialog.setWindowTitle("Select Parameter File")
-        file_dialog.setFileMode(QFileDialog.ExistingFile)
-        file_dialog.setDirectory(os.path.expanduser('~/Documents'))
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select Parameter File",
+            os.path.expanduser('~/Documents'),
+            "YAML Files (*.yml *.yaml)")
 
-        # Style the dialog to match theme
-        file_dialog.setStyleSheet(f"""
-            QFileDialog {{
-                background-color: {color_to_stylesheet(COLORS['background'])};
-                color: {color_to_stylesheet(COLORS['text'])};
-            }}
-        """)
-
-        if file_dialog.exec_():
-            selected_files = file_dialog.selectedFiles()
-            if selected_files:
-                self.param_file = selected_files[0]
-                self.param_file_path.setText(selected_files[0])
-                self.param_file_path.setToolTip(selected_files[0])
-                self._check_batch_processing_ready()
+        if file_path:
+            self.param_file = file_path
+            self.param_file_path.setText(file_path)
+            self.param_file_path.setToolTip(file_path)
+            self._check_batch_processing_ready()
 
     def select_input_folder(self):
         """Open a file dialog to select an input folder"""
@@ -1139,58 +1128,32 @@ class MainWindow(QMainWindow):
 
     def load_image(self):
         """Open a file dialog to select an image file"""
-        file_dialog = QFileDialog(self)
-        file_dialog.setNameFilter("Images (*.png *.jpg *.jpeg *.bmp *.tiff *.tif)")
-        file_dialog.setWindowTitle("Select Image")
-        file_dialog.setFileMode(QFileDialog.ExistingFile)
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select Image", "",
+            "Images (*.png *.jpg *.jpeg *.bmp *.tiff *.tif)")
 
-        # Style the file dialog to match the theme
-        file_dialog.setStyleSheet(f"""
-            QFileDialog {{
-                background-color: {color_to_stylesheet(COLORS['background'])};
-                color: {color_to_stylesheet(COLORS['text'])};
-            }}
-            QFileDialog QLabel {{ 
-                color: {color_to_stylesheet(COLORS['text'])}; 
-            }}
-            QFileDialog QPushButton {{ 
-                background-color: {color_to_stylesheet(COLORS['dock'])};
-                color: {color_to_stylesheet(COLORS['text'])};
-                border: 1px solid {color_to_stylesheet(COLORS['border'])};
-                border-radius: 4px;
-                padding: 4px 8px;
-            }}
-            QFileDialog QPushButton:hover {{ 
-                background-color: {color_to_stylesheet(COLORS['highlight'])};
-                color: {color_to_stylesheet(COLORS['background'])};
-            }}
-        """)
+        if file_path:
+            img = tiff.imread(file_path) if file_path.lower().endswith(('.tif', '.tiff')) else iio.imread(file_path)
+            if img.dtype != np.uint8:
+                self.ori_img = ((img - img.min()) / (img.max() - img.min()) * 255).astype(np.uint8)
+            else:
+                self.ori_img = img
+            self.image_panel.setImage(self.ori_img)
+            self.img_path = file_path
+            if len(self.ori_img.shape) < 3:
+                self.ori_img = np.repeat(self.ori_img[:, :, np.newaxis], 3, axis=2)
+            elif len(self.ori_img.shape) == 3 and self.ori_img.shape[2] > 3:
+                self.ori_img = self.ori_img[:, :, :3]
 
-        if file_dialog.exec_():
-            selected_files = file_dialog.selectedFiles()
-            if selected_files:
-                img = tiff.imread(selected_files[0]) if selected_files[0].lower().endswith(('.tif', '.tiff')) else iio.imread(selected_files[0])
-                if img.dtype != np.uint8:
-                    self.ori_img = ((img - img.min()) / (img.max() - img.min()) * 255).astype(np.uint8)
-                else:
-                    self.ori_img = img
-                self.image_panel.setImage(self.ori_img)
-                self.img_path = selected_files[0]
-                if len(self.ori_img.shape) < 3:
-                    self.ori_img = np.repeat(self.ori_img[:, :, np.newaxis], 3, axis=2)
-                elif len(self.ori_img.shape) == 3 and self.ori_img.shape[2] > 3:
-                    # Remove alpha channel if present
-                    self.ori_img = self.ori_img[:, :, :3]
-
-                self.seg_img = None
-                self.frb_img = None
-                self.wdt_img = None
-                self.gap_img = None
-                self.gap_ovl = None
-                self.segment_btn.setEnabled(True)
-                self.detect_btn.setEnabled(True)
-                self.reload_btn.setEnabled(True)
-                self._update_image_status()
+            self.seg_img = None
+            self.frb_img = None
+            self.wdt_img = None
+            self.gap_img = None
+            self.gap_ovl = None
+            self.segment_btn.setEnabled(True)
+            self.detect_btn.setEnabled(True)
+            self.reload_btn.setEnabled(True)
+            self._update_image_status()
 
     def reload_image(self):
         """Reload the original image"""

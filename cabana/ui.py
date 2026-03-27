@@ -1733,25 +1733,12 @@ class ImagePanel(QWidget):
 
         # Draw drag and drop highlight overlay when active
         if self.drag_active:
-            # Semi-transparent overlay
-            highlight_color = QColor(COLORS['highlight'])
-            highlight_color.setAlpha(40)
-            painter.fillRect(self.rect(), highlight_color)
-
             # Dashed border
             pen = QPen(COLORS['highlight'])
             pen.setWidth(3)
             pen.setStyle(Qt.DashLine)
             painter.setPen(pen)
             painter.drawRect(self.rect().adjusted(4, 4, -4, -4))
-
-            # Centered drop label
-            painter.setPen(COLORS['highlight'])
-            drop_font = QFont()
-            drop_font.setPointSize(16)
-            drop_font.setBold(True)
-            painter.setFont(drop_font)
-            painter.drawText(self.rect(), Qt.AlignCenter, "Drop Image Here")
 
     def contextMenuEvent(self, event):
         """Handle right-click context menu events"""

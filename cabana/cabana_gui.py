@@ -292,6 +292,7 @@ class MainWindow(QMainWindow):
         # Parameter file selection
         param_layout = QHBoxLayout()
         param_label = QLabel("Parameter File:")
+        param_label.setFixedWidth(95)
         param_layout.addWidget(param_label)
 
         self.param_file_path = QLineEdit("Not selected")
@@ -309,6 +310,7 @@ class MainWindow(QMainWindow):
         # Input folder selection
         input_layout = QHBoxLayout()
         input_label = QLabel("Input Folder:")
+        input_label.setFixedWidth(95)
         input_layout.addWidget(input_label)
 
         self.input_folder_path = QLineEdit("Not selected")
@@ -326,6 +328,7 @@ class MainWindow(QMainWindow):
         # Output folder selection
         output_layout = QHBoxLayout()
         output_label = QLabel("Output Folder:")
+        output_label.setFixedWidth(95)
         output_layout.addWidget(output_label)
 
         self.output_folder_path = QLineEdit("Not selected")
@@ -356,6 +359,7 @@ class MainWindow(QMainWindow):
 
         # Post-processing options
         options_layout = QHBoxLayout()
+        options_layout.setSpacing(16)
 
         self.stats_cb = QCheckBox("Stats")
         self.stats_cb.setChecked(False)
@@ -546,7 +550,7 @@ class MainWindow(QMainWindow):
         """Set up the segmentation tab UI"""
         layout = QVBoxLayout()
         layout.setContentsMargins(6, 10, 6, 6)
-        layout.setSpacing(6)
+        layout.setSpacing(10)
 
         color_group_layout = QVBoxLayout()
 
@@ -680,7 +684,7 @@ class MainWindow(QMainWindow):
         """Set up the detection tab UI with range sliders"""
         layout = QVBoxLayout()
         layout.setContentsMargins(6, 10, 6, 6)
-        layout.setSpacing(6)
+        layout.setSpacing(10)
 
         # Line width range slider
         line_width_layout = QHBoxLayout()
@@ -800,7 +804,7 @@ class MainWindow(QMainWindow):
         """Set up the gap analysis tab UI"""
         layout = QVBoxLayout()
         layout.setContentsMargins(6, 10, 6, 6)
-        layout.setSpacing(6)
+        layout.setSpacing(10)
 
         self.toggle_gap_label = QLabel()
         self.toggle_gap_label.setText(

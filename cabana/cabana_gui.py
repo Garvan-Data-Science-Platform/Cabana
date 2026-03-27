@@ -11,7 +11,8 @@ from .utils import join_path
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QSpinBox,
                              QVBoxLayout, QHBoxLayout, QTabWidget, QCheckBox,
                              QPushButton, QFileDialog, QSizePolicy, QColorDialog,
-                             QMessageBox, QToolBar, QToolButton, QShortcut)
+                             QMessageBox, QToolBar, QToolButton, QShortcut,
+                             QStatusBar)
 from PyQt5.QtGui import QIcon, QPalette, QFont, QKeySequence
 
 from .ui import *
@@ -202,8 +203,42 @@ class MainWindow(QMainWindow):
         self.load_default_params()
         self.panel_visible = True
 
+        # --- Status bar ---
+        self.status_bar = QStatusBar()
+        self.status_bar.setStyleSheet(
+            f"QStatusBar {{ background-color: {color_to_stylesheet(COLORS['background'])}; "
+            f"color: {color_to_stylesheet(COLORS['text_dim'])}; "
+            f"border-top: 1px solid {color_to_stylesheet(COLORS['border'])}; "
+            f"font-size: {FONT_SIZES['small']}px; padding: 2px 8px; }}"
+            f"QStatusBar::item {{ border: none; }}")
+        self.setStatusBar(self.status_bar)
+        self.status_file_label = QLabel("No image loaded")
+        self.status_dims_label = QLabel("")
+        self.status_zoom_label = QLabel("")
+        self.status_bar.addWidget(self.status_file_label, 1)
+        self.status_bar.addPermanentWidget(self.status_dims_label)
+        self.status_bar.addPermanentWidget(self.status_zoom_label)
+
+        # Connect zoom updates from image panel
+        self.image_panel.zoomChanged.connect(self._update_zoom_status)
+
         # --- Keyboard shortcuts ---
         self._setup_shortcuts()
+
+    def _update_zoom_status(self, zoom_factor):
+        """Update the zoom display in the status bar"""
+        self.status_zoom_label.setText(f"Zoom: {zoom_factor:.0%}  ")
+
+    def _update_image_status(self):
+        """Update status bar with current image info"""
+        if self.img_path and self.ori_img is not None:
+            filename = os.path.basename(self.img_path)
+            h, w = self.ori_img.shape[:2]
+            self.status_file_label.setText(f"  {filename}")
+            self.status_dims_label.setText(f"{w} x {h}  ")
+        else:
+            self.status_file_label.setText("  No image loaded")
+            self.status_dims_label.setText("")
 
     def _setup_shortcuts(self):
         """Set up keyboard shortcuts"""
@@ -1095,12 +1130,14 @@ class MainWindow(QMainWindow):
             self.wdt_img = None
             self.gap_img = None
             self.gap_ovl = None
+            self._update_image_status()
         except Exception as e:
             self.ori_img = None
             self.img_path = None
             self.segment_btn.setEnabled(False)
             self.detect_btn.setEnabled(False)
             self.reload_btn.setEnabled(False)
+            self._update_image_status()
             print(f"Error loading image: {e}")
 
 
@@ -1157,6 +1194,7 @@ class MainWindow(QMainWindow):
                 self.segment_btn.setEnabled(True)
                 self.detect_btn.setEnabled(True)
                 self.reload_btn.setEnabled(True)
+                self._update_image_status()
 
     def reload_image(self):
         """Reload the original image"""

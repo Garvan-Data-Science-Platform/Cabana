@@ -1370,6 +1370,7 @@ class CustomSplitter(QSplitter):
 
 class ImagePanel(QWidget):
     imageDropped = pyqtSignal(str)
+    zoomChanged = pyqtSignal(float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1485,6 +1486,7 @@ class ImagePanel(QWidget):
 
         # Ensure the zoom factor is within bounds
         self.zoom_factor = max(self.min_zoom, min(self.zoom_factor, self.max_zoom))
+        self.zoomChanged.emit(self.zoom_factor)
 
     def wheelEvent(self, event):
         """Handle mouse wheel events for zooming"""
@@ -1535,6 +1537,7 @@ class ImagePanel(QWidget):
 
             # Update the display
             self.update()
+            self.zoomChanged.emit(self.zoom_factor)
 
     def mousePressEvent(self, event):
         """Handle mouse press events for panning"""
@@ -1674,12 +1677,6 @@ class ImagePanel(QWidget):
 
             # Draw the image at the calculated position
             painter.drawPixmap(int(x), int(y), scaled_pixmap)
-
-            # Draw zoom info in the upper-right corner
-            zoom_text = f"Zoom: {self.zoom_factor:.2f}x"
-            text_width = painter.fontMetrics().horizontalAdvance(zoom_text)
-            painter.setPen(COLORS['highlight'])
-            painter.drawText(self.width() - text_width - 10, 20, zoom_text)
         else:
             # Draw placeholder text
             painter.setPen(COLORS['highlight'])

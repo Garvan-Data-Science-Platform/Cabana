@@ -17,9 +17,12 @@ setuptools.setup(
     url="https://github.com/lxfhfut/cabana.git",
     install_requires=requirements,
     packages=setuptools.find_packages(),
+    package_data={
+        'cabana': ['cabana-logo.ico'],
+    },
     entry_points={
-            'console_scripts': [
-                'cabana-gui=cabana.cabana_gui:main',
+            'gui_scripts': [
+                'cabana-gui=cabana.__main__:main',
             ],
         },
     classifiers=[

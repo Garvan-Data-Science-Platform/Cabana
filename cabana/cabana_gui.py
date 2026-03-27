@@ -181,16 +181,20 @@ class MainWindow(QMainWindow):
         self.dock_contents.setMinimumWidth(200)
 
         # Set initial sizes so the left panel opens wide enough for the full Analysis tab labels.
+        # Account for all nesting: dock_layout margins, QGroupBox stylesheet padding+border,
+        # inner layout margins, and the splitter handle.
         self.tabs.tabBar().adjustSize()
         dock_margins = self.dock_layout.contentsMargins()
-        group_margins = self.analysis_group.contentsMargins()
         inner_margins = self.dock_inner_layout.contentsMargins()
+        # QGroupBox CSS: padding 8px L/R + border 1px L/R = 18px total
+        groupbox_chrome = 18
         initial_dock_width = max(
             self.dock_contents.minimumWidth(),
             self.tabs.tabBar().sizeHint().width()
             + dock_margins.left() + dock_margins.right()
-            + group_margins.left() + group_margins.right()
-            + inner_margins.left() + inner_margins.right(),
+            + groupbox_chrome
+            + inner_margins.left() + inner_margins.right()
+            + self.splitter.handleWidth(),
         )
         self.splitter.setSizes([initial_dock_width, 800])
 
@@ -295,7 +299,7 @@ class MainWindow(QMainWindow):
             f"QLineEdit {{ background-color: {color_to_stylesheet(COLORS['background'])}; "
             f"color: {color_to_stylesheet(COLORS['text_dim'])}; "
             f"border: 1px solid {color_to_stylesheet(COLORS['border'])}; "
-            f"border-radius: 3px; padding: 3px 6px; "
+            f"border-radius: 3px; padding: 5px 6px; "
             f"font-size: {FONT_SIZES['small']}px; }}"
         )
 
@@ -406,6 +410,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(batch_size_layout)
 
         # Post-processing options
+        layout.addWidget(create_separator())
         options_layout = QHBoxLayout()
         options_layout.setSpacing(16)
 
@@ -703,6 +708,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(max_iters_layout)
 
         # White background checkbox
+        layout.addWidget(create_separator())
         h_layout = QHBoxLayout()
         self.white_bg_cb = QCheckBox("White Background")
         self.white_bg_cb.setChecked(True)

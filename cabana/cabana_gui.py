@@ -11,8 +11,8 @@ from .utils import join_path
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QSpinBox,
                              QVBoxLayout, QHBoxLayout, QTabWidget, QCheckBox,
                              QPushButton, QFileDialog, QSizePolicy, QColorDialog,
-                             QMessageBox, QToolBar, QToolButton)
-from PyQt5.QtGui import QIcon, QPalette, QFont
+                             QMessageBox, QToolBar, QToolButton, QShortcut)
+from PyQt5.QtGui import QIcon, QPalette, QFont, QKeySequence
 
 from .ui import *
 
@@ -201,6 +201,17 @@ class MainWindow(QMainWindow):
         self.gap_analysis_worker = None
         self.load_default_params()
         self.panel_visible = True
+
+        # --- Keyboard shortcuts ---
+        self._setup_shortcuts()
+
+    def _setup_shortcuts(self):
+        """Set up keyboard shortcuts"""
+        QShortcut(QKeySequence("Ctrl+O"), self, self.load_image)
+        QShortcut(QKeySequence("Ctrl+R"), self, self.reload_image)
+        QShortcut(QKeySequence("Ctrl+I"), self, self.import_parameters)
+        QShortcut(QKeySequence("Ctrl+E"), self, self.export_parameters)
+        QShortcut(QKeySequence("Ctrl+B"), self, self.toggle_panel)
 
     def toggle_panel(self):
         if self.panel_visible:

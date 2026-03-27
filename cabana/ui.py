@@ -338,6 +338,59 @@ def generate_messagebox_style(bg_color=COLORS['background'],
         }}
     """
 
+def generate_toolbar_style(bg_color=COLORS['dock'],
+                           text_color=COLORS['text'],
+                           border_color=COLORS['border'],
+                           highlight_color=COLORS['highlight'],
+                           highlight_text_color=COLORS['background']):
+    """Generate a compact toolbar stylesheet"""
+    return f"""
+        QToolBar {{
+            background-color: {color_to_stylesheet(bg_color)};
+            border: none;
+            border-bottom: 1px solid {color_to_stylesheet(border_color)};
+            spacing: 2px;
+            padding: 2px 4px;
+        }}
+        QToolButton {{
+            background-color: transparent;
+            color: {color_to_stylesheet(text_color)};
+            border: 1px solid transparent;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: {FONT_SIZES['base']}px;
+            font-weight: 500;
+        }}
+        QToolButton:hover {{
+            background-color: {color_to_stylesheet(highlight_color)};
+            color: {color_to_stylesheet(highlight_text_color)};
+            border-color: {color_to_stylesheet(highlight_color)};
+        }}
+        QToolButton:pressed {{
+            background-color: {color_to_stylesheet(highlight_color.darker(120))};
+            color: {color_to_stylesheet(highlight_text_color)};
+        }}
+        QToolButton:disabled {{
+            color: {color_to_stylesheet(COLORS['text_dim'])};
+        }}
+        QToolBar::separator {{
+            background-color: {color_to_stylesheet(border_color)};
+            width: 1px;
+            margin: 4px 4px;
+        }}
+    """
+
+
+def generate_section_header_style(text_color=COLORS['text'],
+                                  border_color=COLORS['border']):
+    """Generate a section header label stylesheet"""
+    return (f"color: {color_to_stylesheet(text_color)}; font-weight: 600; "
+            f"font-size: {FONT_SIZES['title']}px; "
+            f"padding: 4px 0px 2px 0px; "
+            f"border-bottom: 1px solid {color_to_stylesheet(border_color)}; "
+            f"margin-bottom: 2px;")
+
+
 def create_separator(color=COLORS['border']):
     """Create a thin horizontal separator line"""
     from PyQt5.QtWidgets import QFrame

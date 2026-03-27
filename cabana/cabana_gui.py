@@ -10,7 +10,8 @@ from .utils import join_path
 
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QSpinBox,
                              QVBoxLayout, QHBoxLayout, QTabWidget, QCheckBox,
-                             QPushButton, QFileDialog, QSizePolicy, QColorDialog, QMessageBox)
+                             QPushButton, QFileDialog, QSizePolicy, QColorDialog,
+                             QMessageBox, QToolBar, QToolButton)
 from PyQt5.QtGui import QIcon, QPalette, QFont
 
 from .ui import *
@@ -52,51 +53,57 @@ class MainWindow(QMainWindow):
         self.dock_contents.setPalette(dock_palette)
 
         self.dock_layout = QVBoxLayout(self.dock_contents)
-        self.dock_layout.setContentsMargins(10, 10, 10, 10)
+        self.dock_layout.setContentsMargins(0, 0, 0, 10)
         self.dock_layout.setSpacing(6)
 
-        # Create a label with Napari-style
-        dock_label = QLabel("Analysis Settings")
-        dock_label.setStyleSheet(
-            f"color: {color_to_stylesheet(COLORS['text'])}; font-weight: 600; font-size: {FONT_SIZES['title']}px; "
-            f"padding: 6px 0px 4px 0px; "
-            f"border-bottom: 1px solid {color_to_stylesheet(COLORS['border'])}; "
-            f"margin-bottom: 4px;")
-        self.dock_layout.addWidget(dock_label)
-
-        # File layout
-        file_layout = QHBoxLayout()
         self._setup_styles()
 
-        # Add a button to load an image
-        self.load_btn = QPushButton("Load Image")
-        self.load_btn.setStyleSheet(self.btn_style)
-        self.load_btn.clicked.connect(self.load_image)
-        file_layout.addWidget(self.load_btn)
+        # --- File toolbar ---
+        self.file_toolbar = QToolBar("File")
+        self.file_toolbar.setMovable(False)
+        self.file_toolbar.setIconSize(QSize(16, 16))
+        self.file_toolbar.setStyleSheet(self.toolbar_style)
 
-        self.reload_btn = QPushButton("Reload Image")
+        self.load_btn = QToolButton()
+        self.load_btn.setText("Open")
+        self.load_btn.setToolTip("Load an image file")
+        self.load_btn.clicked.connect(self.load_image)
+        self.file_toolbar.addWidget(self.load_btn)
+
+        self.reload_btn = QToolButton()
+        self.reload_btn.setText("Reload")
+        self.reload_btn.setToolTip("Reload the original image")
         self.reload_btn.clicked.connect(self.reload_image)
         self.reload_btn.setEnabled(False)
-        self.reload_btn.setStyleSheet(self.btn_style)
-        self.reload_btn.setToolTip("Reload the original image")
-        file_layout.addWidget(self.reload_btn)
+        self.file_toolbar.addWidget(self.reload_btn)
 
-        # Add buttons to main layout of left dock
-        self.dock_layout.addLayout(file_layout)
+        self.file_toolbar.addSeparator()
 
-        # Second row: Load Params and Export Params
-        params_layout = QHBoxLayout()
-        self.load_params_btn = QPushButton("Load Params")
-        self.load_params_btn.setStyleSheet(self.btn_style)
+        self.load_params_btn = QToolButton()
+        self.load_params_btn.setText("Import")
+        self.load_params_btn.setToolTip("Load parameters from YAML file")
         self.load_params_btn.clicked.connect(self.import_parameters)
-        params_layout.addWidget(self.load_params_btn)
+        self.file_toolbar.addWidget(self.load_params_btn)
 
-        self.export_btn = QPushButton("Export Params")
-        self.export_btn.setStyleSheet(self.btn_style)
+        self.export_btn = QToolButton()
+        self.export_btn.setText("Export")
+        self.export_btn.setToolTip("Export parameters to YAML file")
         self.export_btn.clicked.connect(self.export_parameters)
-        params_layout.addWidget(self.export_btn)
+        self.file_toolbar.addWidget(self.export_btn)
 
-        self.dock_layout.addLayout(params_layout)
+        self.dock_layout.addWidget(self.file_toolbar)
+
+        # --- Analysis Settings header ---
+        settings_label = QLabel("  Analysis Settings")
+        settings_label.setStyleSheet(generate_section_header_style())
+        self.dock_layout.addWidget(settings_label)
+
+        # Inner content area with padding for tabs and controls
+        self.dock_inner = QWidget()
+        self.dock_inner_layout = QVBoxLayout(self.dock_inner)
+        self.dock_inner_layout.setContentsMargins(10, 6, 10, 0)
+        self.dock_inner_layout.setSpacing(6)
+        self.dock_layout.addWidget(self.dock_inner, 1)
 
         # Create tab widget
         self.tabs = QTabWidget()
@@ -124,10 +131,10 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.gap_tab, "Gap Analysis")
         self.tabs.addTab(self.bat_tab, "Batch Processing")
 
-        self.dock_layout.addWidget(self.tabs)
+        self.dock_inner_layout.addWidget(self.tabs)
 
         # Add a spacer to push content to the top
-        self.dock_layout.addStretch()
+        self.dock_inner_layout.addStretch()
 
         # Add progress bar
         self.progress_bar = PercentageProgressBar()
@@ -135,7 +142,7 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(0)
         self.progress_bar.setVisible(False)
         self.progress_bar.setStyleSheet(self.progressbar_style)
-        self.dock_layout.addWidget(self.progress_bar)
+        self.dock_inner_layout.addWidget(self.progress_bar)
 
         # Create and add the image panel to the splitter
         self.image_panel = ImagePanel()
@@ -213,13 +220,16 @@ class MainWindow(QMainWindow):
         # Button style
         self.btn_style = generate_button_style()
 
+        # Toolbar style
+        self.toolbar_style = generate_toolbar_style()
+
         # Tab style
         self.tab_style = generate_tab_style()
 
         # Progress bar style
         self.progressbar_style = generate_progressbar_style()
 
-        # Spinnere style
+        # Spinner style
         self.spinner_style = generate_spinner_style()
 
         # Messagebox style

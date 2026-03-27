@@ -19,7 +19,7 @@ from skimage.morphology import remove_small_objects, remove_small_holes
 
 from PyQt5.QtWidgets import (QSlider, QWidget, QSplitter, QSplitterHandle,
                              QMenu, QAction, QFileDialog, QMessageBox,
-                             QProgressBar, QSizePolicy)
+                             QProgressBar, QSizePolicy, QTabBar)
 from PyQt5.QtCore import Qt, QSize, QEvent, QPoint, QRect, QPropertyAnimation, QEasingCurve, pyqtProperty
 from PyQt5.QtGui import QPixmap, QPainter, QPen, QColor, QDragEnterEvent, QDropEvent, QImage, QBrush, QFont
 from PyQt5.QtCore import QThread, pyqtSignal
@@ -44,10 +44,28 @@ COLORS = {
     'success':    QColor(80, 190, 130),  # Success color
 }
 
+FONT_SIZES = {
+    'base': 12,
+    'small': 11,
+    'title': 14,
+}
+
 
 def color_to_stylesheet(color: QColor) -> str:
     """Convert QColor to style sheet color string"""
     return f"rgb({color.red()}, {color.green()}, {color.blue()})"
+
+
+class AutoWidthTabBar(QTabBar):
+    """Ensure each tab is wide enough to display its full label."""
+
+    TAB_HORIZONTAL_PADDING = 28
+
+    def tabSizeHint(self, index):
+        size = super().tabSizeHint(index)
+        text_width = self.fontMetrics().horizontalAdvance(self.tabText(index))
+        size.setWidth(max(size.width(), text_width + self.TAB_HORIZONTAL_PADDING))
+        return size
 
 
 def generate_spinner_style(bg_color=COLORS['dock'],
@@ -81,6 +99,7 @@ def generate_spinner_style(bg_color=COLORS['dock'],
             border-radius: 4px;
             padding: 3px;
             min-width: 50px;
+            font-size: {FONT_SIZES['base']}px;
         }}
 
         QSpinBox::up-button, QSpinBox::down-button {{
@@ -135,7 +154,7 @@ def generate_button_style(bg_color=COLORS['dock'],
             border: 1px solid {color_to_stylesheet(border_color)};
             border-radius: 4px;
             padding: 6px 12px;
-            font-size: 13px;
+            font-size: {FONT_SIZES['base']}px;
             font-weight: 600;
         }}
         QPushButton:hover {{
@@ -169,13 +188,17 @@ def generate_tab_style(bg_color=COLORS['dock'],
             padding: 8px;
         }}
 
+        QTabBar {{
+            background-color: {color_to_stylesheet(COLORS['dock'])};
+        }}
+
         QTabBar::tab {{
             background-color: transparent;
             color: {color_to_stylesheet(COLORS['text_dim'])};
             border: none;
             border-bottom: 2px solid transparent;
-            padding: 8px 14px;
-            font-size: 12px;
+            padding: 6px 10px;
+            font-size: {FONT_SIZES['base']}px;
             font-weight: 500;
             margin-right: 2px;
         }}
@@ -214,7 +237,7 @@ def generate_progressbar_style(bg_color=COLORS['background'],
             border: 1px solid {color_to_stylesheet(border_color)};
             border-radius: 5px;
             text-align: center;
-            font-size: 11px;
+            font-size: {FONT_SIZES['small']}px;
             font-weight: 600;
             min-height: 18px;
         }}
@@ -266,7 +289,7 @@ def generate_messagebox_style(bg_color=COLORS['background'],
 
         QMessageBox QLabel {{
             color: {color_to_stylesheet(text_color)};
-            font-size: 13px;
+            font-size: {FONT_SIZES['base']}px;
         }}
 
         QMessageBox QPushButton {{
@@ -276,7 +299,7 @@ def generate_messagebox_style(bg_color=COLORS['background'],
             border-radius: 4px;
             padding: 6px 12px;
             min-width: 80px;
-            font-size: 13px;
+            font-size: {FONT_SIZES['base']}px;
             font-weight: bold;
         }}
 

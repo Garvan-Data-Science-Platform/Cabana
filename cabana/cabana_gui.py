@@ -43,6 +43,7 @@ class MainWindow(QMainWindow):
 
         # Create and add the left dock widget to the splitter with Napari dock color
         self.dock_contents = QWidget()
+        self.dock_contents.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         self.dock_contents.setAutoFillBackground(True)
 
         # Set Napari dock color
@@ -55,9 +56,9 @@ class MainWindow(QMainWindow):
         self.dock_layout.setSpacing(6)
 
         # Create a label with Napari-style
-        dock_label = QLabel("Configuration Panel")
+        dock_label = QLabel("Analysis Settings")
         dock_label.setStyleSheet(
-            f"color: {color_to_stylesheet(COLORS['text'])}; font-weight: 600; font-size: 15px; "
+            f"color: {color_to_stylesheet(COLORS['text'])}; font-weight: 600; font-size: {FONT_SIZES['title']}px; "
             f"padding: 6px 0px 4px 0px; "
             f"border-bottom: 1px solid {color_to_stylesheet(COLORS['border'])}; "
             f"margin-bottom: 4px;")
@@ -99,6 +100,10 @@ class MainWindow(QMainWindow):
 
         # Create tab widget
         self.tabs = QTabWidget()
+        self.tabs.setTabBar(AutoWidthTabBar())
+        self.tabs.setUsesScrollButtons(False)
+        self.tabs.tabBar().setExpanding(False)
+        self.tabs.tabBar().setElideMode(Qt.ElideNone)
         self.tabs.setStyleSheet(self.tab_style)
 
         # Create tabs
@@ -153,8 +158,20 @@ class MainWindow(QMainWindow):
         self.splitter.addWidget(self.dock_contents)
         self.splitter.addWidget(self.image_panel)
 
-        # Set initial sizes (adjust as needed)
-        self.splitter.setSizes([200, 800])
+        # Let the image panel stretch, dock panel keeps its natural size
+        self.splitter.setStretchFactor(0, 0)  # dock: don't stretch
+        self.splitter.setStretchFactor(1, 1)  # image: stretch to fill
+
+        # Compute the minimum dock width so tab labels are never clipped.
+        # Ensure stylesheet metrics are resolved before measuring.
+        self.tabs.tabBar().adjustSize()
+        dock_margins = self.dock_layout.contentsMargins()
+        dock_min_width = (self.tabs.sizeHint().width()
+                          + dock_margins.left() + dock_margins.right())
+        self.dock_contents.setMinimumWidth(dock_min_width)
+
+        # Set initial sizes based on computed minimum
+        self.splitter.setSizes([dock_min_width, 800])
 
         # Add splitter to the main layout
         self.main_layout.addWidget(self.splitter)
@@ -543,7 +560,8 @@ class MainWindow(QMainWindow):
         self.color_thresh_value = QLabel("0.2")
         self.color_thresh_value.setFixedWidth(35)
         self.color_thresh_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-        self.color_thresh_value.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: 11px;")
+        self.color_thresh_value.setStyleSheet(
+            f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: {FONT_SIZES['small']}px;")
         threshold_layout.addWidget(self.color_thresh_value)
         layout.addLayout(threshold_layout)
 
@@ -563,7 +581,8 @@ class MainWindow(QMainWindow):
         self.num_labels_value = QLabel("32")
         self.num_labels_value.setFixedWidth(30)
         self.num_labels_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-        self.num_labels_value.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: 11px;")
+        self.num_labels_value.setStyleSheet(
+            f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: {FONT_SIZES['small']}px;")
         num_labels_layout.addWidget(self.num_labels_value)
         layout.addLayout(num_labels_layout)
 
@@ -583,7 +602,8 @@ class MainWindow(QMainWindow):
         self.max_iters_value = QLabel("30")
         self.max_iters_value.setFixedWidth(30)
         self.max_iters_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-        self.max_iters_value.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: 11px;")
+        self.max_iters_value.setStyleSheet(
+            f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: {FONT_SIZES['small']}px;")
         max_iters_layout.addWidget(self.max_iters_value)
         layout.addLayout(max_iters_layout)
 
@@ -638,7 +658,8 @@ class MainWindow(QMainWindow):
         self.line_width_value = QLabel("(5, 7)")
         self.line_width_value.setFixedWidth(55)
         self.line_width_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-        self.line_width_value.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: 11px;")
+        self.line_width_value.setStyleSheet(
+            f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: {FONT_SIZES['small']}px;")
         line_width_layout.addWidget(self.line_width_value)
         layout.addLayout(line_width_layout)
 
@@ -655,7 +676,8 @@ class MainWindow(QMainWindow):
         self.line_step_value = QLabel("2")
         self.line_step_value.setFixedWidth(30)
         self.line_step_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-        self.line_step_value.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: 11px;")
+        self.line_step_value.setStyleSheet(
+            f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: {FONT_SIZES['small']}px;")
         line_step_layout.addWidget(self.line_step_value)
         layout.addLayout(line_step_layout)
 
@@ -677,7 +699,8 @@ class MainWindow(QMainWindow):
         self.contrast_value = QLabel("(100, 200)")
         self.contrast_value.setFixedWidth(70)
         self.contrast_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-        self.contrast_value.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: 11px;")
+        self.contrast_value.setStyleSheet(
+            f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: {FONT_SIZES['small']}px;")
         contrast_layout.addWidget(self.contrast_value)
         layout.addLayout(contrast_layout)
 
@@ -694,7 +717,8 @@ class MainWindow(QMainWindow):
         self.min_length_value = QLabel("5")
         self.min_length_value.setFixedWidth(30)
         self.min_length_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-        self.min_length_value.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: 11px;")
+        self.min_length_value.setStyleSheet(
+            f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: {FONT_SIZES['small']}px;")
         min_length_layout.addWidget(self.min_length_value)
         layout.addLayout(min_length_layout)
 
@@ -766,7 +790,8 @@ class MainWindow(QMainWindow):
         self.min_gap_value = QLabel("20")
         self.min_gap_value.setFixedWidth(30)
         self.min_gap_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-        self.min_gap_value.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: 11px;")
+        self.min_gap_value.setStyleSheet(
+            f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: {FONT_SIZES['small']}px;")
         min_gap_layout.addWidget(self.min_gap_value)
         layout.addLayout(min_gap_layout)
 
@@ -783,7 +808,8 @@ class MainWindow(QMainWindow):
         self.max_hdm_value = QLabel("230")
         self.max_hdm_value.setFixedWidth(30)
         self.max_hdm_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-        self.max_hdm_value.setStyleSheet(f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: 11px;")
+        self.max_hdm_value.setStyleSheet(
+            f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: {FONT_SIZES['small']}px;")
         max_hdm_layout.addWidget(self.max_hdm_value)
         layout.addLayout(max_hdm_layout)
 
@@ -1395,7 +1421,7 @@ class MainWindow(QMainWindow):
             app_font.setFamily('Segoe UI')
         else:
             app_font.setFamily('Ubuntu')
-        app_font.setPointSize(12)
+        app_font.setPointSize(FONT_SIZES['base'])
         QApplication.setFont(app_font)
 
         # Set Napari palette
@@ -1434,20 +1460,20 @@ class MainWindow(QMainWindow):
                 border: 1px solid {color_to_stylesheet(COLORS['border'])};
                 border-radius: 3px;
                 padding: 4px 6px;
-                font-size: 12px;
+                font-size: {FONT_SIZES['small']}px;
             }}
 
             /* Labels */
             QLabel {{
                 color: {color_to_stylesheet(COLORS['text'])};
-                font-size: 12px;
+                font-size: {FONT_SIZES['base']}px;
             }}
 
             /* Checkbox indicators */
             QCheckBox {{
                 color: {color_to_stylesheet(COLORS['text'])};
                 spacing: 6px;
-                font-size: 12px;
+                font-size: {FONT_SIZES['base']}px;
             }}
             QCheckBox::indicator {{
                 width: 16px;

@@ -1229,8 +1229,8 @@ class MainWindow(QMainWindow):
                 # Remove alpha channel if present
                 self.ori_img = self.ori_img[:, :, :3]
 
-            # Enable processing buttons
-            self.segment_btn.setEnabled(True)
+            # Enable processing buttons (Segment also requires the toggle on)
+            self.segment_btn.setEnabled(self.toggle_seg_btn.isChecked())
             self.detect_btn.setEnabled(True)
             self.reload_btn.setEnabled(True)
             self.seg_img = None
@@ -1273,7 +1273,7 @@ class MainWindow(QMainWindow):
             self.wdt_img = None
             self.gap_img = None
             self.gap_ovl = None
-            self.segment_btn.setEnabled(True)
+            self.segment_btn.setEnabled(self.toggle_seg_btn.isChecked())
             self.detect_btn.setEnabled(True)
             self.reload_btn.setEnabled(True)
             self._update_image_status()
@@ -1282,7 +1282,7 @@ class MainWindow(QMainWindow):
         """Reload the original image"""
         if self.img_path:
             self.image_panel.setImage(self.img_path)
-            self.segment_btn.setEnabled(True)
+            self.segment_btn.setEnabled(self.toggle_seg_btn.isChecked())
             self.detect_btn.setEnabled(True)
             self.reload_btn.setEnabled(True)
 
@@ -1366,8 +1366,8 @@ class MainWindow(QMainWindow):
             self.yml_data["Configs"]["Segmentation"] = True
             self.toggle_seg_label.setText(
                 f"Segmentation <b><span style='color: {COLORS['highlight'].name()};'>Enabled</span></b>")
-            self.segment_btn.setEnabled(True)
-            self.segment_btn.setEnabled(True)
+            # Segment still requires a loaded image
+            self.segment_btn.setEnabled(self.ori_img is not None)
             self.color_btn.setEnabled(True)
             self.color_thresh_slider.setEnabled(True)
             self.num_labels_slider.setEnabled(True)

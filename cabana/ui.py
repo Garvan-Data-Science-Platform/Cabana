@@ -1884,9 +1884,9 @@ class ToggleButton(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        # Set size policy to prevent layout interference
-        self.setMinimumSize(50, 20)
-        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        # Fixed size so every toggle renders identically regardless of the
+        # surrounding layout (rows previously compressed some instances)
+        self.setFixedSize(60, 25)
 
         self.setCheckable(True)
         self._checked = False

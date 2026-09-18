@@ -1210,7 +1210,8 @@ def fix_locations(cont, width_l, width_r, grad_l, grad_r, pos_y, pos_x, sigma_ma
                 else:
                     r_est = grad_l[i] / grad_r[i]
                     weak_is_r = False
-                sigma = sigma_map[int(cont.row[i]), int(cont.col[i])]
+                sigma = (float(sigma_map) if np.isscalar(sigma_map)
+                         else sigma_map[int(cont.row[i]), int(cont.col[i])])
                 w_real, h_real, corr, w_strong, w_weak = Correct.line_corrections(
                     sigma, w_est, r_est)
                 w_real /= LINE_WIDTH_COMPENSATION

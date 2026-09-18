@@ -61,6 +61,10 @@ This component is designed to detect and quantify fibre structures in images. Th
 
    It defines the minimum line (ridge) width in pixels that the ridge detection algorithm can detect. The line width $\omega$ is used to estimate the `Sigma` $\sigma$ parameter of Gaussian filtering kernel: $\sigma = \frac{\omega}{2\sqrt{3}} + 0.5$.
 
+   Note on the width floor:
+
+   Fibre width is measured from the two edges (gradient maxima) on either side of the ridge, located in the image smoothed at the scale assigned to that fibre (the median of the per-pixel best scales along the ridge). For a fibre thinner than the smoothing kernel, the two edges are found about one $\sigma$ either side of the ridge regardless of the true width, so the reported width cannot fall below roughly $2\sigma$ of the smallest scale. With $\omega_{\min} = 5$ this floor is about 3.9 px. Widths near this value should be read as "at most this wide". Lower $\omega_{\min}$ to lower the floor, at the cost of more texture being detected as ridges.
+
 3. **Max Line Width** $\mathbf{\omega}_{\mathbf{\max}}$
 
    The maximum line (ridge) width in pixels that the ridge detection algorithm can detect.

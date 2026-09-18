@@ -156,6 +156,10 @@ class FibreDetector:
         low_threshs = np.zeros((height, width, num_scales), dtype=float)
         high_threshs = np.zeros((height, width, num_scales), dtype=float)
         sigma_maps = np.zeros((height, width, num_scales), dtype=float)
+        # Gradient magnitude at every scale, kept for width estimation: each
+        # contour's edges are located in the gradient of ITS OWN scale rather
+        # than in the per-pixel patchwork of selected scales.
+        grad_scales = np.zeros((num_scales, height, width), dtype=float)
 
         # filtering at different scales
         gray = self.gray.astype(float)
@@ -192,6 +196,7 @@ class FibreDetector:
             # store intermediate results
             rys[..., scale_idx] = ry
             rxs[..., scale_idx] = rx
+            grad_scales[scale_idx] = np.hypot(ry, rx)
             ryys[..., scale_idx] = ryy
             rxys[..., scale_idx] = rxy
             rxxs[..., scale_idx] = rxx
@@ -232,6 +237,7 @@ class FibreDetector:
 
         self.grady = self.derivatives[0, ...]
         self.gradx = self.derivatives[1, ...]
+        self.grad_scales = grad_scales
 
         self.eigvals = np.take_along_axis(saliency, global_max_idx[:, :, None], axis=-1)
         self.eigvecs = np.take_along_axis(orientation, global_max_idx[:, :, None, None], axis=-1)
@@ -801,8 +807,30 @@ class FibreDetector:
         gray_s = gaussian_filter(self.gray.astype(float), 1.0)
         if self.mode == LinesUtil.MODE_LIGHT:
             gray_s = -gray_s
-        grad = np.sqrt(self.grady ** 2 + self.gradx ** 2)
 
+        # One scale per contour: the median of the per-pixel selected scale
+        # over the contour's points. The per-pixel argmax is noisy (it can
+        # flip between the smallest and largest scale from point to point on
+        # textured tissue); the median gives a stable, fibre-matched scale.
+        # Contours are grouped by scale so the edge-detection arrays are
+        # computed once per scale actually used.
+        scale_of_cont = np.zeros(len(self.contours), dtype=int)
+        for i, cont in enumerate(self.contours):
+            rr = np.clip(np.round(cont.row).astype(int), 0, height - 1)
+            cc = np.clip(np.round(cont.col).astype(int), 0, width - 1)
+            sig_med = np.median(self.sigma_map[rr, cc])
+            scale_of_cont[i] = int(np.argmin(np.abs(self.sigmas - sig_med)))
+
+        for scale_idx in np.unique(scale_of_cont):
+            edge = self._edge_arrays(self.grad_scales[scale_idx])
+            sigma_c = float(self.sigmas[scale_idx])
+            for i in np.flatnonzero(scale_of_cont == scale_idx):
+                self._measure_contour_width(self.contours[i], edge, sigma_c,
+                                            gray_s, max_length, max_half_width)
+
+    @staticmethod
+    def _edge_arrays(grad):
+        """Edge-detection arrays (Steger) from one gradient-magnitude image."""
         grad_dr = convolve(grad, kernel_r, mode='mirror')
         grad_dc = convolve(grad, kernel_c, mode='mirror')
         grad_dd = convolve(grad, kernel_d, mode='mirror')
@@ -825,90 +853,93 @@ class FibreDetector:
         pp1, pp2 = tt * eigvecs[:, :, 0, 0], tt * eigvecs[:, :, 1, 0]
         grad_rl = (grad_dd + pp1 * grad_dr + pp2 * grad_dc +
                    pp1 * pp1 * grad_drr + pp1 * pp2 * grad_drc + pp2 * pp2 * grad_dcc)
+        return eigvals, eigvecs, pp1, pp2, grad_rl
 
-        for i, cont in enumerate(self.contours):
-            regularize_normals(cont)
-            num_points = cont.num
-            width_l = np.zeros(num_points, dtype=float)
-            width_r = np.zeros(num_points, dtype=float)
-            grad_l = np.zeros(num_points, dtype=float)
-            grad_r = np.zeros(num_points, dtype=float)
-            pos_x = np.zeros(num_points, dtype=float)
-            pos_y = np.zeros(num_points, dtype=float)
+    def _measure_contour_width(self, cont, edge, sigma_c, gray_s, max_length, max_half_width):
+        eigvals, eigvecs, pp1, pp2, grad_rl = edge
+        height, width = gray_s.shape[:2]
+        regularize_normals(cont)
+        num_points = cont.num
+        width_l = np.zeros(num_points, dtype=float)
+        width_r = np.zeros(num_points, dtype=float)
+        grad_l = np.zeros(num_points, dtype=float)
+        grad_r = np.zeros(num_points, dtype=float)
+        pos_x = np.zeros(num_points, dtype=float)
+        pos_y = np.zeros(num_points, dtype=float)
 
-            for j in range(num_points):
-                py, px = cont.row[j], cont.col[j]
-                pos_y[j], pos_x[j] = py, px
-                r, c = LinesUtil.BR(round(py), height), LinesUtil.BC(round(px), width)
-                ny, nx = np.sin(cont.angle[j]), np.cos(cont.angle[j])
+        for j in range(num_points):
+            py, px = cont.row[j], cont.col[j]
+            pos_y[j], pos_x[j] = py, px
+            r, c = LinesUtil.BR(round(py), height), LinesUtil.BC(round(px), width)
+            ny, nx = np.sin(cont.angle[j]), np.cos(cont.angle[j])
 
-                line = bresenham(ny, nx, max_length)
-                num_line = line.shape[0]
-                width_r[j] = width_l[j] = 0
+            line = bresenham(ny, nx, max_length)
+            num_line = line.shape[0]
+            width_r[j] = width_l[j] = 0
 
-                for direct in [-1, 1]:
-                    # Local background on this side: the brightest smoothed
-                    # intensity along the scan (for a dark line). Candidates
-                    # are accepted only if the intensity at the candidate has
-                    # risen at least EDGE_MIN_RISE of the way from the ridge
-                    # to that background. The reference implementation accepts
-                    # the first gradient-magnitude maximum of any kind, but
-                    # on textured tissue a maximum one or two pixels from the
-                    # ridge, still inside the fibre plateau, is common and
-                    # collapses the boundary onto the centre line.
-                    scan_y = np.clip(r + direct * line[:, 0], 0, height - 1)
-                    scan_x = np.clip(c + direct * line[:, 1], 0, width - 1)
-                    scan_i = gray_s[scan_y, scan_x]
-                    i_ridge = scan_i[0]
-                    i_range = scan_i.max() - i_ridge
-                    if i_range <= 0.0:
-                        continue
-                    for k in range(num_line):
-                        y, x = scan_y[k], scan_x[k]
-                        val = -eigvals[y, x, 0]
-                        if val > 0.0:
-                            p1, p2 = pp1[y, x], pp2[y, x]
+            for direct in [-1, 1]:
+                # Local background on this side: the brightest smoothed
+                # intensity along the scan (for a dark line). Candidates
+                # are accepted only if the intensity at the candidate has
+                # risen at least EDGE_MIN_RISE of the way from the ridge
+                # to that background. The reference implementation accepts
+                # the first gradient-magnitude maximum of any kind, but
+                # on textured tissue a maximum one or two pixels from the
+                # ridge, still inside the fibre plateau, is common and
+                # collapses the boundary onto the centre line.
+                scan_y = np.clip(r + direct * line[:, 0], 0, height - 1)
+                scan_x = np.clip(c + direct * line[:, 1], 0, width - 1)
+                scan_i = gray_s[scan_y, scan_x]
+                i_ridge = scan_i[0]
+                i_range = scan_i.max() - i_ridge
+                if i_range <= 0.0:
+                    continue
+                for k in range(num_line):
+                    y, x = scan_y[k], scan_x[k]
+                    val = -eigvals[y, x, 0]
+                    if val > 0.0:
+                        p1, p2 = pp1[y, x], pp2[y, x]
 
-                            if abs(p1) <= 0.5 and abs(p2) <= 0.5:
-                                # Require the |grad| Hessian's principal
-                                # eigenvector at this pixel to be roughly
-                                # parallel to the line normal (ny, nx). At a
-                                # genuine line edge the gradient is
-                                # perpendicular to the line, so the eigenvector
-                                # of the largest |grad|-Hessian eigenvalue
-                                # aligns with the line normal. A scan that has
-                                # walked into a neighbouring fibre tends to
-                                # land on that fibre's edge, whose eigenvector
-                                # points along OUR line direction (~90 deg off
-                                # our normal). Rejecting candidates more than
-                                # 60 deg off the normal kills those "spurs"
-                                # while still tolerating moderate curvature and
-                                # smoothing-induced misalignment.
-                                ev_dot = eigvecs[y, x, 0, 0] * ny + eigvecs[y, x, 1, 0] * nx
-                                if abs(ev_dot) < 0.5:
-                                    continue
-                                # Edge must sit on the ridge-to-background
-                                # intensity ramp, not inside the plateau.
-                                if (scan_i[k] - i_ridge) < EDGE_MIN_RISE * i_range:
-                                    continue
-                                t = ny * (py - (r + direct * line[k, 0] + p1)) + nx * (px - (c + direct * line[k, 1] + p2))
-                                # Cap by the largest detection scale: a half-
-                                # width beyond ~2.5*sigma_max cannot belong to
-                                # a line of the requested width range, so it
-                                # is almost certainly a neighbouring fibre's
-                                # edge. Drop it; fill_gaps interpolates from
-                                # neighbouring good points.
-                                if abs(t) > max_half_width:
-                                    continue
-                                if direct == 1:
-                                    grad_r[j] = grad_rl[y, x]
-                                    width_r[j] = abs(t)
-                                else:
-                                    grad_l[j] = grad_rl[y, x]
-                                    width_l[j] = abs(t)
-                                break
-            fix_locations(cont, width_l, width_r, grad_l, grad_r, pos_y, pos_x,
-                          self.sigma_map, self.correct_pos, self.mode)
+                        if abs(p1) <= 0.5 and abs(p2) <= 0.5:
+                            # Require the |grad| Hessian's principal
+                            # eigenvector at this pixel to be roughly
+                            # parallel to the line normal (ny, nx). At a
+                            # genuine line edge the gradient is
+                            # perpendicular to the line, so the eigenvector
+                            # of the largest |grad|-Hessian eigenvalue
+                            # aligns with the line normal. A scan that has
+                            # walked into a neighbouring fibre tends to
+                            # land on that fibre's edge, whose eigenvector
+                            # points along OUR line direction (~90 deg off
+                            # our normal). Rejecting candidates more than
+                            # 60 deg off the normal kills those "spurs"
+                            # while still tolerating moderate curvature and
+                            # smoothing-induced misalignment.
+                            ev_dot = eigvecs[y, x, 0, 0] * ny + eigvecs[y, x, 1, 0] * nx
+                            if abs(ev_dot) < 0.5:
+                                continue
+                            # Edge must sit on the ridge-to-background
+                            # intensity ramp, not inside the plateau.
+                            if (scan_i[k] - i_ridge) < EDGE_MIN_RISE * i_range:
+                                continue
+                            t = ny * (py - (r + direct * line[k, 0] + p1)) + nx * (px - (c + direct * line[k, 1] + p2))
+                            # Cap by the largest detection scale: a half-
+                            # width beyond ~2.5*sigma_max cannot belong to
+                            # a line of the requested width range, so it
+                            # is almost certainly a neighbouring fibre's
+                            # edge. Drop it; fill_gaps interpolates from
+                            # neighbouring good points.
+                            if abs(t) > max_half_width:
+                                continue
+                            if direct == 1:
+                                grad_r[j] = grad_rl[y, x]
+                                width_r[j] = abs(t)
+                            else:
+                                grad_l[j] = grad_rl[y, x]
+                                width_l[j] = abs(t)
+                            break
+        fix_locations(cont, width_l, width_r, grad_l, grad_r, pos_y, pos_x,
+                      sigma_c, self.correct_pos, self.mode)
 
     def prune_contours(self):
         if self.min_len <= 0:

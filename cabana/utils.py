@@ -1117,6 +1117,29 @@ def interpolate_gradient(gradx, grady, px, py, width):
     return gx, gy
 
 
+def smooth_positions(pos_y, pos_x, closed=False, sigma=1.5, taper=4):
+    """Smooth sub-pixel ridge positions along a contour.
+
+    Individual ridge points can sit 1-2 px off the visual centre line because
+    each is located independently from the local Hessian. A small Gaussian
+    along the contour removes that jitter. For open contours the correction
+    is tapered to zero over the first/last ``taper`` points so endpoints stay
+    exactly where they were and contours still meet at junctions. Closed
+    contours are smoothed with wrap-around and need no taper.
+    """
+    n = pos_y.size
+    if n < 3 or sigma <= 0:
+        return pos_y, pos_x
+    mode = 'wrap' if closed else 'nearest'
+    sy = gaussian_filter1d(pos_y, sigma, mode=mode)
+    sx = gaussian_filter1d(pos_x, sigma, mode=mode)
+    if closed:
+        return sy, sx
+    idx = np.arange(n, dtype=float)
+    w = np.minimum(1.0, np.minimum(idx, (n - 1) - idx) / taper)
+    return pos_y + w * (sy - pos_y), pos_x + w * (sx - pos_x)
+
+
 def regularize_normals(cont, sigma=1.5):
     """Replace per-pixel eigenvector normals with the geometric normal of the
     traced contour.
@@ -1246,8 +1269,11 @@ def fix_locations(cont, width_l, width_r, grad_l, grad_r, pos_y, pos_x, sigma_ma
     width_r = gaussian_filter1d(width_r, 3.0, mode='mirror')
     cont.width_l = np.array([float(w) for w in width_l])
     cont.width_r = np.array([float(w) for w in width_r])
-    cont.row = np.array([float(y) for y in pos_y])
-    cont.col = np.array([float(x) for x in pos_x])
+    pos_y, pos_x = smooth_positions(
+        np.asarray(pos_y, dtype=float), np.asarray(pos_x, dtype=float),
+        closed=(cont.cont_class == LinesUtil.ContourClass.cont_closed))
+    cont.row = pos_y
+    cont.col = pos_x
 
     # # Calculate true contrast if required
     # if correct_pos:

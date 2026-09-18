@@ -8,7 +8,7 @@ from .log import Log
 import matplotlib.pyplot as plt
 from scipy.ndimage import convolve, gaussian_filter, gaussian_filter1d
 from .utils import (LinesUtil, Junction, Crossref, Line, convolve_gauss,
-                   bresenham, fix_locations, interpolate_gradient_test,
+                   bresenham, fix_locations, regularize_normals, interpolate_gradient_test,
                    closest_point, normalize_to_half_circle)
 
 
@@ -344,7 +344,7 @@ class FibreDetector:
                 dy, dx = py - y, px - x
                 line = bresenham(my, mx, max_line[LinesUtil.BR(y, height), LinesUtil.BC(x, width)], dy, dx)
                 num_line = line.shape[0]
-                exty, extx = np.zeros(num_line, dtype=int), np.zeros(num_line, dtype=int)
+                exty, extx = np.zeros(num_line, dtype=float), np.zeros(num_line, dtype=float)
 
                 # Now determine whether we can go only uphill (bright lines)
                 # or downhill (dark lines) until we hit another line.
@@ -827,6 +827,7 @@ class FibreDetector:
                    pp1 * pp1 * grad_drr + pp1 * pp2 * grad_drc + pp2 * pp2 * grad_dcc)
 
         for i, cont in enumerate(self.contours):
+            regularize_normals(cont)
             num_points = cont.num
             width_l = np.zeros(num_points, dtype=float)
             width_r = np.zeros(num_points, dtype=float)

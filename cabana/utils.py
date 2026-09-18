@@ -1117,6 +1117,39 @@ def interpolate_gradient(gradx, grady, px, py, width):
     return gx, gy
 
 
+def regularize_normals(cont, sigma=1.5):
+    """Replace per-pixel eigenvector normals with the geometric normal of the
+    traced contour.
+
+    Each ridge point's normal comes from that pixel's Hessian eigenvector and
+    is occasionally ~90 deg off its neighbours (junction pixels, scale
+    switches, texture). Measuring width along such a normal scans along the
+    fibre instead of across it and places both boundary points on the ridge
+    line, so the drawn boundaries cross the ridge. The tangent of the lightly
+    smoothed contour is a far more stable estimate of the fibre direction.
+    The sign of the new normal is chosen so that it agrees with the majority
+    of the original normals, preserving the left/right convention.
+    """
+    n = cont.num
+    if n < 3:
+        return cont
+    closed = cont.cont_class == LinesUtil.ContourClass.cont_closed
+    mode = 'wrap' if closed else 'nearest'
+    ty = np.gradient(gaussian_filter1d(cont.row, sigma, mode=mode))
+    tx = np.gradient(gaussian_filter1d(cont.col, sigma, mode=mode))
+    norm = np.hypot(ty, tx)
+    ok = norm > 1e-9
+    if not np.all(ok):
+        return cont
+    # Rotate the tangent by 90 deg to get a normal (ny, nx).
+    ny, nx = -tx / norm, ty / norm
+    oy, ox = np.sin(cont.angle), np.cos(cont.angle)
+    if np.sum(ny * oy + nx * ox) < 0:
+        ny, nx = -ny, -nx
+    cont.angle = np.arctan2(ny, nx) % (2.0 * np.pi)
+    return cont
+
+
 def fix_locations(cont, width_l, width_r, grad_l, grad_r, pos_y, pos_x, sigma_map,
                   correct_pos=True, mode=LinesUtil.MODE_DARK):
     num_points = cont.num

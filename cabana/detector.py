@@ -6,7 +6,7 @@ import skimage as ski
 from .constants import *
 from .log import Log
 import matplotlib.pyplot as plt
-from scipy.ndimage import convolve, gaussian_filter1d
+from scipy.ndimage import convolve, gaussian_filter, gaussian_filter1d
 from .utils import (LinesUtil, Junction, Crossref, Line, convolve_gauss,
                    bresenham, fix_locations, interpolate_gradient_test,
                    closest_point, normalize_to_half_circle)
@@ -62,6 +62,14 @@ def _eigh_2x2_symmetric(a, b, c):
     eigvecs[..., 0, 1] = cos_phi
     eigvecs[..., 1, 1] = sin_phi
     return eigvals, eigvecs
+
+
+# Minimum fraction of the ridge-to-background intensity range that must have
+# been covered at an accepted fibre edge. A genuine edge lies on the intensity
+# ramp between the ridge and the background; a gradient-magnitude maximum
+# caused by texture inside the fibre plateau has a rise near zero. See
+# FibreDetector.compute_line_width.
+EDGE_MIN_RISE = 0.25
 
 
 class FibreDetector:
@@ -775,8 +783,24 @@ class FibreDetector:
 
     def compute_line_width(self):
         height, width = self.grady.shape[:2]
-        length = 2.5 * self.sigma_map
-        max_length = np.ceil(length * 1.2).astype(int)
+        # Scan (and cap) using the LARGEST detection scale, not the per-pixel
+        # sigma_map. The per-scale saliency argmax is noisy and frequently
+        # picks the smallest scale on a wide, flat-topped fibre. With that
+        # sigma the scan reaches only ~3*sigma from the ridge and the true
+        # edge is out of range, so the only candidates are weak noise ripples
+        # inside the fibre plateau and the boundary collapses onto the centre
+        # line. The user's Max Line Width is the intended upper bound on
+        # fibre width, so the largest sigma is the right scan length.
+        sigma_max = float(np.max(self.sigmas))
+        max_length = int(np.ceil(2.5 * sigma_max * 1.2))
+        max_half_width = 2.5 * sigma_max
+        # Lightly smoothed intensity for the edge "rise" test below. For a
+        # dark line the background is brighter than the ridge, so flip the
+        # sign in MODE_LIGHT and treat both cases as "intensity increases
+        # away from the ridge".
+        gray_s = gaussian_filter(self.gray.astype(float), 1.0)
+        if self.mode == LinesUtil.MODE_LIGHT:
+            gray_s = -gray_s
         grad = np.sqrt(self.grady ** 2 + self.gradx ** 2)
 
         grad_dr = convolve(grad, kernel_r, mode='mirror')
@@ -817,13 +841,29 @@ class FibreDetector:
                 r, c = LinesUtil.BR(round(py), height), LinesUtil.BC(round(px), width)
                 ny, nx = np.sin(cont.angle[j]), np.cos(cont.angle[j])
 
-                line = bresenham(ny, nx, max_length[r, c])
+                line = bresenham(ny, nx, max_length)
                 num_line = line.shape[0]
                 width_r[j] = width_l[j] = 0
 
                 for direct in [-1, 1]:
+                    # Local background on this side: the brightest smoothed
+                    # intensity along the scan (for a dark line). Candidates
+                    # are accepted only if the intensity at the candidate has
+                    # risen at least EDGE_MIN_RISE of the way from the ridge
+                    # to that background. The reference implementation accepts
+                    # the first gradient-magnitude maximum of any kind, but
+                    # on textured tissue a maximum one or two pixels from the
+                    # ridge, still inside the fibre plateau, is common and
+                    # collapses the boundary onto the centre line.
+                    scan_y = np.clip(r + direct * line[:, 0], 0, height - 1)
+                    scan_x = np.clip(c + direct * line[:, 1], 0, width - 1)
+                    scan_i = gray_s[scan_y, scan_x]
+                    i_ridge = scan_i[0]
+                    i_range = scan_i.max() - i_ridge
+                    if i_range <= 0.0:
+                        continue
                     for k in range(num_line):
-                        y, x = LinesUtil.BR(r + direct * line[k, 0], height), LinesUtil.BC(c + direct * line[k, 1], width)
+                        y, x = scan_y[k], scan_x[k]
                         val = -eigvals[y, x, 0]
                         if val > 0.0:
                             p1, p2 = pp1[y, x], pp2[y, x]
@@ -838,24 +878,26 @@ class FibreDetector:
                                 # aligns with the line normal. A scan that has
                                 # walked into a neighbouring fibre tends to
                                 # land on that fibre's edge, whose eigenvector
-                                # points along OUR line direction (≈90° off
+                                # points along OUR line direction (~90 deg off
                                 # our normal). Rejecting candidates more than
-                                # 60° off the normal kills those "spurs" while
-                                # still tolerating moderate curvature and
+                                # 60 deg off the normal kills those "spurs"
+                                # while still tolerating moderate curvature and
                                 # smoothing-induced misalignment.
                                 ev_dot = eigvecs[y, x, 0, 0] * ny + eigvecs[y, x, 1, 0] * nx
                                 if abs(ev_dot) < 0.5:
                                     continue
+                                # Edge must sit on the ridge-to-background
+                                # intensity ramp, not inside the plateau.
+                                if (scan_i[k] - i_ridge) < EDGE_MIN_RISE * i_range:
+                                    continue
                                 t = ny * (py - (r + direct * line[k, 0] + p1)) + nx * (px - (c + direct * line[k, 1] + p2))
-                                # Cap by the local detection scale: a half-
-                                # width larger than ~2.5·σ at this pixel
-                                # cannot have come from the line we're on at
-                                # this scale, so it is almost certainly a
-                                # neighbouring fibre's edge that survived the
-                                # orthogonality test (e.g. two near-parallel
-                                # fibres). Drop the candidate; fill_gaps
-                                # interpolates from neighbouring good points.
-                                if abs(t) > 2.5 * self.sigma_map[r, c]:
+                                # Cap by the largest detection scale: a half-
+                                # width beyond ~2.5*sigma_max cannot belong to
+                                # a line of the requested width range, so it
+                                # is almost certainly a neighbouring fibre's
+                                # edge. Drop it; fill_gaps interpolates from
+                                # neighbouring good points.
+                                if abs(t) > max_half_width:
                                     continue
                                 if direct == 1:
                                     grad_r[j] = grad_rl[y, x]

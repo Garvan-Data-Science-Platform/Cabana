@@ -955,16 +955,41 @@ def fill_gaps(master, slave1, slave2, cont, min_value=0.0):
             has_start = s > 0
             has_end = j < num_points
 
-            # Use min_value if one end is missing
-            m_s = master[s - 1] if has_start else min_value
-            m_e = master[j] if has_end else min_value
+            # A gap touching the contour start or end has only one valid
+            # neighbour. Extrapolate flat from that neighbour (as the
+            # reference Steger/ImageJ implementation does) instead of
+            # ramping towards min_value: ramping to 0 made every open
+            # contour end, including the two ends created at each junction,
+            # pinch its width boundaries onto the centre line. Only when
+            # neither end has a valid value (entire array is zero) do we
+            # fall back to min_value.
+            if has_start and has_end:
+                m_s, m_e = master[s - 1], master[j]
+            elif has_start:
+                m_s = m_e = master[s - 1]
+            elif has_end:
+                m_s = m_e = master[j]
+            else:
+                m_s = m_e = min_value
 
             if slave1 is not None:
-                s1_s = slave1[s - 1] if has_start else min_value
-                s1_e = slave1[j] if has_end else min_value
+                if has_start and has_end:
+                    s1_s, s1_e = slave1[s - 1], slave1[j]
+                elif has_start:
+                    s1_s = s1_e = slave1[s - 1]
+                elif has_end:
+                    s1_s = s1_e = slave1[j]
+                else:
+                    s1_s = s1_e = min_value
             if slave2 is not None:
-                s2_s = slave2[s - 1] if has_start else min_value
-                s2_e = slave2[j] if has_end else min_value
+                if has_start and has_end:
+                    s2_s, s2_e = slave2[s - 1], slave2[j]
+                elif has_start:
+                    s2_s = s2_e = slave2[s - 1]
+                elif has_end:
+                    s2_s = s2_e = slave2[j]
+                else:
+                    s2_s = s2_e = min_value
 
             # Clamp j to avoid out-of-bounds on cont arrays
             j_clamped = min(j, num_points - 1)

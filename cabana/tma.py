@@ -1,0 +1,535 @@
+"""Tissue micro-array (TMA) preprocessing.
+
+Fits a circle to every core on a whole-slide scan, snaps the circles to the
+array grid, matches the grid to the printed ICGC/APGI array map, and exports
+one image and one binary mask per core and channel:
+
+    <out>/Images/TMA1_A3_8010718_1734_BF.png
+    <out>/Masks/TMA1_A3_8010718_1734_BF.png
+    <out>/cores.csv
+    <out>/overlay.png
+
+The mask is white inside the fitted circle (shrunk by ``erode_px``) and
+black in the corners, so downstream analysis can ignore the space outside
+the core. ``Images`` and ``Masks`` are drop-in inputs for ``BatchCabana``
+(input folder and ROI-mask folder respectively).
+"""
+
+import csv
+import os
+from dataclasses import dataclass, asdict
+
+import cv2
+import numpy as np
+from scipy import ndimage as ndi
+
+from .tma_maps import (MAP_COLS, MAP_ROWS, ROW_LETTERS, core_stem, load_array_map,
+                       occupancy_grid)
+from .wsi import open_slide
+
+def write_png_with_resolution(path, bgr, pixel_size_um):
+    """Write a BGR image as PNG carrying EXIF X/YResolution (pixels per µm),
+    the field :func:`cabana.io.split2batches` reads to recover µm/pixel."""
+    from PIL import Image
+    img = Image.fromarray(bgr[:, :, ::-1]) if bgr.ndim == 3 else Image.fromarray(bgr)
+    if pixel_size_um:
+        exif = Image.Exif()
+        exif[282] = exif[283] = 1.0 / float(pixel_size_um)   # XResolution, YResolution
+        exif[296] = 1                                          # ResolutionUnit: none (per µm)
+        img.save(path, exif=exif.tobytes())
+    else:
+        img.save(path)
+
+
+# The eight rigid transforms that map the printed array onto the scan.
+ORIENTATIONS = ("auto", "0", "90", "180", "270", "0+flip", "90+flip", "180+flip", "270+flip")
+
+
+@dataclass
+class Core:
+    """One fitted core. Coordinates are level-0 pixels of the slide."""
+    index: int
+    cx: float
+    cy: float
+    radius: float
+    fill: float           # fraction of the circle covered by tissue footprint
+    row: int = -1         # grid row index in the scan (0-based)
+    col: int = -1         # grid column index in the scan (0-based)
+    map_row: int = -1     # row index in the printed map (0-based, A=0)
+    map_col: int = -1     # column index in the printed map (0-based)
+    outside_map: bool = False   # grid cell has no counterpart in the printed map
+
+    @property
+    def flag(self):
+        if self.outside_map:
+            return "outside_map"
+        if self.fill >= 0.7:
+            return "ok"
+        return "partial" if self.fill >= 0.4 else "sparse"
+
+
+# ---------------------------------------------------------------------------
+# Circle fitting
+# ---------------------------------------------------------------------------
+
+def tissue_mask(img_bgr, sat_thresh=15, val_ratio=0.965):
+    """Foreground mask from HSV saturation and a per-column background level.
+
+    The per-column background compensates for the vertical banding that slide
+    scanners produce in the illumination.
+    """
+    hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+    sat = hsv[:, :, 1].astype(np.float32)
+    val = hsv[:, :, 2].astype(np.float32)
+    col_bg = np.median(val, axis=0, keepdims=True)
+    return ((sat > sat_thresh) | (val < val_ratio * col_bg)).astype(np.uint8)
+
+
+def _ellipse(diameter_px):
+    d = max(3, int(round(diameter_px)) | 1)
+    return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (d, d))
+
+
+def fit_cores(img_bgr, pixel_size_um, core_diameter_um=1000.0,
+              min_component_frac=0.05, debris_frac=0.05):
+    """Fit a circle to each tissue core in a low-resolution slide image.
+
+    Returns a list of ``(cx, cy, r, fill)`` in pixels of ``img_bgr``.
+
+    Steps (ported from the original prototype): threshold tissue, close gaps
+    of ~30% core diameter, drop components smaller than ``min_component_frac``
+    of the largest, then inside each component remove small detached debris
+    blobs (< ``debris_frac`` of the main blob and not touching it) before
+    taking the minimum enclosing circle of the remaining tissue.
+    """
+    raw = tissue_mask(img_bgr)
+    core_px = core_diameter_um / pixel_size_um
+    closed = cv2.morphologyEx(raw, cv2.MORPH_CLOSE, _ellipse(0.3 * core_px))
+    lbl, n = ndi.label(closed)
+    if n == 0:
+        return []
+    sizes = ndi.sum(closed, lbl, range(1, n + 1))
+    keep = np.nonzero(sizes > min_component_frac * sizes.max())[0] + 1
+    # a real core cannot be smaller than a quarter of the expected area
+    min_area = 0.25 * np.pi * (core_px / 2) ** 2 * 0.15
+    keep = [k for k in keep if sizes[k - 1] >= min_area]
+
+    small = _ellipse(0.08 * core_px)
+    objects = ndi.find_objects(lbl)
+    pad = int(0.15 * core_px) + 3
+    circles = []
+    for k in keep:
+        sl = objects[k - 1]
+        ys = slice(max(0, sl[0].start - pad), min(raw.shape[0], sl[0].stop + pad))
+        xs = slice(max(0, sl[1].start - pad), min(raw.shape[1], sl[1].stop + pad))
+        lbl_w = lbl[ys, xs]
+        comp_raw = ((lbl_w == k) & (raw[ys, xs] > 0)).astype(np.uint8)
+        blobs = cv2.morphologyEx(comp_raw, cv2.MORPH_CLOSE, small)
+        blbl, bn = ndi.label(blobs)
+        if bn == 0:
+            continue
+        bsz = ndi.sum(blobs, blbl, range(1, bn + 1))
+        main = int(np.argmax(bsz)) + 1
+        near_main = cv2.dilate((blbl == main).astype(np.uint8), small)
+        good = [main]
+        for b in range(1, bn + 1):
+            if b == main:
+                continue
+            if bsz[b - 1] >= debris_frac * bsz[main - 1] or ((blbl == b) & (near_main > 0)).any():
+                good.append(b)
+        core = comp_raw & np.isin(blbl, good)
+        cnts, _ = cv2.findContours(core.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        if not cnts:
+            continue
+        pts = np.vstack([c.reshape(-1, 2) for c in cnts])
+        (cx, cy), r = cv2.minEnclosingCircle(pts.astype(np.float32))
+        if r > 1.5 * core_px / 2 or r < 0.2 * core_px / 2:
+            continue   # merged neighbours or debris
+        footprint = ndi.binary_fill_holes(lbl_w == k)
+        yy, xx = np.ogrid[:comp_raw.shape[0], :comp_raw.shape[1]]
+        inside = (xx - cx) ** 2 + (yy - cy) ** 2 <= r ** 2
+        fill = float(footprint[inside].sum() / max(1, inside.sum()))
+        circles.append((float(cx + xs.start), float(cy + ys.start), float(r), fill))
+    return circles
+
+
+# ---------------------------------------------------------------------------
+# Grid inference and orientation
+# ---------------------------------------------------------------------------
+
+def _lattice_indices(v, pitch):
+    """Snap 1-D positions to a lattice ``x0 + k * pitch``.
+
+    The phase ``x0`` is the circular mean of ``v mod pitch``; pitch and phase
+    are then refined by least squares and the indices re-assigned. Returns
+    0-based integer indices."""
+    ang = 2 * np.pi * (v % pitch) / pitch
+    x0 = pitch * (np.arctan2(np.sin(ang).mean(), np.cos(ang).mean()) / (2 * np.pi)) % pitch
+    k = np.round((v - x0) / pitch).astype(int)
+    for _ in range(3):
+        if k.max() == k.min():
+            break
+        A = np.stack([np.ones_like(v), k.astype(float)], axis=1)
+        (x0, pitch), *_ = np.linalg.lstsq(A, v, rcond=None)
+        k = np.round((v - x0) / pitch).astype(int)
+    return k - k.min()
+
+
+def infer_grid(circles, core_diameter_px=None):
+    """Assign row and column indices to circle centres.
+
+    The pitch is the median nearest-neighbour distance (ignoring fragments
+    closer than 0.6 core diameters); rows and columns are then snapped to a
+    lattice of that pitch independently in y and x. Returns
+    ``(rows, cols, n_rows, n_cols)``.
+    """
+    pts = np.array([[c[0], c[1]] for c in circles], dtype=float)
+    if len(pts) < 2:
+        return np.zeros(len(pts), int), np.zeros(len(pts), int), 1, 1
+    d = np.sqrt(((pts[:, None, :] - pts[None, :, :]) ** 2).sum(-1))
+    np.fill_diagonal(d, np.inf)
+    nn = d.min(axis=1)
+    if core_diameter_px:
+        nn = nn[nn > 0.6 * core_diameter_px]
+    pitch = float(np.median(nn)) if len(nn) else float(np.median(d.min(axis=1)))
+    rows = _lattice_indices(pts[:, 1], pitch)
+    cols = _lattice_indices(pts[:, 0], pitch)
+    return rows, cols, int(rows.max()) + 1, int(cols.max()) + 1
+
+
+def merge_grid_duplicates(circles, rows, cols):
+    """Merge circles that fell into the same grid cell (fragmented cores).
+
+    The merged circle is the minimum enclosing circle of the members' discs;
+    the fill grade is the area-weighted mean. Returns ``(circles, rows, cols)``.
+    """
+    groups = {}
+    for i, (r, c) in enumerate(zip(rows, cols)):
+        groups.setdefault((int(r), int(c)), []).append(i)
+    out_c, out_r, out_k = [], [], []
+    for (r, c), idx in sorted(groups.items()):
+        if len(idx) == 1:
+            out_c.append(circles[idx[0]])
+        else:
+            pts = []
+            for i in idx:
+                cx, cy, rad, _ = circles[i]
+                ang = np.linspace(0, 2 * np.pi, 24, endpoint=False)
+                pts.append(np.stack([cx + rad * np.cos(ang), cy + rad * np.sin(ang)], axis=1))
+            (mx, my), mr = cv2.minEnclosingCircle(np.vstack(pts).astype(np.float32))
+            areas = np.array([circles[i][2] ** 2 for i in idx])
+            fill = float(sum(circles[i][3] * a for i, a in zip(idx, areas)) / areas.sum())
+            out_c.append((float(mx), float(my), float(mr), fill))
+        out_r.append(r)
+        out_k.append(c)
+    return out_c, np.array(out_r, int), np.array(out_k, int)
+
+
+def _transform_grid(grid, orientation):
+    """Apply one of the eight orientations to a 2-D array."""
+    rot, flip = (orientation.split("+") + [""])[:2]
+    out = np.rot90(grid, k=int(rot) // 90)
+    if flip:
+        out = out[:, ::-1]
+    return out
+
+
+def match_orientation(observed, array_number, orientation="auto"):
+    """Match the observed occupancy grid to the printed map.
+
+    ``observed`` is a boolean ``(n_rows, n_cols)`` array of the scan. For each
+    candidate orientation the transformed map is compared at every offset that
+    keeps the observed grid inside it. The score rewards cores present in both,
+    penalises cores present in the scan but absent from the map heavily (they
+    cannot exist) and dropped cores lightly (cores fall off sections).
+
+    Returns ``(orientation, index_lookup, score, ties)`` where ``index_lookup``
+    is an ``(n_rows, n_cols, 2)`` array giving the map ``(row, col)`` of each
+    scan cell (``-1`` where the scan cell lies outside the map) and ``ties``
+    lists every orientation that reached the same best score.
+
+    Occupancy alone cannot distinguish a transform from its mirror image when
+    the array is fully populated, so ``ties`` is frequently non-empty for
+    arrays 3 to 8 and the caller should let the user confirm the orientation.
+    Ties are broken in the order of :data:`ORIENTATIONS`.
+    """
+    map_occ = occupancy_grid(array_number)
+    map_idx = np.stack(np.meshgrid(np.arange(MAP_ROWS), np.arange(MAP_COLS), indexing="ij"), axis=-1)
+    candidates = [o for o in ORIENTATIONS[1:]] if orientation == "auto" else [orientation]
+    best = None
+    for o in candidates:
+        occ_t = _transform_grid(map_occ, o)
+        idx_t = _transform_grid(map_idx, o)
+        mh, mw = occ_t.shape
+        oh, ow = observed.shape
+        for oy in range(min(0, mh - oh), max(0, mh - oh) + 1):
+            for ox in range(min(0, mw - ow), max(0, mw - ow) + 1):
+                score = 0.0
+                lookup = np.full((oh, ow, 2), -1, dtype=int)
+                for r in range(oh):
+                    for c in range(ow):
+                        mr, mc = r + oy, c + ox
+                        inside = 0 <= mr < mh and 0 <= mc < mw
+                        has_map = inside and occ_t[mr, mc]
+                        if inside:
+                            lookup[r, c] = idx_t[mr, mc]
+                        if observed[r, c] and has_map:
+                            score += 1.0
+                        elif observed[r, c] and not has_map:
+                            score -= 3.0
+                        elif has_map and not observed[r, c]:
+                            score -= 0.5
+                if best is None or score > best[2] + 1e-9:
+                    best = (o, lookup, score)
+                    ties = [o]
+                elif abs(score - best[2]) <= 1e-9 and o not in ties:
+                    ties.append(o)
+    return best[0], best[1], best[2], ties
+
+
+# ---------------------------------------------------------------------------
+# Preprocessor
+# ---------------------------------------------------------------------------
+
+class TMAPreprocessor:
+    """Fit, map and export the cores of one TMA slide.
+
+    Parameters
+    ----------
+    slide_path : str
+        ``.vsi`` slide or a flat whole-slide image.
+    array_number : int or None
+        ICGC array number used to look up patient IDs. ``None`` skips ID
+        mapping and names cores by grid position only.
+    slide_name : str or None
+        Prefix for output filenames. Defaults to the slide's own name.
+    pixel_size_um : float or None
+        Override for slides without calibration metadata.
+    core_diameter_um : float
+        Nominal core diameter.
+    margin_um : float
+        Extra border around the fitted circle in the crop.
+    erode_px : int
+        Shrink of the circle mask, in level-0 pixels, to keep the core edge
+        out of the analysis.
+    fit_pixel_size_um : float
+        Resolution at which circle fitting is performed.
+    """
+
+    def __init__(self, slide_path, array_number=None, slide_name=None, pixel_size_um=None,
+                 core_diameter_um=1000.0, margin_um=50.0, erode_px=8, fit_pixel_size_um=5.0,
+                 orientation="auto"):
+        self.reader = open_slide(slide_path, pixel_size_um=pixel_size_um)
+        if not self.reader.pixel_size_um:
+            raise ValueError("Pixel size is unknown; pass pixel_size_um explicitly.")
+        self.slide_path = slide_path
+        self.array_number = array_number
+        self.slide_name = slide_name or self.reader.slide_name
+        self.core_diameter_um = core_diameter_um
+        self.margin_um = margin_um
+        self.erode_px = erode_px
+        self.fit_pixel_size_um = fit_pixel_size_um
+        self.orientation = orientation
+        self.cores = []
+        self.grid_shape = (0, 0)
+        self.matched_orientation = None
+        self.match_score = None
+        self.orientation_ties = []
+        self._fit_level = None
+        self._fit_image = None
+
+    # -- stage 1: fit -------------------------------------------------------
+    def fit(self):
+        r = self.reader
+        lv = r.best_level_for_pixel_size(self.fit_pixel_size_um)
+        ds = r.level_downsample(lv)
+        img = r.read_level(lv, channel=0)
+        px_um = r.pixel_size_um * ds
+        circles = fit_cores(img, px_um, self.core_diameter_um)
+        rows, cols, n_rows, n_cols = infer_grid(circles, self.core_diameter_um / px_um)
+        circles, rows, cols = merge_grid_duplicates(circles, rows, cols)
+        self.cores = [Core(index=i + 1, cx=c[0] * ds, cy=c[1] * ds, radius=c[2] * ds, fill=c[3],
+                           row=int(rows[i]), col=int(cols[i]))
+                      for i, c in enumerate(circles)]
+        self.grid_shape = (n_rows, n_cols)
+        self._fit_level, self._fit_image = lv, img
+        # row-major numbering, matching the printed maps
+        self.cores.sort(key=lambda c: (c.row, c.col))
+        for i, c in enumerate(self.cores, 1):
+            c.index = i
+        return self.cores
+
+    # -- stage 2: map -------------------------------------------------------
+    def map_to_array(self):
+        if self.array_number is None or not self.cores:
+            self.matched_orientation = None
+            return None
+        observed = np.zeros(self.grid_shape, dtype=bool)
+        for c in self.cores:
+            observed[c.row, c.col] = True
+        o, lookup, score, ties = match_orientation(observed, self.array_number, self.orientation)
+        self.matched_orientation, self.match_score = o, score
+        self.orientation_ties = ties
+        amap = self.array_map()
+        for c in self.cores:
+            c.map_row, c.map_col = (int(v) for v in lookup[c.row, c.col])
+            info = amap.get((c.map_row, c.map_col)) if c.map_row >= 0 else None
+            # Debris outside the array lands in cells the map does not have.
+            c.outside_map = info is None or info.empty
+        return o
+
+    def exportable_cores(self):
+        return [c for c in self.cores if not c.outside_map]
+
+    def array_map(self):
+        return load_array_map(self.array_number) if self.array_number is not None else {}
+
+    def core_info(self, core):
+        if core.map_row < 0:
+            return None
+        return self.array_map().get((core.map_row, core.map_col))
+
+    def core_stem(self, core, channel=None):
+        info = self.core_info(core)
+        if info is not None:
+            return core_stem(self.slide_name, core.map_row, core.map_col, info, channel)
+        return core_stem(self.slide_name, core.row, core.col, None, channel)
+
+    # -- stage 3: export ----------------------------------------------------
+    def export(self, out_dir, channels=None, progress=None, cancel=None):
+        """Write per-core images and masks, ``cores.csv`` and ``overlay.png``.
+
+        ``progress(done, total, message)`` is called after each file;
+        ``cancel()`` returning True stops the export early.
+        """
+        r = self.reader
+        channels = list(channels or r.channels)
+        img_dir = os.path.join(out_dir, "Images")
+        mask_dir = os.path.join(out_dir, "Masks")
+        os.makedirs(img_dir, exist_ok=True)
+        os.makedirs(mask_dir, exist_ok=True)
+        margin_px = self.margin_um / r.pixel_size_um
+        cores = self.exportable_cores()
+        total = len(cores) * len(channels)
+        done = 0
+        for core in cores:
+            side = int(round(2 * (core.radius + margin_px)))
+            x0 = int(round(core.cx - side / 2))
+            y0 = int(round(core.cy - side / 2))
+            mask = np.zeros((side, side), dtype=np.uint8)
+            cv2.circle(mask, (int(round(core.cx - x0)), int(round(core.cy - y0))),
+                       max(1, int(round(core.radius - self.erode_px))), 255, -1)
+            for ch in channels:
+                if cancel is not None and cancel():
+                    return False
+                stem = self.core_stem(core, ch)
+                crop = r.read_region(x0, y0, side, side, channel=ch, level=0)
+                write_png_with_resolution(os.path.join(img_dir, stem + ".png"), crop, r.pixel_size_um)
+                cv2.imwrite(os.path.join(mask_dir, stem + ".png"), mask)
+                done += 1
+                if progress is not None:
+                    progress(done, total, stem)
+        self.write_manifest(os.path.join(out_dir, "cores.csv"), channels[0])
+        cv2.imwrite(os.path.join(out_dir, "overlay.png"), self.draw_overlay())
+        return True
+
+    def write_manifest(self, path, channel=None):
+        fields = ["stem", "slide", "array", "scan_row", "scan_col", "map_position", "map_label",
+                  "sector", "patient_id", "icgc_id", "tissue", "note", "cx", "cy", "radius_px",
+                  "fill", "flag", "orientation"]
+        amap = self.array_map()
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=fields)
+            w.writeheader()
+            for c in self.cores:
+                info = amap.get((c.map_row, c.map_col)) if c.map_row >= 0 else None
+                w.writerow({
+                    "stem": self.core_stem(c, channel),
+                    "slide": self.slide_name,
+                    "array": self.array_number if self.array_number is not None else "",
+                    "scan_row": c.row + 1, "scan_col": c.col + 1,
+                    "map_position": info.position if info else "",
+                    "map_label": info.label if info else "",
+                    "sector": info.sector if info else "",
+                    "patient_id": info.patient_id if info else "",
+                    "icgc_id": info.icgc_id if info else "",
+                    "tissue": info.tissue if info else "",
+                    "note": info.note if info else "",
+                    "cx": round(c.cx, 1), "cy": round(c.cy, 1), "radius_px": round(c.radius, 1),
+                    "fill": round(c.fill, 3), "flag": c.flag,
+                    "orientation": self.matched_orientation or "",
+                })
+
+    def draw_overlay(self):
+        """Fit-level image with numbered, colour-graded circles and map labels."""
+        if self._fit_image is None:
+            raise RuntimeError("Call fit() first")
+        ds = self.reader.level_downsample(self._fit_level)
+        ov = self._fit_image.copy()
+        scale = max(0.4, ov.shape[1] / 3000.0)
+        for c in self.cores:
+            colour = {"ok": (0, 180, 0), "partial": (0, 140, 255), "sparse": (0, 0, 255),
+                      "outside_map": (128, 128, 128)}[c.flag]
+            centre = (int(c.cx / ds), int(c.cy / ds))
+            cv2.circle(ov, centre, int(c.radius / ds), colour, max(1, int(2 * scale)))
+            info = self.core_info(c)
+            text = f"{c.index}" + (f" {info.position}" if info and not info.empty else "")
+            cv2.putText(ov, text, (centre[0] - int(20 * scale), centre[1] + int(6 * scale)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6 * scale, (255, 0, 0), max(1, int(2 * scale)), cv2.LINE_AA)
+        return ov
+
+    def run(self, out_dir, channels=None, progress=None, cancel=None):
+        self.fit()
+        self.map_to_array()
+        return self.export(out_dir, channels=channels, progress=progress, cancel=cancel)
+
+    def close(self):
+        self.reader.close()
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def main(argv=None):
+    import argparse
+    from tqdm import tqdm
+    p = argparse.ArgumentParser(prog="cabana-tma",
+                                description="Fit TMA cores and export per-core images and masks.")
+    p.add_argument("slide", help=".vsi slide or whole-slide TIFF/PNG")
+    p.add_argument("out_dir", help="output folder (Images/, Masks/, cores.csv, overlay.png)")
+    p.add_argument("--array", type=int, default=None, help="ICGC array number for patient-ID lookup")
+    p.add_argument("--slide-name", default=None, help="filename prefix (default: slide name)")
+    p.add_argument("--pixel-size", type=float, default=None, help="µm per pixel if not in metadata")
+    p.add_argument("--core-diameter", type=float, default=1000.0, help="nominal core diameter in µm")
+    p.add_argument("--margin", type=float, default=50.0, help="crop margin around the circle in µm")
+    p.add_argument("--erode", type=int, default=8, help="mask shrink in pixels")
+    p.add_argument("--orientation", choices=ORIENTATIONS, default="auto")
+    p.add_argument("--channels", nargs="*", default=None, help="channels to export (default: all)")
+    p.add_argument("--fit-only", action="store_true", help="write cores.csv and overlay.png only")
+    a = p.parse_args(argv)
+
+    pre = TMAPreprocessor(a.slide, array_number=a.array, slide_name=a.slide_name,
+                          pixel_size_um=a.pixel_size, core_diameter_um=a.core_diameter,
+                          margin_um=a.margin, erode_px=a.erode, orientation=a.orientation)
+    pre.fit()
+    o = pre.map_to_array()
+    print(f"{pre.slide_name}: {len(pre.cores)} cores on a {pre.grid_shape[0]}x{pre.grid_shape[1]} grid"
+          + (f", orientation {o} (score {pre.match_score:.1f})" if o else ""))
+    if len(pre.orientation_ties) > 1:
+        print(f"  WARNING: orientations {pre.orientation_ties} fit equally well; "
+              f"confirm against the printed map or pass --orientation.")
+    os.makedirs(a.out_dir, exist_ok=True)
+    if a.fit_only:
+        pre.write_manifest(os.path.join(a.out_dir, "cores.csv"), (a.channels or pre.reader.channels)[0])
+        cv2.imwrite(os.path.join(a.out_dir, "overlay.png"), pre.draw_overlay())
+    else:
+        bar = tqdm(total=len(pre.exportable_cores()) * len(a.channels or pre.reader.channels), unit="img")
+        pre.export(a.out_dir, channels=a.channels,
+                   progress=lambda d, t, s: (bar.update(1), bar.set_postfix_str(s)))
+        bar.close()
+    pre.close()
+
+
+if __name__ == "__main__":
+    main()

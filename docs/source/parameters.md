@@ -6,6 +6,8 @@ The user can set the parameters in this section to enable (setting to `true`) or
 
 For instance, if the background is clean, segmentation may not be needed and therefore can be disabled.
 
+`ROI Masks` (optional, default empty) is a folder of binary masks, one `<image name>.png` per input image, that restricts all measurements to the white region. The `Masks/` folder written by [TMA preprocessing](tma.md) is the usual source. When empty, only the segmentation mask defines the analysis region.
+
 ## Segmentation Parameters
 
 This component of Cabana aims to extract collagen fibre areas determined by Picrosirius Red staining or SHG in an image from cluttered background based on colour and other low-level features. It relies on a self-supervised semantic segmentation model based on convolutional neural networks to group semantically similar neighbouring pixels. The mean colour of the pixels in the same segment will be compared with a user-specified threshold to determine whether the segment is the region of interest (ROI).
@@ -35,6 +37,10 @@ The following image segmentation parameters for ROI extraction can be adjusted:
 6. **Max Size**
 
    The maximum allowable image size. Any image with a size larger than the *square* of this parameter will be ignored by the program. The default value is 2048.
+
+7. **Patch Size**
+
+   Side length in pixels of the square patches used for patch-wise segmentation, or 0 (default) to segment the whole image at once after shrinking it to 512 px. Patches overlap by one eighth of their size, are edge-anchored so every patch is full-sized, and their colour-distance maps are blended before thresholding. Use about 1024 for images of several thousand pixels such as TMA cores.
 
 Note:
 

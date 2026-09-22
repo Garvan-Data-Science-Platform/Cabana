@@ -184,7 +184,7 @@ class _FakeBatchCabana:
     instances = []
 
     def __init__(self, param_file, input_folder, batch_folder, batch_size,
-                 batch_idx, ignore_large, progress_callback=None):
+                 batch_idx, ignore_large, progress_callback=None, mask_dir=None):
         self.batch_idx = batch_idx
         self.progress_callback = progress_callback
         type(self).instances.append(self)

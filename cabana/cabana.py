@@ -24,11 +24,15 @@ from .utils import overlay_colorbar, color_survey_with_colorbar
 
 
 class Cabana:
-    def __init__(self, param_file, input_image_path, out_folder, ignore_large=True):
+    def __init__(self, param_file, input_image_path, out_folder, ignore_large=True, mask_dir=None):
         self.param_file = param_file
         self.input_image_path = input_image_path
         self.output_folder = out_folder
         self.ignore_large = ignore_large
+        # Optional folder of external ROI masks (e.g. TMA core circles), one
+        # ``<image stem>.png`` per image. Falls back to Configs: ROI Masks.
+        self.ext_mask_dir = mask_dir
+        self.roi_mask_path = None
 
         # Store image name and extension
         self.img_name = os.path.basename(input_image_path)
@@ -80,9 +84,11 @@ class Cabana:
         self.color_dir = join_path(self.output_folder, 'Colors', "")
         self.fibre_dir = join_path(self.output_folder, 'Fibres', "")
         self.eligible_dir = join_path(self.output_folder, 'Eligible')
+        self.roimask_dir = join_path(self.output_folder, 'ROIMasks', "")
 
         # Create folders
         create_folder(self.eligible_dir)
+        create_folder(self.roimask_dir)
         create_folder(self.fibre_dir)
         create_folder(self.mask_dir)
         create_folder(self.hdm_dir)
@@ -116,7 +122,10 @@ class Cabana:
         setattr(self.seg_args, 'rt', float(self.args['Segmentation']["Color Threshold"]))
         setattr(self.seg_args, 'max_size', int(self.args['Segmentation']["Max Size"]))
         setattr(self.seg_args, 'min_size', int(self.args['Segmentation']["Min Size"]))
+        setattr(self.seg_args, 'patch_size', int(self.args['Segmentation'].get("Patch Size", 0) or 0))
         setattr(self.seg_args, 'white_background', self.args['Detection']["Dark Line"])
+        if not self.ext_mask_dir:
+            self.ext_mask_dir = self.args.get('Configs', {}).get('ROI Masks') or None
 
     def prepare_image(self):
         """Prepare the input image for analysis"""
@@ -150,6 +159,7 @@ class Cabana:
             return False
 
         # Check if image is too large
+        crop_box = None
         if height * width > max_size ** 2 and bright_percent > 0.01:
             if self.ignore_large:
                 warnings.warn('Image is too large. No analysis will be performed.')
@@ -160,28 +170,43 @@ class Cabana:
                 col_blk_sz = int(np.ceil(width / int(np.ceil(width / max_size))))
                 warnings.warn('Image is oversized. Splitting into smaller blocks.')
                 # Use only the first block for simplicity
-                box = (0, 0, col_blk_sz, row_blk_sz)
-                img = img[box[1]:box[3], box[0]:box[2]]
+                crop_box = (0, 0, col_blk_sz, row_blk_sz)
+                img = img[crop_box[1]:crop_box[3], crop_box[0]:crop_box[2]]
 
         # Store original image
         self.original_img = img
         cv2.imwrite(join_path(self.eligible_dir, self.name_wo_ext + ".png"), img)
+
+        # Bring the external ROI mask (if any) alongside the eligible image
+        from .stages import prepare_roi_mask
+        self.roi_mask_path = prepare_roi_mask(self.ext_mask_dir, self.name_wo_ext, (height, width),
+                                              self.roimask_dir, crop_box=crop_box)
+        if self.roi_mask_path:
+            print('Using external ROI mask {}'.format(self.roi_mask_path))
         return True
 
     def generate_roi(self):
         """Generate region of interest"""
         img_path = join_path(self.eligible_dir, self.name_wo_ext + ".png")
 
+        from .segmenter import generate_rois, load_roi_mask
+        setattr(self.seg_args, 'input', img_path)
+        setattr(self.seg_args, 'roi_mask_path', self.roi_mask_path)
         if self.args["Configs"]["Segmentation"]:
             print('Segmenting image')
-            setattr(self.seg_args, 'input', img_path)
             segment_single_image(self.seg_args)
         else:
             print("No segmentation is applied prior to image analysis.")
-            setattr(self.seg_args, 'input', img_path)
             img = cv2.imread(self.seg_args.input)
-            mask = np.ones((img.shape[0], img.shape[1]), dtype=np.uint8) * 255
-            cv2.imwrite(join_path(self.seg_args.roi_dir, self.name_wo_ext + '_roi.png'), img)
+            # The external ROI mask (if any) is the analysis region even when
+            # segmentation is off; otherwise the whole image is analysed.
+            mask = load_roi_mask(self.roi_mask_path, img.shape)
+            if mask is None:
+                mask = np.ones((img.shape[0], img.shape[1]), dtype=np.uint8) * 255
+                roi_img = img
+            else:
+                roi_img = generate_rois(img, mask, self.seg_args.white_background)
+            cv2.imwrite(join_path(self.seg_args.roi_dir, self.name_wo_ext + '_roi.png'), roi_img)
             cv2.imwrite(join_path(self.seg_args.bin_dir, self.name_wo_ext + '_mask.png'), mask)
 
         # Load segmented images
@@ -193,7 +218,7 @@ class Cabana:
 
     def detect_fibres(self):
         """Detect fibres in the ROI image"""
-        from .stages import build_fibre_detector, detect_one_image
+        from .stages import build_fibre_detector, detect_one_image, roi_mask_for
         d = self.args["Detection"]
         print(f"Detecting fibres with line widths in "
               f"[{d['Min Line Width']}, {d['Max Line Width']}] pixels")
@@ -202,7 +227,9 @@ class Cabana:
         result = detect_one_image(det, img_path,
                                   mask_dir=self.mask_dir,
                                   export_subdir=self.export_img_dir,
-                                  color_subdir=self.color_img_dir)
+                                  color_subdir=self.color_img_dir,
+                                  roi_mask=roi_mask_for(self.roimask_dir, self.name_wo_ext),
+                                  roi_erode_px=int(self.args['Detection']['Max Line Width']))
         self.contour_img = result['contour_img']
         self.width_img = result['width_img']
 
@@ -253,7 +280,7 @@ class Cabana:
         """Quantify high density matrix areas"""
         from .stages import run_hdm
         img_path = join_path(self.eligible_dir, self.name_wo_ext + ".png")
-        df_hdm = run_hdm(self.args, img_path, self.hdm_dir, ext=".png")
+        df_hdm = run_hdm(self.args, img_path, self.hdm_dir, ext=".png", mask_dir=self.roimask_dir)
         self.stats.loc[0, 'Image'] = self.name_wo_ext + '_roi.png'
         self.stats.loc[0, '% HDM Area'] = df_hdm["% HDM Area"].iloc[0]
 
@@ -280,6 +307,12 @@ class Cabana:
         img = cv2.imread(img_path, 0)
         color_img = cv2.imread(join_path(self.eligible_dir, self.name_wo_ext + ".png"))
         mask = img.copy()
+
+        # Space outside the external ROI mask (e.g. TMA core corners) is not a gap
+        from .stages import roi_mask_for
+        roi = roi_mask_for(self.roimask_dir, self.name_wo_ext)
+        if roi is not None:
+            mask[roi == 0] = 0
 
         # Set border pixels to zero to avoid partial circles
         mask[0, :] = mask[-1, :] = mask[:, :1] = mask[:, -1:] = 0
@@ -421,6 +454,7 @@ class Cabana:
             ori_img_path=join_path(self.eligible_dir, self.name_wo_ext + ".png"),
             width_mask_path=join_path(self.export_img_dir, "Width.png"),
             hdm_mask_path=join_path(self.hdm_dir, self.name_wo_ext + '_roi.png'),
+            roi_mask_path=self.roi_mask_path,
         )
         for k, v in metrics.items():
             self.stats.loc[0, k] = v

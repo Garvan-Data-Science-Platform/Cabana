@@ -30,6 +30,12 @@ def _set_macos_dock_name(name):
 
 
 def main():
+    # ``python -m cabana tma ...`` runs the TMA preprocessing CLI headless.
+    if len(sys.argv) > 1 and sys.argv[1] == 'tma':
+        from .tma import main as tma_main
+        tma_main(sys.argv[2:])
+        return
+
     if sys.platform == 'darwin':
         _set_macos_dock_name('Cabana')
 

@@ -11,6 +11,8 @@ CABANA (CollAgen FiBre ANAlyzer) is a comprehensive toolkit for analyzing collag
 - Gap analysis for inter-fibre and intra-fibre spaces
 - Interactive parameter optimization interface
 - Batch processing for large datasets
+- Tissue micro-array (TMA) preprocessing: native Olympus VSI reading, core fitting, per-core images and masks named by patient (`cabana-tma`)
+- Optional ROI masks that confine every measurement to a region of interest
 
 CABANA combines advanced computer vision algorithms with an intuitive user interface, making it accessible to researchers without extensive programming experience while providing detailed quantitative data for comprehensive analysis of collagen architecture.
 

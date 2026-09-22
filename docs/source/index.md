@@ -7,6 +7,7 @@
 introduction
 installation
 workflow
+tma
 parameters
 readouts
 faqs
@@ -21,6 +22,7 @@ Cabana (ColAgen FiBre ANAlyzer) is a comprehensive software tool for analyzing c
 - [What is Cabana?](introduction.md)
 - [Installation Guide](installation.md)
 - [Image Analysis Workflows](workflow.md)
+- [TMA Preprocessing](tma.md)
 - [Parameter Settings](parameters.md)
 - [Statistics Interpretation](readouts.md)
 - [Citing Cabana](citing.md)

@@ -17,3 +17,5 @@ torch
 tqdm
 twine
 imageio-ffmpeg
+tifffile
+imagecodecs

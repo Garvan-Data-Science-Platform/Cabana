@@ -8,7 +8,7 @@ with open("requirements.txt", "r") as fh:
 
 setuptools.setup(
     name="cabana",
-    version="0.2.1",
+    version="0.3.0",
     author="Gavin Lin",
     author_email="x.lin@garvan.org.au",
     description="Collagen fibre analyser for quantifying collagen fibre architecture in IHC and fluorescence microscopy images.",
@@ -19,11 +19,14 @@ setuptools.setup(
     python_requires=">=3.12",
     packages=setuptools.find_packages(exclude=["tests", "tests.*"]),
     package_data={
-        'cabana': ['cabana-logo.ico'],
+        'cabana': ['cabana-logo.ico', 'data/*.csv'],
     },
     entry_points={
             'gui_scripts': [
                 'cabana-gui=cabana.__main__:main',
+            ],
+            'console_scripts': [
+                'cabana-tma=cabana.tma:main',
             ],
         },
     classifiers=[

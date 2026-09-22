@@ -18,7 +18,6 @@ Example usage:
 
 import os
 import cv2
-import csv
 import imutils
 from . import convcrf
 import argparse
@@ -26,14 +25,13 @@ import numpy as np
 import torch.nn.init
 from glob import glob
 from pathlib import Path
-from tqdm import tqdm
 from skimage import measure
 import torch.optim as optim
 from .log import Log
 from torch.autograd import Variable
 from skimage.morphology import remove_small_objects, remove_small_holes
 from .models import BackBone, LightConv3x3
-from .utils import mean_image, cal_color_dist, save_result_video, read_bar_format
+from .utils import mean_image, cal_color_dist
 
 # Set fixed seed for reproducible results
 SEED = 0
@@ -70,209 +68,224 @@ def parse_args():
                         help='The maximal allowable image size')
     parser.add_argument('--white_background', default=True, type=bool,
                         help='Set background color to white in output images')
-    parser.add_argument('--save_video', default=False, action='store_true',
-                        help='Save intermediate results as video')
-    parser.add_argument('--save_frame_interval', default=2, type=int,
-                        help='Save frame every N iterations when saving video')
     parser.add_argument('--roi_dir', type=str, default="./output/ROIs",
                         help='Directory to save ROI images')
     parser.add_argument('--bin_dir', type=str, default="./output/Bins",
                         help='Directory to save binary mask images')
     parser.add_argument('--input', type=str, help='Input image path', required=False)
+    parser.add_argument('--patch_size', default=0, type=int,
+                        help='Segment in square patches of this many pixels (0 = whole image)')
+    parser.add_argument('--patch_overlap', default=0.125, type=float,
+                        help='Overlap between patches as a fraction of the patch size')
+    parser.add_argument('--roi_mask_path', type=str, default=None,
+                        help='Optional binary ROI mask intersected with the segmentation')
     args, _ = parser.parse_known_args()
     return args
 
 
-def segment_single_image(args, iter_callback=None):
+def tile_windows(length, patch, overlap):
+    """Edge-anchored 1-D tiling: window starts so that every window is exactly
+    ``patch`` long and the last window ends on the image edge.
+
+    Returns ``[0]`` when ``length <= patch``.
     """
-    Segment a single image using a CNN + CRF approach.
+    if length <= patch:
+        return [0]
+    step = max(1, patch - overlap)
+    starts = list(range(0, length - patch, step))
+    starts.append(length - patch)
+    return starts
 
-    This function performs the following steps:
-    1. Load and preprocess the input image
-    2. Initialize the model and CRF
-    3. Train the model iteratively on this single image
-    4. Apply thresholding based on color properties
-    5. Generate and save ROI images and masks
 
-    Args:
-        args (argparse.Namespace): Configuration parameters
-        iter_callback (callable, optional): If provided, called once per
-            training iteration as ``iter_callback(iter_idx, max_iter)`` where
-            ``iter_idx`` is zero-based. Used by the GUI to advance the batch
-            progress bar continuously during the CNN loop, which dominates
-            wall-clock time per image. Must not raise.
+def _feather_weights(h, w, margin):
+    """Weight map that ramps linearly from 0 at the patch border to 1 at
+    ``margin`` pixels inside, used to blend overlapping patches."""
+    if margin <= 0:
+        return np.ones((h, w), dtype=np.float32)
+    ramp_y = np.minimum(np.arange(h) + 1, np.arange(h)[::-1] + 1) / float(margin)
+    ramp_x = np.minimum(np.arange(w) + 1, np.arange(w)[::-1] + 1) / float(margin)
+    return (np.clip(ramp_y, 0, 1)[:, None] * np.clip(ramp_x, 0, 1)[None, :]).astype(np.float32)
 
-    Returns:
-        tuple: (area, percentage) where area is the segmented area in pixels and
-               percentage is the ratio of segmented area to the total image area
+
+def segment_color_distance(img_bgr, args, iter_callback=None, cnn_size=512):
+    """Train the self-supervised CNN + CRF on one image and return the relative
+    colour-distance map to the hue of interest.
+
+    The image is resized so that its longer side is ``cnn_size`` before
+    training (no rotation). The returned map has that reduced size; callers
+    threshold it with ``args.rt`` and resize as needed. ``iter_callback(it,
+    max_iter)`` is invoked after every iteration.
     """
-    # Set seeds for reproducibility
     torch.manual_seed(SEED)
     torch.cuda.manual_seed(SEED)
 
-    # Load and preprocess the input image
-    ori_img = cv2.imread(args.input)
-    img_name = os.path.splitext(os.path.basename(args.input))[0]
-
-    # Rotate image if portrait orientation is detected
-    rotated = False
-    if ori_img.shape[0] > ori_img.shape[1]:
-        ori_img = cv2.rotate(ori_img, cv2.ROTATE_90_COUNTERCLOCKWISE)
-        rotated = True
-
-    ori_width, ori_height = ori_img.shape[::-1][1:]
-
-    # Resize the image to a standard width while maintaining aspect ratio
-    img = imutils.resize(ori_img, width=512)
+    h, w = img_bgr.shape[:2]
+    if w >= h:
+        img = imutils.resize(img_bgr, width=cnn_size)
+    else:
+        img = imutils.resize(img_bgr, height=cnn_size)
     rgb_image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img_size = img.shape[:2]
 
-    # Prepare image for PyTorch processing
-    img = img.transpose(2, 0, 1)  # Convert to channels-first format
-    data = torch.from_numpy(np.array([img.astype('float32') / 255.]))
-    img_var = torch.Tensor(img.reshape([1, 3, *img_size]))  # 1, 3, h, w
+    chw = img.transpose(2, 0, 1)
+    data = torch.from_numpy(np.array([chw.astype('float32') / 255.]))
+    img_var = torch.Tensor(chw.reshape([1, 3, *img_size]))
 
-    # Initialize CRF with configuration
     config = convcrf.default_conf
     config['filter_size'] = args.sz_filter
-
-    gausscrf = convcrf.GaussCRF(conf=config,
-                                shape=img_size,
-                                nclasses=args.num_channels,
+    gausscrf = convcrf.GaussCRF(conf=config, shape=img_size, nclasses=args.num_channels,
                                 use_gpu=torch.cuda.is_available())
-
-    # Initialize the segmentation model
     model = BackBone([LightConv3x3], [2], [args.num_channels // 2, args.num_channels])
-
-    # Move to GPU if available
     if torch.cuda.is_available():
-        data = data.cuda()
-        img_var = img_var.cuda()
-        gausscrf = gausscrf.cuda()
-        model = model.cuda()
-
+        data, img_var = data.cuda(), img_var.cuda()
+        gausscrf, model = gausscrf.cuda(), model.cuda()
     data = Variable(data)
     img_var = Variable(img_var)
 
-    # Set up model for training
     model.train()
     loss_fn = torch.nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
 
-    # Initialize arrays for storing intermediate results if video saving is enabled
-    label_colours = np.random.randint(255, size=(100, 3))
-    all_image_labels = []
-    all_mean_images = []
-    all_absolute_greenness = []
-    all_relative_greenness = []
-    all_thresholded = []
-
-    # Training loop with progress bar
-    pbar = tqdm(range(args.max_iter), bar_format=read_bar_format)
-    for batch_idx in pbar:
-        # Forward pass
+    image_labels = None
+    for batch_idx in range(args.max_iter):
         optimizer.zero_grad()
         output = model(data)[0]
         unary = output.unsqueeze(0)
         prediction = gausscrf.forward(unary=unary, img=img_var)
         target = torch.argmax(prediction.squeeze(0), axis=0).reshape(img_size[0] * img_size[1], )
         output = output.permute(1, 2, 0).contiguous().view(-1, args.num_channels)
-
-        # Process prediction
         im_target = target.data.cpu().numpy()
         image_labels = im_target.reshape(img_size[0], img_size[1]).astype("uint8")
         num_labels = len(np.unique(im_target))
 
-        font = cv2.FONT_HERSHEY_COMPLEX_SMALL
-        font_scale = 1.2
-        thickness = 2
-        color = (255, 255, 255)  # White
-
-        # Save intermediate results if video saving is enabled
-        if args.save_video and not (batch_idx % args.save_frame_interval):
-            im_target_rgb = np.array([label_colours[c % 100] for c in im_target])
-            im_target_rgb = im_target_rgb.reshape(img_size[0], img_size[1], 3).astype("uint8")
-            mean_img = mean_image(rgb_image, measure.label(image_labels))
-            abs_color_dist, rel_color_dist = cal_color_dist(mean_img, args.hue_value)
-            thresholded = 255 * ((rel_color_dist > args.rt).astype("uint8"))
-            all_mean_images.append(mean_img)
-            all_absolute_greenness.append(abs_color_dist)
-            all_relative_greenness.append(rel_color_dist)
-            all_thresholded.append(thresholded)
-            left_text = f"Iter. cycles: {batch_idx+1}"
-            right_text = f"No. labels: {num_labels}"
-
-            # Get text sizes
-            (left_w, left_h), _ = cv2.getTextSize(left_text, font, font_scale, thickness)
-            (right_w, right_h), _ = cv2.getTextSize(right_text, font, font_scale, thickness)
-
-            # Y-coordinate near bottom (with margin)
-            y = im_target_rgb.shape[0] - 10
-
-            # Draw left-aligned text
-            cv2.putText(im_target_rgb, left_text, (10, y), font, font_scale, color, thickness)
-
-            # Draw right-aligned text
-            x_right = img.shape[1] - right_w - 10
-            cv2.putText(im_target_rgb, right_text, (x_right, y), font, font_scale, color, thickness)
-            all_image_labels.append(im_target_rgb)
-
-        # Backward pass
         loss = loss_fn(output, target)
         loss.backward()
         optimizer.step()
 
-        # Update progress bar
-        pbar.set_description(
-            f"Iteration {batch_idx}/{args.max_iter}: {num_labels} labels, loss: {loss.item():.2f}")
-
-        # Notify host of sub-image progress for the batch progress bar.
         if iter_callback is not None:
             iter_callback(batch_idx, args.max_iter)
-
-        # Early stopping condition
         if num_labels <= args.min_labels:
-            Log.logger.debug(f"nLabels {num_labels} reached minLabels {args.min_labels}: {args.input}")
+            Log.logger.debug(f"nLabels {num_labels} reached minLabels {args.min_labels}")
             break
 
-    # Save results
-    if args.save_video:
-        # Save video with intermediate results
-        if not os.path.exists(args.bin_dir):
-            Path(args.bin_dir).mkdir(parents=True, exist_ok=True)
-        save_result_path = os.path.join(args.bin_dir, img_name + "_result.mp4")
-        save_result_video(save_result_path, rgb_image, all_image_labels, all_mean_images,
-                          all_absolute_greenness, all_relative_greenness, all_thresholded)
-    else:
-        # Process and save the final segmentation result
-        labels = measure.label(image_labels)
-        mean_img = mean_image(rgb_image, labels)
-        abs_color_dist, rel_color_dist = cal_color_dist(mean_img, args.hue_value)
+    labels = measure.label(image_labels)
+    mean_img = mean_image(rgb_image, labels)
+    _, rel_color_dist = cal_color_dist(mean_img, args.hue_value)
+    return rel_color_dist.astype(np.float32)
 
-        # Apply threshold and clean up small objects/holes
-        thresholded = rel_color_dist > args.rt
-        thresholded = remove_small_holes(thresholded, max_size=args.min_size)
-        thresholded = remove_small_objects(thresholded, args.min_size)
-        mask = 255 * (thresholded.astype("uint8"))
 
-        # Resize mask to original image size
-        mask = cv2.resize(mask, (ori_width, ori_height), cv2.INTER_NEAREST)
+def _clean_mask(thresholded, min_size):
+    thresholded = remove_small_holes(thresholded, max_size=min_size)
+    thresholded = remove_small_objects(thresholded, min_size)
+    return thresholded
 
-        # Generate ROI with masked background
-        roi_img = generate_rois(ori_img, (mask > 128).astype("uint8") * 255, args.white_background)
 
-        # Save results, with rotation if needed
-        if rotated:
-            cv2.imwrite(os.path.join(args.roi_dir, img_name + '_roi.png'),
-                        cv2.rotate(roi_img, cv2.ROTATE_90_CLOCKWISE))
-            cv2.imwrite(os.path.join(args.bin_dir, img_name + '_mask.png'),
-                        (cv2.rotate(mask, cv2.ROTATE_90_CLOCKWISE) > 128).astype("uint8") * 255)
-        else:
-            cv2.imwrite(os.path.join(args.roi_dir, img_name + '_roi.png'), roi_img)
-            cv2.imwrite(os.path.join(args.bin_dir, img_name + '_mask.png'), (mask > 128).astype("uint8") * 255)
+def segment_image(img_bgr, args, iter_callback=None, cnn_size=512):
+    """Segment one image and return a binary ``uint8`` mask (0/255) at the
+    image's own resolution.
 
-        # Return area and percentage metrics
-        return np.sum(mask > 128), np.sum(mask > 128) / (ori_width * ori_height)
+    When ``args.patch_size`` is 0 or the image fits inside one patch, the
+    whole image is reduced to ``cnn_size`` on its longer side, segmented, and
+    the thresholded mask is up-sampled with nearest-neighbour interpolation
+    (the original behaviour). Otherwise the image is tiled with edge-anchored
+    square patches of ``args.patch_size`` pixels overlapping by
+    ``args.patch_overlap`` (fraction of the patch); every patch is reduced to
+    ``cnn_size`` and segmented independently, the colour-distance maps are
+    up-sampled to patch resolution and blended with linear feathering, and the
+    merged map is thresholded once. ``min_size`` is scaled by the square of the
+    patch reduction factor so it keeps meaning "objects smaller than N pixels
+    at CNN resolution".
+    """
+    h, w = img_bgr.shape[:2]
+    patch = int(getattr(args, 'patch_size', 0) or 0)
+    if patch <= 0 or max(h, w) <= patch:
+        dist = segment_color_distance(img_bgr, args, iter_callback, cnn_size)
+        thresholded = _clean_mask(dist > args.rt, args.min_size)
+        mask = 255 * thresholded.astype("uint8")
+        return cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
+
+    overlap = int(round(patch * float(getattr(args, 'patch_overlap', 0.125) or 0)))
+    ys = tile_windows(h, patch, overlap)
+    xs = tile_windows(w, patch, overlap)
+    n_patches = len(ys) * len(xs)
+    acc = np.zeros((h, w), dtype=np.float32)
+    wsum = np.zeros((h, w), dtype=np.float32)
+    weights = _feather_weights(patch, patch, overlap)
+    k = 0
+    for y0 in ys:
+        for x0 in xs:
+            ph, pw = min(patch, h - y0), min(patch, w - x0)
+            sub = img_bgr[y0:y0 + ph, x0:x0 + pw]
+
+            def _cb(it, max_iter, _k=k):
+                if iter_callback is not None:
+                    iter_callback(_k * max_iter + it, n_patches * max_iter)
+
+            dist = segment_color_distance(sub, args, _cb, cnn_size)
+            dist = cv2.resize(dist, (pw, ph), interpolation=cv2.INTER_LINEAR)
+            wgt = weights[:ph, :pw]
+            acc[y0:y0 + ph, x0:x0 + pw] += dist * wgt
+            wsum[y0:y0 + ph, x0:x0 + pw] += wgt
+            k += 1
+    merged = acc / np.maximum(wsum, 1e-6)
+    scale = (patch / float(cnn_size)) ** 2
+    thresholded = _clean_mask(merged > args.rt, max(1, int(round(args.min_size * scale))))
+    return 255 * thresholded.astype("uint8")
+
+
+def load_roi_mask(mask_path, shape):
+    """Read an external ROI mask as 0/255 ``uint8`` matching ``shape`` (h, w).
+
+    Returns ``None`` when ``mask_path`` is falsy or unreadable. Masks of a
+    different size are resized with nearest-neighbour interpolation.
+    """
+    if not mask_path or not os.path.exists(mask_path):
+        return None
+    mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+    if mask is None:
+        return None
+    if mask.shape[:2] != tuple(shape[:2]):
+        Log.logger.warning(f"ROI mask {os.path.basename(mask_path)} is {mask.shape[1]}x{mask.shape[0]}; "
+                           f"resizing to the image size {shape[1]}x{shape[0]}.")
+        mask = cv2.resize(mask, (shape[1], shape[0]), interpolation=cv2.INTER_NEAREST)
+    return ((mask > 128).astype(np.uint8)) * 255
+
+
+def segment_single_image(args, iter_callback=None):
+    """
+    Segment a single image using a CNN + CRF approach and write the ROI image
+    and binary mask.
+
+    Steps:
+    1. Load the input image (``args.input``)
+    2. Segment it (whole-image or patch-wise, see :func:`segment_image`)
+    3. Intersect the result with an external ROI mask when
+       ``args.roi_mask_path`` is set (e.g. a TMA core circle)
+    4. Save ``<name>_roi.png`` (background masked out) and ``<name>_mask.png``
+
+    Args:
+        args: Segmentation arguments (see :func:`parse_args`)
+        iter_callback: Optional callable ``(iteration, max_iter)`` invoked after
+            every training iteration so hosts can display progress.
+
+    Returns:
+        tuple: (mask area in pixels, mask area fraction of the image)
+    """
+    ori_img = cv2.imread(args.input)
+    img_name = os.path.splitext(os.path.basename(args.input))[0]
+    ori_height, ori_width = ori_img.shape[:2]
+
+    mask = segment_image(ori_img, args, iter_callback)
+
+    roi_mask = load_roi_mask(getattr(args, 'roi_mask_path', None), ori_img.shape)
+    if roi_mask is not None:
+        mask = cv2.bitwise_and(mask, roi_mask)
+
+    roi_img = generate_rois(ori_img, mask, args.white_background)
+    cv2.imwrite(os.path.join(args.roi_dir, img_name + '_roi.png'), roi_img)
+    cv2.imwrite(os.path.join(args.bin_dir, img_name + '_mask.png'), mask)
+
+    return np.sum(mask > 128), np.sum(mask > 128) / (ori_width * ori_height)
 
 
 def visualize_fibres(img, mask, result_path, thickness=3, border_color=[255, 255, 0]):
@@ -336,12 +349,10 @@ def generate_rois(img, roi, white_background=True, thickness=3):
     # Create a dilated mask for border pixels
     kernel = np.ones((thickness, thickness), np.uint8)
     eroded_roi = cv2.dilate(roi, kernel, iterations=1)
-    (x_idx, y_idx) = np.where(eroded_roi == 255)
 
     # Apply background color to masked regions
     img_roi = img.copy()
-    for row, col in zip(list(x_idx), list(y_idx)):
-        img_roi[row, col, :] = np.array(background_color)
+    img_roi[eroded_roi == 255] = np.array(background_color, dtype=img_roi.dtype)
 
     return img_roi
 

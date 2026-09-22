@@ -1,6 +1,6 @@
 # Image Analysis Workflow
 
-Once the Cabana GUI is launched, you'll see a window split horizontally: the control panel on the left and the image viewing area on the right. The program is designed to let you:
+Once the Cabana GUI is launched, you'll see a window split horizontally: the control panel on the left and the image viewing area on the right. The control panel's **Analysis** section is organised as pages selected from a narrow vertical rail: **TMA**, **Segment**, **Detect Fibres**, **Analyse Gaps** and **Batch Run**. The TMA page ([TMA preprocessing](tma.md)) is only needed for tissue micro-array slides. The program is designed to let you:
 
 1. experiment with parameters for different components using your data, and
 2. export the optimized parameters for batch processing on larger datasets.
@@ -21,7 +21,9 @@ Under the **`Segmentation`** tab, you will find the parameters for adjusting the
 
 5. **Max Number of Iterations**: Sets the maximum number of iterations to run during the segmentation process.
 
-6. **White Background**: Determines whether the non-ROI areas are filled with white. Enabled by default. Disable this option if you're detecting bright fibres on a dark background.
+6. **Patch Size**: Off by default, meaning the whole image is shrunk to 512 px for the segmentation network. Set a size (e.g. 1024 px) to segment large images in overlapping square patches instead; each patch is shrunk to 512 px, the colour-distance maps are blended and thresholded once, so fine detail survives on images of several thousand pixels.
+
+7. **White Background**: Determines whether the non-ROI areas are filled with white. Enabled by default. Disable this option if you're detecting bright fibres on a dark background.
 
 Note: if you want to select a different colour of interest on the image, you can use the button "**Reload Image**" to reload image so that the original image will be shown again on the image viewer.
 
@@ -58,6 +60,8 @@ The '**Gap Analysis**' tab defines the parameters for gap analysis as described 
 Once all parameters in 'Segmentation', 'Detection' and 'Gap Analysis' have been selected, the user can export the selected parameters to a parameter configuration yml file, say Parameters.yml, which can then be used for batch processing.
 
 ## Batch Processing
+
+The **ROI Masks** field is optional. Point it at a folder of binary masks named like the input images (white = analyse, black = ignore), such as the `Masks/` folder written by the TMA page, to restrict every measurement to the masked region. Leave it empty to rely on segmentation alone.
 
 Under the '**Batch Processing**' tab, the user can specify the parameter file, input folder containing the images to be quantified, and the output folder for storing the results. It is recommended to open the Parameters.yml file to review and adjust the settings as needed---for example, disabling segmentation/gap analysis or adjusting specific parameters (refer to the parameter details in next section). Cabana will process the images in the input folder in batches (default batch size is 5). If an issue causes the program to terminate, the user can resume processing from the last batch after addressing the problem.
 

@@ -2,6 +2,7 @@ Configs:
   Segmentation: True
   Quantification: True
   Gap Analysis: True
+  ROI Masks: ""
 
 Segmentation:
   Number of Labels: 32
@@ -10,6 +11,7 @@ Segmentation:
   Color Threshold: 0.2
   Min Size: 64
   Max Size: 2048
+  Patch Size: 0
 
 Detection:
   Dark Line: True

@@ -74,7 +74,7 @@ FIBRE_AREA_METRICS = (
 )
 
 
-def run_hdm(args, source_path, hdm_dir, ext='.png'):
+def run_hdm(args, source_path, hdm_dir, ext='.png', mask_dir=None):
     """Run HDM quantification on a single image path or a directory of images.
 
     Parameters
@@ -87,6 +87,9 @@ def run_hdm(args, source_path, hdm_dir, ext='.png'):
         Output directory for HDM artifacts and ``ResultsHDM.csv``.
     ext : str
         Image extension(s) to process. Default ``.png``.
+    mask_dir : str, optional
+        Folder of prepared ROI masks (``<stem>.png``); HDM is restricted to
+        the mask and ``% HDM Area`` is relative to the mask area.
 
     Returns
     -------
@@ -99,22 +102,104 @@ def run_hdm(args, source_path, hdm_dir, ext='.png'):
         sat_ratio=args["Quantification"]["Contrast Enhancement"],
         dark_line=args["Detection"]["Dark Line"],
     )
-    hdm.quantify_black_space(source_path, hdm_dir, ext=ext)
+    hdm.quantify_black_space(source_path, hdm_dir, ext=ext, mask_dir=mask_dir)
     return hdm.df_hdm
 
 
-def compute_fibre_areas(img_mask_path, ori_img_path, width_mask_path, hdm_mask_path):
+ROI_MASK_DIRNAME = 'ROIMasks'
+_MASK_SUFFIXES = ('.png', '_mask.png', '.tif', '.tiff')
+
+
+def find_external_mask(mask_dir, stem):
+    """Locate the external ROI mask for an image stem inside ``mask_dir``.
+
+    Accepts ``<stem>.png``, ``<stem>_mask.png``, ``<stem>.tif``/``.tiff``.
+    Returns the path or ``None``.
+    """
+    if not mask_dir or not stem or not os.path.isdir(mask_dir):
+        return None
+    for suffix in _MASK_SUFFIXES:
+        candidate = join_path(mask_dir, stem + suffix)
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
+def prepare_roi_mask(mask_dir, stem, shape, out_dir, out_stem=None, crop_box=None):
+    """Copy the external mask for ``stem`` into ``out_dir`` as a 0/255 PNG
+    matching the analysed image.
+
+    ``shape`` is the (h, w) of the *full* input image; the mask is resized to
+    it (nearest neighbour) and then, when ``crop_box=(x0, y0, x1, y1)`` is
+    given, cropped to the block that is actually analysed. Returns the written
+    path or ``None`` when no mask exists.
+    """
+    from .segmenter import load_roi_mask
+    src = find_external_mask(mask_dir, stem)
+    if src is None:
+        return None
+    mask = load_roi_mask(src, shape)
+    if mask is None:
+        return None
+    if crop_box is not None:
+        x0, y0, x1, y1 = crop_box
+        mask = mask[y0:y1, x0:x1]
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+    dst = join_path(out_dir, (out_stem or stem) + '.png')
+    cv2.imwrite(dst, mask)
+    return dst
+
+
+def roi_mask_for(roimask_dir, stem):
+    """Load the prepared ROI mask (0/255 ``uint8``) for ``stem`` or ``None``."""
+    path = join_path(roimask_dir, stem + '.png') if roimask_dir else None
+    if not path or not os.path.exists(path):
+        return None
+    mask = cv2.imread(path, 0)
+    return None if mask is None else ((mask > 128).astype(np.uint8) * 255)
+
+
+def restrict_to_roi(binary_black_on_white, roi_mask, erode_px=0):
+    """Blank a black-on-white fibre image outside ``roi_mask``.
+
+    The mask is eroded by ``erode_px`` first so the artificial edge between
+    tissue and background fill is never reported as a fibre.
+    """
+    if roi_mask is None:
+        return binary_black_on_white
+    keep = roi_mask
+    if erode_px and erode_px > 0:
+        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * int(erode_px) + 1, 2 * int(erode_px) + 1))
+        keep = cv2.erode(roi_mask, k)
+    out = binary_black_on_white.copy()
+    out[keep == 0] = 255
+    return out
+
+
+def compute_fibre_areas(img_mask_path, ori_img_path, width_mask_path, hdm_mask_path,
+                        roi_mask_path=None):
     """Compute the seven fibre-area / mean-intensity metrics for one image.
 
     Returns a dict keyed by ``FIBRE_AREA_METRICS``. If the ROI mask is empty,
-    all values are 0.
+    all values are 0. When ``roi_mask_path`` (an external analysis-region
+    mask, e.g. a TMA core circle) is given, the percentage metrics are taken
+    relative to that region instead of the whole image and the WIDTH mask is
+    restricted to it.
     """
     img_mask = cv2.imread(img_mask_path, 0)
     area_roi = float(np.sum(img_mask > 128))
     if area_roi == 0:
         return dict.fromkeys(FIBRE_AREA_METRICS, 0)
 
-    percent_roi = area_roi / img_mask.shape[0] / img_mask.shape[1]
+    analysis_area = float(img_mask.shape[0] * img_mask.shape[1])
+    ext_mask = None
+    if roi_mask_path and os.path.exists(roi_mask_path):
+        ext_mask = cv2.imread(roi_mask_path, 0)
+        if ext_mask is not None and ext_mask.shape[:2] == img_mask.shape[:2] and np.any(ext_mask > 128):
+            analysis_area = float(np.sum(ext_mask > 128))
+        else:
+            ext_mask = None
+    percent_roi = area_roi / analysis_area
     ori_img = iio.imread(ori_img_path)
 
     hed = rgb2hed(ori_img)
@@ -124,8 +209,13 @@ def compute_fibre_areas(img_mask_path, ori_img_path, width_mask_path, hdm_mask_p
 
     width_mask = cv2.imread(width_mask_path, 0)
     hdm_mask = cv2.imread(hdm_mask_path, 0)
+    if ext_mask is not None:
+        width_mask = width_mask.copy()
+        width_mask[ext_mask <= 128] = 255
+        hdm_mask = hdm_mask.copy()
+        hdm_mask[ext_mask <= 128] = 0
     area_width = float(np.sum(width_mask < 128))
-    percent_width = area_width / np.prod(width_mask.shape[:2])
+    percent_width = area_width / analysis_area
 
     grayscale = (rgb2gray(ori_img) * 255).astype(np.uint8)
     if np.count_nonzero(red_img < 180):
@@ -176,7 +266,7 @@ def build_fibre_detector(args):
 
 
 def detect_one_image(det, roi_img_path, mask_dir, export_subdir, color_subdir,
-                     mask_filename=None):
+                     mask_filename=None, roi_mask=None, roi_erode_px=0):
     """Run detection on one ROI image and write the standard artifacts.
 
     Parameters
@@ -193,6 +283,10 @@ def detect_one_image(det, roi_img_path, mask_dir, export_subdir, color_subdir,
     mask_filename : str, optional
         Filename for the mask file written to ``mask_dir``. Defaults to the
         basename of ``roi_img_path``.
+    roi_mask : ndarray, optional
+        External 0/255 analysis-region mask; detected fibres outside it (after
+        eroding by ``roi_erode_px``) are discarded so the region edge is not
+        reported as a fibre.
 
     Returns
     -------
@@ -202,6 +296,9 @@ def detect_one_image(det, roi_img_path, mask_dir, export_subdir, color_subdir,
     """
     det.detect_lines(roi_img_path)
     contour_img, width_img, binary_contours, binary_widths, int_width_img = det.get_results()
+    if roi_mask is not None:
+        binary_contours = restrict_to_roi(binary_contours, roi_mask, roi_erode_px)
+        binary_widths = restrict_to_roi(binary_widths, roi_mask, roi_erode_px)
 
     base = mask_filename or os.path.basename(roi_img_path)
 

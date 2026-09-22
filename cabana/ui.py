@@ -1,25 +1,19 @@
 import cv2
 import torch
-import imutils
-from . import convcrf
 import argparse
 import numpy as np
 import tifffile as tiff
 import imageio.v3 as iio
-from skimage import measure
 from .detector import FibreDetector
-from torch.autograd import Variable
-from .segmenter import generate_rois
-from .models import BackBone, LightConv3x3
-from .utils import mean_image, cal_color_dist
+from .segmenter import generate_rois, segment_image
 from skimage.feature import peak_local_max
 from .batch import BatchProcessor
 from sklearn.metrics.pairwise import euclidean_distances
-from skimage.morphology import remove_small_objects, remove_small_holes
 
 from PyQt5.QtWidgets import (QSlider, QWidget, QSplitter, QSplitterHandle,
                              QMenu, QAction, QFileDialog, QMessageBox,
-                             QProgressBar, QSizePolicy, QTabBar, QPushButton)
+                             QProgressBar, QSizePolicy, QTabBar, QPushButton,
+                             QListWidget, QListWidgetItem)
 from PyQt5.QtCore import Qt, QSize, QEvent, QPoint, QRect, QPropertyAnimation, QEasingCurve, pyqtProperty
 from PyQt5.QtGui import QPixmap, QPainter, QPen, QColor, QDragEnterEvent, QDropEvent, QImage, QBrush, QFont
 from PyQt5.QtCore import QThread, pyqtSignal
@@ -78,7 +72,7 @@ def generate_spinner_style():
     border_color = COLORS['border']
     highlight_color = COLORS['highlight']
     return f"""
-        QSpinBox {{
+        QSpinBox, QDoubleSpinBox {{
             background-color: rgb({bg_color.red()}, {bg_color.green()}, {bg_color.blue()});
             color: rgb({text_color.red()}, {text_color.green()}, {text_color.blue()});
             border: 1px solid rgb({border_color.red()}, {border_color.green()}, {border_color.blue()});
@@ -88,13 +82,15 @@ def generate_spinner_style():
             font-size: {FONT_SIZES['base']}px;
         }}
 
-        QSpinBox::up-button, QSpinBox::down-button {{
+        QSpinBox::up-button, QSpinBox::down-button,
+        QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
             background-color: rgb({bg_color.red()}, {bg_color.green()}, {bg_color.blue()});
             border: 1px solid rgb({border_color.red()}, {border_color.green()}, {border_color.blue()});
             border-radius: 2px;
         }}
 
-        QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
+        QSpinBox::up-button:hover, QSpinBox::down-button:hover,
+        QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {{
             background-color: rgb({highlight_color.red()}, {highlight_color.green()}, {highlight_color.blue()});
         }}
 
@@ -451,6 +447,99 @@ def generate_group_box_style():
     """
 
 
+def generate_nav_rail_style():
+    """Stylesheet for the vertical navigation rail (QListWidget) that replaces
+    the horizontal tab bar: compact, icon-less, centred labels with a
+    highlight accent on the selected page."""
+    return f"""
+        QListWidget {{
+            background-color: {color_to_stylesheet(COLORS['dock'])};
+            border: none;
+            outline: none;
+            padding: 2px 0px;
+        }}
+        QListWidget::item {{
+            color: {color_to_stylesheet(COLORS['text_dim'])};
+            padding: 6px 2px;
+            margin: 2px 4px;
+            border-radius: 6px;
+            border-left: 3px solid transparent;
+            font-size: {FONT_SIZES['small']}px;
+            font-weight: 600;
+        }}
+        QListWidget::item:hover {{
+            background-color: {color_to_stylesheet(COLORS['hover'])};
+            color: {color_to_stylesheet(COLORS['highlight'])};
+        }}
+        QListWidget::item:selected {{
+            background-color: {color_to_stylesheet(COLORS['surface'])};
+            color: {color_to_stylesheet(COLORS['highlight'])};
+            border-left: 3px solid {color_to_stylesheet(COLORS['highlight'])};
+        }}
+    """
+
+
+def generate_page_stack_style():
+    """Stylesheet for the QStackedWidget holding the analysis pages; matches
+    the former tab pane (thin border, surface background)."""
+    return f"""
+        QStackedWidget {{
+            border: 1px solid {color_to_stylesheet(COLORS['border'])};
+            border-radius: 6px;
+            background-color: {color_to_stylesheet(COLORS['surface'])};
+        }}
+    """
+
+
+def generate_combo_style():
+    """Stylesheet for QComboBox controls inside the dock (base font size)."""
+    return (
+        f"QComboBox {{ background-color: {color_to_stylesheet(COLORS['dock'])}; "
+        f"color: {color_to_stylesheet(COLORS['text'])}; "
+        f"border: 1px solid {color_to_stylesheet(COLORS['border'])}; "
+        f"border-radius: 4px; padding: 4px 8px; "
+        f"font-size: {FONT_SIZES['base']}px; }}"
+        f"QComboBox:hover {{ border-color: {color_to_stylesheet(COLORS['highlight'])}; }}"
+        f"QComboBox:disabled {{ color: {color_to_stylesheet(COLORS['text_muted'])}; }}"
+        f"QComboBox::drop-down {{ border: none; width: 18px; }}"
+        f"QComboBox::down-arrow {{ image: none; border-left: 4px solid transparent; "
+        f"border-right: 4px solid transparent; "
+        f"border-top: 5px solid {color_to_stylesheet(COLORS['text_dim'])}; }}"
+        f"QComboBox QAbstractItemView {{ background-color: {color_to_stylesheet(COLORS['elevated'])}; "
+        f"color: {color_to_stylesheet(COLORS['text'])}; "
+        f"border: 1px solid {color_to_stylesheet(COLORS['border'])}; "
+        f"selection-background-color: {color_to_stylesheet(COLORS['highlight'])}; "
+        f"selection-color: {color_to_stylesheet(COLORS['background'])}; }}"
+    )
+
+
+class NavRail(QListWidget):
+    """Narrow vertical page selector. ``add_page(label)`` returns the row
+    index; a label containing a space wraps onto two lines."""
+
+    RAIL_WIDTH = 78
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedWidth(self.RAIL_WIDTH)
+        self.setSelectionMode(QListWidget.SingleSelection)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setFocusPolicy(Qt.NoFocus)
+        self.setSpacing(0)
+        self.setUniformItemSizes(True)
+        # two-line labels must wrap, never elide
+        self.setWordWrap(True)
+        self.setTextElideMode(Qt.ElideNone)
+
+    def add_page(self, label):
+        item = QListWidgetItem(label)
+        item.setTextAlignment(Qt.AlignCenter)
+        item.setSizeHint(QSize(self.RAIL_WIDTH - 8, 56 if " " in label else 44))
+        self.addItem(item)
+        return self.count() - 1
+
+
 def create_separator():
     """Create a thin horizontal separator line."""
     from PyQt5.QtWidgets import QFrame
@@ -482,8 +571,9 @@ class BatchProcessingWorker(QThread):
 
     def __init__(self, param_file, input_folder, output_folder, batch_size=5,
                  batch_num=0, resume=False, ignore_large=False,
-                 generate_stats=False, generate_scores=False):
+                 generate_stats=False, generate_scores=False, mask_dir=None):
         super().__init__()
+        self.mask_dir = mask_dir
         self.param_file = param_file
         self.input_folder = input_folder
         self.output_folder = output_folder
@@ -503,7 +593,8 @@ class BatchProcessingWorker(QThread):
         batch_processor = BatchProcessor(self.param_file, self.input_folder,
                                          self.output_folder, self.batch_size,
                                          self.batch_num, self.resume, self.ignore_large,
-                                         self.generate_stats, self.generate_scores)
+                                         self.generate_stats, self.generate_scores,
+                                         mask_dir=self.mask_dir)
 
         batch_processor.progress_callback = self.update_progress
         batch_processor.cancel_check = lambda: self._cancel_requested
@@ -642,85 +733,79 @@ class SegmentationWorker(QThread):
 
     def __init__(self, image, args):
         super().__init__()
-        self.ori_img = image
+        self.ori_img = image          # RGB array as loaded by the GUI
         self.args = args
 
     def run(self):
-        # Copy the segment_image logic here, but emit progress signals instead
-        torch.manual_seed(SEED)
-        torch.cuda.manual_seed(SEED)
+        def _progress(it, max_iter):
+            self.progress_updated.emit(int((it + 1.0) / max(1, max_iter) * 100))
 
-        # Copy of the segmentation logic...
-        rotated = False
-        if self.ori_img.shape[0] > self.ori_img.shape[1]:
-            self.ori_img = cv2.rotate(self.ori_img, cv2.ROTATE_90_COUNTERCLOCKWISE)
-            rotated = True
+        # segment_image expects BGR (OpenCV) input; the GUI holds RGB
+        bgr = cv2.cvtColor(self.ori_img, cv2.COLOR_RGB2BGR)
+        mask = segment_image(bgr, self.args, iter_callback=_progress)
+        roi_img = generate_rois(self.ori_img, mask, self.args.white_background)
+        self.segmentation_complete.emit(roi_img)
 
-        ori_height, ori_width = self.ori_img.shape[:2]
-        img = imutils.resize(self.ori_img, width=512)
-        rgb_image = img.copy()
-        img_size = img.shape[:2]
-        img = img.transpose(2, 0, 1)
-        data = torch.from_numpy(np.array([img.astype('float32') / 255.]))
-        img_var = torch.Tensor(img.reshape([1, 3, *img_size]))  # 1, 3, h, w
 
-        config = convcrf.default_conf
-        config['filter_size'] = self.args.sz_filter
+class TMAWorker(QThread):
+    """Background worker for the TMA page.
 
-        gausscrf = convcrf.GaussCRF(conf=config,
-                                    shape=img_size,
-                                    nclasses=self.args.num_channels,
-                                    use_gpu=torch.cuda.is_available())
+    ``mode='fit'`` opens the slide, fits the cores and matches the array map;
+    ``mode='export'`` writes the per-core images and masks. Progress is
+    reported in percent, with a short status text for the status bar.
+    """
+    progress_updated = pyqtSignal(int)
+    status_updated = pyqtSignal(str)
+    fit_complete = pyqtSignal(object)      # TMAPreprocessor
+    export_complete = pyqtSignal(str)      # output folder
+    export_cancelled = pyqtSignal()
+    failed = pyqtSignal(str)
 
-        model = BackBone([LightConv3x3], [2], [self.args.num_channels // 2, self.args.num_channels])
-        if torch.cuda.is_available():
-            data = data.cuda()
-            img_var = img_var.cuda()
-            gausscrf = gausscrf.cuda()
-            model = model.cuda()
+    def __init__(self, mode, preprocessor=None, slide_path=None, options=None,
+                 out_dir=None, channels=None):
+        super().__init__()
+        self.mode = mode
+        self.preprocessor = preprocessor
+        self.slide_path = slide_path
+        self.options = options or {}
+        self.out_dir = out_dir
+        self.channels = channels
+        self._cancel_requested = False
 
-        data = Variable(data)
-        img_var = Variable(img_var)
+    def cancel(self):
+        self._cancel_requested = True
 
-        model.train()
-        loss_fn = torch.nn.CrossEntropyLoss()
-        optimizer = torch.optim.SGD(model.parameters(), lr=self.args.lr, momentum=0.9)
+    def run(self):
+        from .tma import TMAPreprocessor
+        try:
+            if self.mode == 'fit':
+                self.progress_updated.emit(5)
+                self.status_updated.emit("Opening slide…")
+                pre = TMAPreprocessor(self.slide_path, **self.options)
+                self.progress_updated.emit(20)
+                self.status_updated.emit("Fitting cores…")
+                pre.fit()
+                self.progress_updated.emit(80)
+                self.status_updated.emit("Matching array map…")
+                pre.map_to_array()
+                self.progress_updated.emit(100)
+                self.fit_complete.emit(pre)
+            else:
+                pre = self.preprocessor
 
-        # During the iterations, emit progress
-        for batch_idx in range(self.args.max_iter):
-            # Calculate progress percentage
-            progress = int((batch_idx + 1.0) / self.args.max_iter * 100)
-            self.progress_updated.emit(progress)
+                def _progress(done, total, stem):
+                    self.progress_updated.emit(int(done / max(1, total) * 100))
+                    self.status_updated.emit(f"Exporting {stem} ({done}/{total})")
 
-            # Segmentation computation code
-            optimizer.zero_grad()
-            output = model(data)[0]
-            unary = output.unsqueeze(0)
-            prediction = gausscrf.forward(unary=unary, img=img_var)
-            target = torch.argmax(prediction.squeeze(0), axis=0).reshape(img_size[0] * img_size[1], )
-            output = output.permute(1, 2, 0).contiguous().view(-1, self.args.num_channels)
+                ok = pre.export(self.out_dir, channels=self.channels, progress=_progress,
+                                cancel=lambda: self._cancel_requested)
+                if ok:
+                    self.export_complete.emit(self.out_dir)
+                else:
+                    self.export_cancelled.emit()
+        except Exception as exc:   # surfaced to the user by the GUI
+            self.failed.emit(str(exc))
 
-            im_target = target.data.cpu().numpy()
-            image_labels = im_target.reshape(img_size[0], img_size[1]).astype("uint8")
-
-            loss = loss_fn(output, target)
-            loss.backward()
-            optimizer.step()
-
-        labels = measure.label(image_labels)
-        mean_img = mean_image(rgb_image, labels)
-        abs_color_dist, rel_color_dist = cal_color_dist(mean_img, self.args.hue_value)
-        thresholded = rel_color_dist > self.args.rt
-        thresholded = remove_small_holes(thresholded, max_size=self.args.min_size)
-        thresholded = remove_small_objects(thresholded, self.args.min_size)
-
-        # Create the final segmented image
-        mask = cv2.resize(255 * (thresholded.astype("uint8")), (ori_width, ori_height), cv2.INTER_NEAREST)
-        roi_img = generate_rois(self.ori_img, (mask > 128).astype("uint8") * 255, self.args.white_background)
-        result = roi_img if not rotated else cv2.rotate(roi_img, cv2.ROTATE_90_CLOCKWISE)
-
-        # Emit the completed result
-        self.segmentation_complete.emit(result)
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Self-Supervised Semantic Segmentation')

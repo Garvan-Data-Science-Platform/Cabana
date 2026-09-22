@@ -53,7 +53,7 @@ class HDM:
         self.dark_line = dark_line
         self.df_hdm = None
 
-    def quantify_black_space(self, image_path, save_dir=None, ext=".png"):
+    def quantify_black_space(self, image_path, save_dir=None, ext=".png", mask_dir=None):
         """
         Quantify the dark (hematoxylin-stained) regions in histological images.
 
@@ -68,6 +68,10 @@ class HDM:
             Directory where processed images and results will be saved.
         ext : str or list, optional
             File extension(s) to process. Default is ".png".
+        mask_dir : str, optional
+            Folder holding a 0/255 ROI mask ``<image stem>.png`` per image.
+            When present, HDM pixels outside the mask are discarded and the
+            area percentage is taken relative to the mask area.
 
         Returns
         -------
@@ -97,14 +101,25 @@ class HDM:
         for img_path in img_paths:
             # Enhance image contrast
             enhanced_image = self.enhance_contrast(img_path)
+
+            # Restrict to the external ROI mask when one is available
+            denominator = np.prod(enhanced_image.shape[:2])
+            stem = os.path.basename(img_path)[:-4]
+            mask_path = join_path(mask_dir, stem + ".png") if mask_dir else None
+            if mask_path and os.path.exists(mask_path):
+                roi = cv2.imread(mask_path, 0)
+                if roi is not None and roi.shape[:2] == enhanced_image.shape[:2] and np.any(roi > 128):
+                    enhanced_image = enhanced_image.copy()
+                    enhanced_image[roi <= 128] = 0
+                    denominator = np.count_nonzero(roi > 128)
             hdm_imgs.append(enhanced_image)
 
             # Store image name and calculate HDM area percentage
-            output_filename = os.path.basename(img_path)[:-4] + "_roi.png"
+            output_filename = stem + "_roi.png"
             img_names.append(output_filename)
 
-            # Calculate ratio of non-zero pixels to total pixels (HDM area percentage)
-            hdm.append(np.count_nonzero(enhanced_image > 0) / np.prod(enhanced_image.shape[:2]))
+            # Calculate ratio of non-zero pixels to analysed pixels (HDM area percentage)
+            hdm.append(np.count_nonzero(enhanced_image > 0) / denominator)
 
         # Save results to CSV
         if save_dir is not None:

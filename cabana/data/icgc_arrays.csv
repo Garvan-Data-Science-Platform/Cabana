@@ -1,0 +1,769 @@
+array,issued,sector,label,row,col,patient_id,icgc_id,tissue,note,empty
+1,Issued 27/1/2011,1,A1,A,1,,,Liver,,0
+1,Issued 27/1/2011,1,A2,A,2,8009865,1599,,,0
+1,Issued 27/1/2011,1,A3,A,3,,,Muscle,,0
+1,Issued 27/1/2011,1,A4,A,4,8010718,1734,,,0
+1,Issued 27/1/2011,1,A5,A,5,8011174,1955,,,0
+1,Issued 27/1/2011,1,A6,A,6,8011263,1956,,,0
+1,Issued 27/1/2011,1,A7,A,7,8007016,1127,,,0
+1,Issued 27/1/2011,1,A8,A,8,,,Placenta,,0
+1,Issued 27/1/2011,1,B1,B,1,8012185,1995,,,0
+1,Issued 27/1/2011,1,B2,B,2,8012181,2001,,,0
+1,Issued 27/1/2011,1,B3,B,3,8012191,2113,,,0
+1,Issued 27/1/2011,1,B4,B,4,8012178,2060,,,0
+1,Issued 27/1/2011,1,B5,B,5,8011323,1987,,,0
+1,Issued 27/1/2011,1,B6,B,6,8030562,1830,,,0
+1,Issued 27/1/2011,1,B7,B,7,8012176,2058,,,0
+1,Issued 27/1/2011,1,B8,B,8,8013847,2057,,,0
+1,Issued 27/1/2011,1,C1,C,1,8030873,2158,,,0
+1,Issued 27/1/2011,1,C2,C,2,8030506,2160,,,0
+1,Issued 27/1/2011,1,C3,C,3,8030869,2156,,,0
+1,Issued 27/1/2011,1,C4,C,4,8030462,2149,,,0
+1,Issued 27/1/2011,1,C5,C,5,8030483,2137,,,0
+1,Issued 27/1/2011,1,C6,C,6,8030469,2143,,,0
+1,Issued 27/1/2011,1,C7,C,7,8030864,2132,,,0
+1,Issued 27/1/2011,1,C8,C,8,8030860,2122,,,0
+1,Issued 27/1/2011,1,D1,D,1,8030499,2121,,,0
+1,Issued 27/1/2011,1,D2,D,2,8007341,1151,,,0
+1,Issued 27/1/2011,1,D3,D,3,8012183,1994,,,0
+1,Issued 27/1/2011,1,D4,D,4,8030458,2049,,,0
+1,Issued 27/1/2011,1,D5,D,5,8030490,2051,,,0
+1,Issued 27/1/2011,1,D6,D,6,8030479,2052,,,0
+1,Issued 27/1/2011,1,D7,D,7,,,Brain,,0
+1,Issued 27/1/2011,1,D8,D,8,8009865,1599,,,0
+1,Issued 27/1/2011,2,A5,E,1,8010718,1734,,,0
+1,Issued 27/1/2011,2,A6,E,2,8030873,2158,,,0
+1,Issued 27/1/2011,2,A7,E,3,8012181,2001,,,0
+1,Issued 27/1/2011,2,A8,E,4,8030483,2137,,,0
+1,Issued 27/1/2011,2,A1,E,5,8011174,1955,,,0
+1,Issued 27/1/2011,2,A2,E,6,8013847,2057,,,0
+1,Issued 27/1/2011,2,A3,E,7,8030462,2149,,,0
+1,Issued 27/1/2011,2,A4,E,8,8012176,2058,,,0
+1,Issued 27/1/2011,2,B5,F,1,8030499,2121,,,0
+1,Issued 27/1/2011,2,B6,F,2,8030860,2122,,,0
+1,Issued 27/1/2011,2,B7,F,3,8030864,2132,,,0
+1,Issued 27/1/2011,2,B8,F,4,8030506,2160,,,0
+1,Issued 27/1/2011,2,B1,F,5,8030469,2143,,,0
+1,Issued 27/1/2011,2,B2,F,6,8011263,1956,,,0
+1,Issued 27/1/2011,2,B3,F,7,8012178,2060,,,0
+1,Issued 27/1/2011,2,B4,F,8,8030869,2156,,,0
+1,Issued 27/1/2011,2,C5,G,1,8030469,2143,,,0
+1,Issued 27/1/2011,2,C6,G,2,8013847,2057,,,0
+1,Issued 27/1/2011,2,C7,G,3,8007341,1151,,,0
+1,Issued 27/1/2011,2,C8,G,4,8011323,1987,,,0
+1,Issued 27/1/2011,2,C1,G,5,8012183,1994,,,0
+1,Issued 27/1/2011,2,C2,G,6,8012191,2113,,,0
+1,Issued 27/1/2011,2,C3,G,7,8030562,1830,,,0
+1,Issued 27/1/2011,2,C4,G,8,8007016,1127,,,0
+1,Issued 27/1/2011,2,D5,H,1,8011323,1987,,,0
+1,Issued 27/1/2011,2,D6,H,2,8011174,1955,,,0
+1,Issued 27/1/2011,2,D7,H,3,8030462,2149,,,0
+1,Issued 27/1/2011,2,D8,H,4,8030490,2051,,,0
+1,Issued 27/1/2011,2,D1,H,5,,,Salivary gland,,0
+1,Issued 27/1/2011,2,D2,H,6,8030458,2049,,,0
+1,Issued 27/1/2011,2,D3,H,7,8030860,2122,,,0
+1,Issued 27/1/2011,2,D4,H,8,8012185,1995,,,0
+1,Issued 27/1/2011,3,A3,I,1,8030479,2052,,,0
+1,Issued 27/1/2011,3,A4,I,2,8030490,2051,,,0
+1,Issued 27/1/2011,3,A5,I,3,8012181,2001,,,0
+1,Issued 27/1/2011,3,A6,I,4,8007341,1151,,,0
+1,Issued 27/1/2011,3,A7,I,5,8030506,2160,,,0
+1,Issued 27/1/2011,3,A8,I,6,8030479,2052,,,0
+1,Issued 27/1/2011,3,A1,I,7,8030499,2121,,,0
+1,Issued 27/1/2011,3,A2,I,8,8030864,2132,,,0
+1,Issued 27/1/2011,3,B3,J,1,8012176,2058,,,0
+1,Issued 27/1/2011,3,B4,J,2,8007016,1127,,,0
+1,Issued 27/1/2011,3,B5,J,3,,,Placenta,,0
+1,Issued 27/1/2011,3,B6,J,4,8009865,1599,,,0
+1,Issued 27/1/2011,3,B7,J,5,8030458,2049,,,0
+1,Issued 27/1/2011,3,B8,J,6,8012183,1994,,,0
+1,Issued 27/1/2011,3,B1,J,7,8030562,1830,,,0
+1,Issued 27/1/2011,3,B2,J,8,8012185,1995,,,0
+1,Issued 27/1/2011,3,C3,K,1,8012191,2113,,,0
+1,Issued 27/1/2011,3,C4,K,2,8011263,1956,,,0
+1,Issued 27/1/2011,3,C5,K,3,8030869,2156,,,0
+1,Issued 27/1/2011,3,C6,K,4,8030483,2137,,,0
+1,Issued 27/1/2011,3,C7,K,5,8012178,2060,,,0
+1,Issued 27/1/2011,3,C8,K,6,8010718,1734,,,0
+1,Issued 27/1/2011,3,C1,K,7,8030873,2158,,,0
+1,Issued 27/1/2011,3,C2,K,8,,,Lung,,0
+1,Issued 27/1/2011,3,D3,L,1,,,,,1
+1,Issued 27/1/2011,3,D4,L,2,,,,,1
+1,Issued 27/1/2011,3,D5,L,3,,,,,1
+1,Issued 27/1/2011,3,D6,L,4,,,,,1
+1,Issued 27/1/2011,3,D7,L,5,,,,,1
+1,Issued 27/1/2011,3,D8,L,6,,,,,1
+1,Issued 27/1/2011,3,D1,L,7,,,,,1
+1,Issued 27/1/2011,3,D2,L,8,,,,,1
+2,Issued 03/2/2011,1,A1,A,1,,,Liver,,0
+2,Issued 03/2/2011,1,A2,A,2,8010994,1965,,,0
+2,Issued 03/2/2011,1,A3,A,3,,,Muscle,,0
+2,Issued 03/2/2011,1,A4,A,4,8031305,2041,,,0
+2,Issued 03/2/2011,1,A5,A,5,8010956,1924,,,0
+2,Issued 03/2/2011,1,A6,A,6,8015216,2044,,,0
+2,Issued 03/2/2011,1,A7,A,7,8011105,1953,,,0
+2,Issued 03/2/2011,1,A8,A,8,,,Normal pancreas,,0
+2,Issued 03/2/2011,1,B1,B,1,8031319,2045,,,0
+2,Issued 03/2/2011,1,B2,B,2,8011071,1971,,,0
+2,Issued 03/2/2011,1,B3,B,3,8031315,2047,,,0
+2,Issued 03/2/2011,1,B4,B,4,8010967,1959,,,0
+2,Issued 03/2/2011,1,B5,B,5,8031321,2106,,,0
+2,Issued 03/2/2011,1,B6,B,6,8030540,2023,,,0
+2,Issued 03/2/2011,1,B7,B,7,8031313,2129,,,0
+2,Issued 03/2/2011,1,B8,B,8,8030852,2046,,,0
+2,Issued 03/2/2011,1,C1,C,1,8031293,2199,,,0
+2,Issued 03/2/2011,1,C2,C,2,8011210,1699,,,0
+2,Issued 03/2/2011,1,C3,C,3,8011372,1992,,,0
+2,Issued 03/2/2011,1,C4,C,4,8031289,2146,,,0
+2,Issued 03/2/2011,1,C5,C,5,8030881,2214,,,0
+2,Issued 03/2/2011,1,C6,C,6,8031291,2147,,,0
+2,Issued 03/2/2011,1,C7,C,7,8011005,1966,,,0
+2,Issued 03/2/2011,1,C8,C,8,8031052,2193,,,0
+2,Issued 03/2/2011,1,D1,D,1,8031311,2200,,,0
+2,Issued 03/2/2011,1,D2,D,2,8030877,2207,,,0
+2,Issued 03/2/2011,1,D3,D,3,8030843,2026,,,0
+2,Issued 03/2/2011,1,D4,D,4,8030833,2000,,,0
+2,Issued 03/2/2011,1,D5,D,5,8011041,1973,,,0
+2,Issued 03/2/2011,1,D6,D,6,8010987,1962,,,0
+2,Issued 03/2/2011,1,D7,D,7,,,Brain,,0
+2,Issued 03/2/2011,1,D8,D,8,8010994,1965,,,0
+2,Issued 03/2/2011,2,A5,E,1,8031313,2129,,,0
+2,Issued 03/2/2011,2,A6,E,2,8031291,2147,,,0
+2,Issued 03/2/2011,2,A7,E,3,8011210,1699,,,0
+2,Issued 03/2/2011,2,A8,E,4,8031293,2199,,,0
+2,Issued 03/2/2011,2,A1,E,5,8030881,2214,,,0
+2,Issued 03/2/2011,2,A2,E,6,8031319,2045,,,0
+2,Issued 03/2/2011,2,A3,E,7,8030877,2207,,,0
+2,Issued 03/2/2011,2,A4,E,8,8011372,1992,,,0
+2,Issued 03/2/2011,2,B5,F,1,8031293,2199,,,0
+2,Issued 03/2/2011,2,B6,F,2,8015216,2044,,,0
+2,Issued 03/2/2011,2,B7,F,3,8031311,2200,,,0
+2,Issued 03/2/2011,2,B8,F,4,8031313,2129,,,0
+2,Issued 03/2/2011,2,B1,F,5,8031321,2106,,,0
+2,Issued 03/2/2011,2,B2,F,6,8011005,1966,,,0
+2,Issued 03/2/2011,2,B3,F,7,8031315,2047,,,0
+2,Issued 03/2/2011,2,B4,F,8,8030852,2046,,,0
+2,Issued 03/2/2011,2,C5,G,1,8030877,2207,,,0
+2,Issued 03/2/2011,2,C6,G,2,8030540,2023,,,0
+2,Issued 03/2/2011,2,C7,G,3,8031319,2045,,,0
+2,Issued 03/2/2011,2,C8,G,4,8031289,2146,,,0
+2,Issued 03/2/2011,2,C1,G,5,8011105,1953,,,0
+2,Issued 03/2/2011,2,C2,G,6,8011071,1971,,,0
+2,Issued 03/2/2011,2,C3,G,7,8030843,2026,,,0
+2,Issued 03/2/2011,2,C4,G,8,8030881,2214,,,0
+2,Issued 03/2/2011,2,D5,H,1,8010994,1965,,,0
+2,Issued 03/2/2011,2,D6,H,2,8031305,2041,,,0
+2,Issued 03/2/2011,2,D7,H,3,8010956,1924,,,0
+2,Issued 03/2/2011,2,D8,H,4,8030833,2000,,,0
+2,Issued 03/2/2011,2,D1,H,5,,,Salivary gland,,0
+2,Issued 03/2/2011,2,D2,H,6,8011005,1966,,,0
+2,Issued 03/2/2011,2,D3,H,7,8010967,1959,,,0
+2,Issued 03/2/2011,2,D4,H,8,8010956,1924,,,0
+2,Issued 03/2/2011,3,A3,I,1,8031321,2106,,,0
+2,Issued 03/2/2011,3,A4,I,2,8011071,1971,,,0
+2,Issued 03/2/2011,3,A5,I,3,8031291,2147,,,0
+2,Issued 03/2/2011,3,A6,I,4,8031315,2047,,,0
+2,Issued 03/2/2011,3,A7,I,5,8011041,1973,,,0
+2,Issued 03/2/2011,3,A8,I,6,8030540,2023,,,0
+2,Issued 03/2/2011,3,A1,I,7,8010987,1962,,,0
+2,Issued 03/2/2011,3,A2,I,8,8030843,2026,,,0
+2,Issued 03/2/2011,3,B3,J,1,8030833,2000,,,0
+2,Issued 03/2/2011,3,B4,J,2,8031052,2193,,,0
+2,Issued 03/2/2011,3,B5,J,3,,,Placenta,,0
+2,Issued 03/2/2011,3,B6,J,4,8031052,2193,,,0
+2,Issued 03/2/2011,3,B7,J,5,8010967,1959,,,0
+2,Issued 03/2/2011,3,B8,J,6,8031305,2041,,,0
+2,Issued 03/2/2011,3,B1,J,7,8031311,2200,,,0
+2,Issued 03/2/2011,3,B2,J,8,8031289,2146,,,0
+2,Issued 03/2/2011,3,C3,K,1,8011210,1699,,,0
+2,Issued 03/2/2011,3,C4,K,2,8015216,2044,,,0
+2,Issued 03/2/2011,3,C5,K,3,8011372,1992,,,0
+2,Issued 03/2/2011,3,C6,K,4,8011041,1973,,,0
+2,Issued 03/2/2011,3,C7,K,5,8011105,1953,,,0
+2,Issued 03/2/2011,3,C8,K,6,8010987,1962,,,0
+2,Issued 03/2/2011,3,C1,K,7,8030852,2046,,,0
+2,Issued 03/2/2011,3,C2,K,8,,,Lung,,0
+2,Issued 03/2/2011,3,D3,L,1,,,,,1
+2,Issued 03/2/2011,3,D4,L,2,,,,,1
+2,Issued 03/2/2011,3,D5,L,3,,,,,1
+2,Issued 03/2/2011,3,D6,L,4,,,,,1
+2,Issued 03/2/2011,3,D7,L,5,,,,,1
+2,Issued 03/2/2011,3,D8,L,6,,,,,1
+2,Issued 03/2/2011,3,D1,L,7,,,,,1
+2,Issued 03/2/2011,3,D2,L,8,,,,,1
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,A1,A,1,,,Liver,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,A2,A,2,8031301,2043,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,A3,A,3,8050510,2792,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,A4,A,4,8032052,2157,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,A5,A,5,8050519,2755,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,A6,A,6,8032011,2150,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,A7,A,7,8032151,2179,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,A8,A,8,8050507,2681,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,B1,B,1,8031303,2110,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,B2,B,2,8032222,2171,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,B3,B,3,8032443,2139,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,B4,B,4,8031307,2213,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,B5,B,5,8032410,2175,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,B6,B,6,8031295,2216,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,B7,B,7,8031297,2192,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,B8,B,8,8032350,2212,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,C1,C,1,8032117,2185,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,C2,C,2,8032478,2136,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,C3,C,3,8032378,2215,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,C4,C,4,8032515,2134,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,C5,C,5,8032318,2210,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,C6,C,6,8030084,2221,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,C7,C,7,8013807,2054,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,C8,C,8,8050522,2318,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,D1,D,1,8050511,2525,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,D2,D,2,8050513,2285,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,D3,D,3,8050515,2340,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,D4,D,4,8050516,2523,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,D5,D,5,8050517,2920,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,D6,D,6,8050520,2892,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,D7,D,7,,,Normal pancreas,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),1,D8,D,8,8050521,2303,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,A5,E,1,8050519,2755,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,A6,E,2,8032011,2150,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,A7,E,3,8032151,2179,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,A8,E,4,8050507,2681,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,A1,E,5,,,Muscle,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,A2,E,6,8031301,2043,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,A3,E,7,8050510,2792,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,A4,E,8,8032052,2157,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,B5,F,1,8032410,2175,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,B6,F,2,8031295,2216,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,B7,F,3,8031297,2192,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,B8,F,4,8032350,2212,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,B1,F,5,8031303,2110,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,B2,F,6,8032222,2171,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,B3,F,7,8032443,2139,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,B4,F,8,8031307,2213,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,C5,G,1,8032318,2210,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,C6,G,2,8030084,2221,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,C7,G,3,8013807,2054,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,C8,G,4,8050522,2318,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,C1,G,5,8032117,2185,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,C2,G,6,8032478,2136,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,C3,G,7,8032378,2215,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,C4,G,8,8032515,2134,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,D5,H,1,8050517,2920,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,D6,H,2,8050520,2892,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,D7,H,3,,,Normal pancreas,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,D8,H,4,8050521,2303,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,D1,H,5,8050511,2525,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,D2,H,6,8050513,2285,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,D3,H,7,8050515,2340,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),2,D4,H,8,8050516,2523,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,A3,I,1,8050510,2792,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,A4,I,2,8032052,2157,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,A5,I,3,8050519,2755,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,A6,I,4,8032011,2150,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,A7,I,5,8032151,2179,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,A8,I,6,8050507,2681,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,A1,I,7,,,Brain,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,A2,I,8,8031301,2043,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,B3,J,1,8032443,2139,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,B4,J,2,8031307,2213,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,B5,J,3,8032410,2175,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,B6,J,4,8031295,2216,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,B7,J,5,8031297,2192,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,B8,J,6,8032350,2212,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,B1,J,7,8031303,2110,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,B2,J,8,8032222,2171,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,C3,K,1,8032378,2215,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,C4,K,2,8032515,2134,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,C5,K,3,8032318,2210,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,C6,K,4,8030084,2221,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,C7,K,5,8013807,2054,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,C8,K,6,8050522,2318,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,C1,K,7,8032117,2185,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,C2,K,8,8032478,2136,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,D3,L,1,8050515,2340,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,D4,L,2,8050516,2523,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,D5,L,3,8050517,2920,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,D6,L,4,8050520,2892,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,D7,L,5,,,Salivary gland,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,D8,L,6,8050521,2303,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,D1,L,7,8050511,2525,,,0
+3,Issued 23/4/2011. Constructed 18/7/2012 (AB),3,D2,L,8,8050513,2285,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,A1,A,1,,,Liver,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,A2,A,2,8048127,2108,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,A3,A,3,8032667,2119,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,A4,A,4,8048759,2162,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,A5,A,5,8050514,2217,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,A6,A,6,8047617,2219,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,A7,A,7,8050164,2259,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,A8,A,8,8048123,2317,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,B1,B,1,8050166,2356,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,B2,B,2,8050518,2592,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,B3,B,3,8050508,2641,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,B4,B,4,8050523,2754,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,B5,B,5,8050161,2757,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,B6,B,6,8050512,2766,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,B7,B,7,8050172,2799,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,B8,B,8,8050178,2821,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,C1,C,1,8050116,2827,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,C2,C,2,8050131,2885,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,C3,C,3,8050119,2888,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,C4,C,4,8050121,2897,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,C5,C,5,8050125,2900,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,C6,C,6,8050509,2909,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,C7,C,7,8050127,2910,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,C8,C,8,,,Kidney,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,D1,D,1,8050406,2824,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,D2,D,2,8050387,2603,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,D3,D,3,8050477,2620,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,D4,D,4,8050169,2795,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,D5,D,5,8050402,2823,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,D6,D,6,8050296,2198,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,D7,D,7,8050474,2298,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,1,D8,D,8,8050139,2911,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,A5,E,1,8050514,2217,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,A6,E,2,8047617,2219,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,A7,E,3,8050164,2259,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,A8,E,4,8048123,2317,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,A1,E,5,,,Spleen,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,A2,E,6,8048127,2108,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,A3,E,7,8032667,2119,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,A4,E,8,8048759,2162,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,B5,F,1,8050161,2757,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,B6,F,2,8050512,2766,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,B7,F,3,8050172,2799,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,B8,F,4,8050178,2821,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,B1,F,5,8050166,2356,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,B2,F,6,8050518,2592,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,B3,F,7,8050508,2641,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,B4,F,8,8050523,2754,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,C5,G,1,8050125,2900,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,C6,G,2,8050509,2909,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,C7,G,3,8050127,2910,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,C8,G,4,,,Tonsil,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,C1,G,5,8050116,2827,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,C2,G,6,8050131,2885,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,C3,G,7,8050119,2888,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,C4,G,8,8050121,2897,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,D5,H,1,8050402,2823,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,D6,H,2,8050296,2198,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,D7,H,3,8050474,2298,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,D8,H,4,8050139,2911,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,D1,H,5,8050406,2824,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,D2,H,6,8050387,2603,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,D3,H,7,8050477,2620,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,2,D4,H,8,8050169,2795,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,A3,I,1,8032667,2119,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,A4,I,2,8048759,2162,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,A5,I,3,8050514,2217,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,A6,I,4,8047617,2219,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,A7,I,5,8050164,2259,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,A8,I,6,8048123,2317,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,A1,I,7,,,Testis,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,A2,I,8,8048127,2108,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,B3,J,1,8050508,2641,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,B4,J,2,8050523,2754,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,B5,J,3,8050161,2757,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,B6,J,4,8050512,2766,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,B7,J,5,8050172,2799,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,B8,J,6,8050178,2821,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,B1,J,7,8050166,2356,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,B2,J,8,8050518,2592,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,C3,K,1,8050119,2888,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,C4,K,2,8050121,2897,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,C5,K,3,8050125,2900,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,C6,K,4,8050509,2909,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,C7,K,5,8050127,2910,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,C8,K,6,,,Brain,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,C1,K,7,8050116,2827,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,C2,K,8,8050131,2885,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,D3,L,1,8050477,2620,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,D4,L,2,8050169,2795,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,D5,L,3,8050402,2823,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,D6,L,4,8050296,2198,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,D7,L,5,8050474,2298,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,D8,L,6,8050139,2911,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,D1,L,7,8050406,2824,,,0
+4,Constructed 15/10/2012 (AB). Reviewed,3,D2,L,8,8050387,2603,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,D3,A,1,8062675,3115,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,D4,A,2,8062639,2935,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,D5,A,3,8061602,2265,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,D6,A,4,8062740,2992,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,D7,A,5,,,Liver,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,D8,A,6,8069596,2039,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,D1,A,7,8064391,2985,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,D2,A,8,8060882,3036,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,A1,B,1,,,Kidney,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,A2,B,2,8031309,2188,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,A3,B,3,8050378,2321,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,A4,B,4,8050384,2598,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,A5,B,5,8050381,2519,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,A6,B,6,8050390,2813,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,A7,B,7,8050505,2527,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,A8,B,8,8050468,2261,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,B1,C,1,8050471,2267,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,B2,C,2,8007919,1282,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,B3,C,3,8010138,1627,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,B4,C,4,,,Liver,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,B5,C,5,8013893,2056,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,B6,C,6,8047624,2302,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,B7,C,7,8048345,2353,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,B8,C,8,8064412,2591,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,C1,D,1,8064419,2622,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,C2,D,2,8062714,2925,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,C3,D,3,8064425,2990,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,C4,D,4,8064399,3000,,PNET,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,C5,D,5,8064397,3011,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,C6,D,6,8061101,3045,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,C7,D,7,8064423,3279,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),1,C8,D,8,8064402,2312,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,D1,E,1,8064391,2985,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,D2,E,2,8060882,3036,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,D3,E,3,8062675,3115,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,D4,E,4,8062639,2935,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,D5,E,5,8061602,2265,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,D6,E,6,8062740,2992,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,D7,E,7,,,Testis,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,D8,E,8,8069596,2039,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,A5,F,1,8050381,2519,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,A6,F,2,8050390,2813,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,A7,F,3,8050505,2527,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,A8,F,4,8050468,2261,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,A1,F,5,,,Skin,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,A2,F,6,8031309,2188,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,A3,F,7,8050378,2321,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,A4,F,8,8050384,2598,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,B5,G,1,8013893,2056,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,B6,G,2,8047624,2302,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,B7,G,3,8048345,2353,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,B8,G,4,8064412,2591,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,B1,G,5,8050471,2267,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,B2,G,6,8007919,1282,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,B3,G,7,8010138,1627,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,B4,G,8,,,Brain,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,C5,H,1,8064397,3011,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,C6,H,2,8061101,3045,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,C7,H,3,8064423,3279,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,C8,H,4,8064402,2312,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,C1,H,5,8064419,2622,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,C2,H,6,8062714,2925,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,C3,H,7,8064425,2990,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),2,C4,H,8,8064399,3000,,PNET,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,D5,I,1,8061602,2265,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,D6,I,2,8062740,2992,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,D7,I,3,,,Kidney,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,D8,I,4,8069596,2039,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,D1,I,5,8064391,2985,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,D2,I,6,8060882,3036,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,D3,I,7,8062675,3115,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,D4,I,8,8062639,2935,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,A3,J,1,8050378,2321,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,A4,J,2,8050384,2598,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,A5,J,3,8050381,2519,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,A6,J,4,8050390,2813,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,A7,J,5,8050505,2527,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,A8,J,6,8050468,2261,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,A1,J,7,,,Spleen,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,A2,J,8,8031309,2188,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,B3,K,1,8010138,1627,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,B4,K,2,,,Muscle,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,B5,K,3,8013893,2056,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,B6,K,4,8047624,2302,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,B7,K,5,8048345,2353,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,B8,K,6,8064412,2591,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,B1,K,7,8050471,2267,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,B2,K,8,8007919,1282,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,C3,L,1,8064425,2990,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,C4,L,2,8064399,3000,,PNET,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,C5,L,3,8064397,3011,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,C6,L,4,8061101,3045,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,C7,L,5,8064423,3279,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,C8,L,6,8064402,2312,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,C1,L,7,8064419,2622,,,0
+5,Issued 25/2/14 (MB). Constructed 5/3/14 (AZ). Reviewed (AG),3,C2,L,8,8062714,2925,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,A1,A,1,,,Liver,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,A2,A,2,8064399,3000,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,A3,A,3,8052402,2263,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,A4,A,4,8046501,2144,,MCN,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,A5,A,5,8070357,3535,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,A6,A,6,8070384,2269,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,A7,A,7,8062766,3281,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,A8,A,8,8062768,3211,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,B1,B,1,8032572,2133,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,B2,B,2,8053543,2343,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,B3,B,3,8061254,3185,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,B4,B,4,8070341,3360,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,B5,B,5,8070347,3378,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,B6,B,6,8070344,3368,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,B7,B,7,8070344,3541,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,B8,B,8,8070366,3644,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,C1,C,1,8070379,3306,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,C2,C,2,8009346,1567,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,C3,C,3,8070335,3435,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,C4,C,4,8070349,3507,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,C5,C,5,8070338,3308,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,C6,C,6,8053500,2295,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,C7,C,7,8052404,2715,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,C8,C,8,,,Kidney,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,D1,D,1,8051571,2822,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,D2,D,2,801581,2938,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,D3,D,3,8050789,2756,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,D4,D,4,8051578,2970,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,D5,D,5,8070372,3482,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,D6,D,6,8070360,3537,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,D7,D,7,8061242,2898,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),1,D8,D,8,8061245,2991,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,A5,E,1,8070357,3535,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,A6,E,2,8070384,2269,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,A7,E,3,8062766,3281,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,A8,E,4,8062768,3211,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,A1,E,5,,,Testis,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,A2,E,6,8064399,3000,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,A3,E,7,8052402,2263,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,A4,E,8,8046501,2144,,MCN,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,B5,F,1,8070347,3378,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,B6,F,2,8070344,3368,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,B7,F,3,8070344,3541,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,B8,F,4,8070366,3644,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,B1,F,5,8032572,2133,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,B2,F,6,8053543,2343,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,B3,F,7,8061254,3185,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,B4,F,8,8070341,3360,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,C5,G,1,8070338,3308,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,C6,G,2,8053500,2295,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,C7,G,3,8052404,2715,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,C8,G,4,,,Spleen,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,C1,G,5,8070379,3306,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,C2,G,6,8009346,1567,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,C3,G,7,8070335,3435,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,C4,G,8,8070349,3507,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,D5,H,1,8070372,3482,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,D6,H,2,8070360,3537,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,D7,H,3,8061242,2898,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,D8,H,4,8061245,2991,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,D1,H,5,8051571,2822,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,D2,H,6,801581,2938,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,D3,H,7,8050789,2756,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),2,D4,H,8,8051578,2970,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,A3,I,1,8052402,2263,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,A4,I,2,8046501,2144,,MCN,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,A5,I,3,8070357,3535,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,A6,I,4,8070384,2269,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,A7,I,5,8062766,3281,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,A8,I,6,8062768,3211,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,A1,I,7,,,Kidney/ muscle,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,A2,I,8,8064399,3000,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,B3,J,1,8061254,3185,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,B4,J,2,8070341,3360,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,B5,J,3,8070347,3378,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,B6,J,4,8070344,3368,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,B7,J,5,8070344,3541,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,B8,J,6,8070366,3644,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,B1,J,7,8032572,2133,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,B2,J,8,8053543,2343,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,C3,K,1,8070335,3435,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,C4,K,2,8070349,3507,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,C5,K,3,8070338,3308,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,C6,K,4,8053500,2295,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,C7,K,5,8052404,2715,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,C8,K,6,,,Kidney/ muscle,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,C1,K,7,8070379,3306,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,C2,K,8,8009346,1567,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,D3,L,1,8050789,2756,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,D4,L,2,8051578,2970,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,D5,L,3,8070372,3482,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,D6,L,4,8070360,3537,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,D7,L,5,8061242,2898,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,D8,L,6,8061245,2991,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,D1,L,7,8051571,2822,,,0
+6,Issued 12/03/14 (MB). Constructed 01/04/14 (AZ). Reviewed (AC),3,D2,L,8,801581,2938,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,A1,A,1,,,Spleen,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,A2,A,2,8070375,3643,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,A3,A,3,8070382,3307,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,A4,A,4,8058614,2306,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,A5,A,5,8053459,2155,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,A6,A,6,8061248,2996,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,A7,A,7,8062589,2315,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,A8,A,8,8061256,3200,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,B1,B,1,8061239,2590,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,B2,B,2,8061089,2896,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,B3,B,3,8062711,3154,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,B4,B,4,8062677,2977,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,B5,B,5,8062719,3122,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,B6,B,6,8061096,3284,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,B7,B,7,8064415,2322,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,B8,B,8,8066405,2352,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,C1,C,1,8062699,3290,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,C2,C,2,8062717,3152,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,C3,C,3,8062735,3019,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,C4,C,4,8062732,3044,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,C5,C,5,8062726,2962,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,C6,C,6,8061093,2957,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,C7,C,7,8060863,3148,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,C8,C,8,,,Kidney,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,D1,D,1,8044408,3096,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,D2,D,2,8062701,3198,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,D3,D,3,8061599,2339,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,D4,D,4,8062643,2941,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,D5,D,5,8062696,2967,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,D6,D,6,8062723,2949,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,D7,D,7,8060872,3037,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),1,D8,D,8,8060997,3024,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,A5,E,1,8053459,2155,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,A6,E,2,8061248,2996,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,A7,E,3,8062589,2315,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,A8,E,4,8061256,3200,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,A1,E,5,,,Muscle,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,A2,E,6,8070375,3643,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,A3,E,7,8070382,3307,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,A4,E,8,8058614,2306,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,B5,F,1,8062719,3122,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,B6,F,2,8061096,3284,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,B7,F,3,8064415,2322,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,B8,F,4,8066405,2352,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,B1,F,5,8061239,2590,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,B2,F,6,8061089,2896,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,B3,F,7,8062711,3154,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,B4,F,8,8062677,2977,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,C5,G,1,8062726,2962,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,C6,G,2,8061093,2957,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,C7,G,3,8060863,3148,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,C8,G,4,,,Liver,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,C1,G,5,8062699,3290,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,C2,G,6,8062717,3152,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,C3,G,7,8062735,3019,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,C4,G,8,8062732,3044,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,D5,H,1,8062696,2967,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,D6,H,2,8062643,2941,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,D7,H,3,8060872,3037,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,D8,H,4,8060997,3024,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,D1,H,5,8044408,3096,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,D2,H,6,8062701,3198,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,D3,H,7,8061599,2339,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),2,D4,H,8,8062723,2949,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,A3,I,1,8070382,3307,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,A4,I,2,8058614,2306,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,A5,I,3,8053459,2155,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,A6,I,4,8061248,2996,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,A7,I,5,8062589,2315,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,A8,I,6,8061256,3200,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,A1,I,7,,,Tonsil,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,A2,I,8,8070375,3643,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,B3,J,1,8062711,3154,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,B4,J,2,8062677,2977,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,B5,J,3,8062719,3122,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,B6,J,4,8061096,3284,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,B7,J,5,8064415,2322,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,B8,J,6,8066405,2352,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,B1,J,7,8061239,2590,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,B2,J,8,8061089,2896,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,C3,K,1,8062735,3019,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,C4,K,2,8062732,3044,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,C5,K,3,8062726,2962,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,C6,K,4,8061093,2957,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,C7,K,5,8060863,3148,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,C8,K,6,,,Kidney,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,C1,K,7,,,Kidney,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,C2,K,8,8062717,3152,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,D3,L,1,8061599,2339,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,D4,L,2,8062643,2941,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,D5,L,3,8062696,2967,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,D6,L,4,8062723,2949,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,D7,L,5,8060872,3037,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,D8,L,6,8060997,3024,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,D1,L,7,8044408,3096,,,0
+7,Issued 28/03/14 (MB). Constructed 02/05/14 (AZ). Reviewed (AC),3,D2,L,8,8062701,3198,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,D3,A,1,8070444,3804,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,D4,A,2,8070430,3474,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,D5,A,3,8052404,2715,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,D6,A,4,8062723,2949,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,D7,A,5,8070692,1986,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,D8,A,6,8070693,2048,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,D1,A,7,8070439,3679,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,D2,A,8,8070435,3660,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,A1,B,1,,,Kidney,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,A2,B,2,8062728,3050,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,A3,B,3,8060876,3016,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,A4,B,4,8061077,2973,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,A5,B,5,8064421,2596,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,A6,B,6,8064417,2803,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,A7,B,7,8060879,3291,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,A8,B,8,8070354,3522,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,B1,C,1,8070606,3299,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,B2,C,2,8070613,3510,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,B3,C,3,8070454,3493,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,B4,C,4,8070475,3657,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,B5,C,5,8070610,3361,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,B6,C,6,8070544,3667,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,B7,C,7,8070542,3227,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,B8,C,8,8070467,3255,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,C1,D,1,8070470,3351,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,C2,D,2,8080473,3513,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,C3,D,3,8070408,3698,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,C4,D,4,8070403,3664,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,C5,D,5,8070400,3371,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,C6,D,6,8070451,3818,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,C7,D,7,8070442,3772,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),1,C8,D,8,8070626,1993,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,D1,E,1,8070439,3679,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,D2,E,2,8070435,3660,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,D3,E,3,8070444,3804,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,D4,E,4,8070430,3474,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,D5,E,5,8052404,2715,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,D6,E,6,8062723,2949,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,D7,E,7,8070692,1986,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,D8,E,8,8070693,2048,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,A5,F,1,8064421,2596,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,A6,F,2,8064417,2803,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,A7,F,3,8060879,3291,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,A8,F,4,8070354,3522,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,A1,F,5,,,Spleen,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,A2,F,6,8062728,3050,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,A3,F,7,8060876,3016,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,A4,F,8,8061077,2973,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,B5,G,1,8070610,3361,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,B6,G,2,8070544,3667,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,B7,G,3,8070542,3227,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,B8,G,4,8070467,3255,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,B1,G,5,8070606,3299,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,B2,G,6,8070613,3510,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,B3,G,7,8070454,3493,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,B4,G,8,8070475,3657,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,C5,H,1,8070400,3371,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,C6,H,2,8070451,3818,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,C7,H,3,8070442,3772,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,C8,H,4,8070626,1993,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,C1,H,5,8070470,3351,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,C2,H,6,8080473,3513,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,C3,H,7,8070408,3698,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),2,C4,H,8,8070403,3664,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,D5,I,1,8052404,2715,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,D6,I,2,8062723,2949,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,D7,I,3,8070692,1986,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,D8,I,4,8070693,2048,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,D1,I,5,8070439,3679,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,D2,I,6,8070435,3660,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,D3,I,7,8070444,3804,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,D4,I,8,8070430,3474,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,A3,J,1,8060876,3016,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,A4,J,2,8061077,2973,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,A5,J,3,8064421,2596,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,A6,J,4,8064417,2803,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,A7,J,5,8060879,3291,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,A8,J,6,8070354,3522,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,A1,J,7,,,Salivary gland,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,A2,J,8,8062728,3050,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,B3,K,1,8070454,3493,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,B4,K,2,8070475,3657,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,B5,K,3,8070610,3361,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,B6,K,4,8070544,3667,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,B7,K,5,8070542,3227,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,B8,K,6,8070467,3255,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,B1,K,7,8070606,3299,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,B2,K,8,8070613,3510,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,C3,L,1,8070408,3698,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,C4,L,2,8070403,3664,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,C5,L,3,8070400,3371,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,C6,L,4,8070451,3818,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,C7,L,5,8070442,3772,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,C8,L,6,8070626,1993,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,C1,L,7,8070470,3351,,,0
+8,Issued 04/08/14 (MB). Constructed 08/08/14 (AZ). Reviewed (AG),3,C2,L,8,8080473,3513,,,0

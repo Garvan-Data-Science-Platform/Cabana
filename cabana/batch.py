@@ -40,8 +40,12 @@ from .utils import (
 
 class BatchCabana:
     def __init__(self, param_file, input_folder, out_folder,
-                 batch_size=5, batch_idx=0, ignore_large=True, progress_callback=None):
+                 batch_size=5, batch_idx=0, ignore_large=True, progress_callback=None,
+                 mask_dir=None):
         self.param_file = param_file
+        # Optional folder of external ROI masks (e.g. TMA core circles), one
+        # ``<image stem>.png`` per input image. Falls back to Configs: ROI Masks.
+        self.ext_mask_dir = mask_dir
 
         self.args = None  # args for Cabana program
         self.seg_args = parse_args()  # args for segmentation
@@ -71,8 +75,10 @@ class BatchCabana:
         self.color_dir = join_path(self.output_folder, 'Colors', "")
         self.fibre_dir = join_path(self.output_folder, 'Fibres', "")
         self.eligible_dir = join_path(self.output_folder, 'Eligible')
+        self.roimask_dir = join_path(self.output_folder, 'ROIMasks', "")
 
         create_folder(self.eligible_dir)
+        create_folder(self.roimask_dir)
         create_folder(self.fibre_dir)
         create_folder(self.mask_dir)
         create_folder(self.hdm_dir)
@@ -105,11 +111,16 @@ class BatchCabana:
         setattr(self.seg_args, 'rt', float(self.args['Segmentation']["Color Threshold"]))
         setattr(self.seg_args, 'max_size', int(self.args['Segmentation']["Max Size"]))
         setattr(self.seg_args, 'min_size', int(self.args['Segmentation']["Min Size"]))
+        setattr(self.seg_args, 'patch_size', int(self.args['Segmentation'].get("Patch Size", 0) or 0))
         setattr(self.seg_args, 'white_background', self.args['Detection']["Dark Line"])
+        if not self.ext_mask_dir:
+            self.ext_mask_dir = self.args.get('Configs', {}).get('ROI Masks') or None
 
     def remove_large_images(self):
+        from .stages import prepare_roi_mask
         img_paths = get_img_paths(self.input_folder)
         path_batches, res_batches = split2batches(img_paths, self.batch_size)
+        n_masks = 0
 
         max_line_width = self.args['Detection']["Max Line Width"]
         max_size = self.args["Segmentation"]["Max Size"]
@@ -143,8 +154,13 @@ class BatchCabana:
                     count_black += 1
                     f.write(img_path + "\n")
                 elif height*width <= max_size**2 and bright_percent > 0.0001:
-                    cv2.imwrite(join_path(self.eligible_dir, os.path.splitext(img_name)[0] + ".png"), img)
-                elif height*width > max_size and bright_percent > 0.0001:
+                    stem = os.path.splitext(img_name)[0]
+                    cv2.imwrite(join_path(self.eligible_dir, stem + ".png"), img)
+                    src_stem = os.path.splitext(os.path.basename(img_path))[0]
+                    if prepare_roi_mask(self.ext_mask_dir, src_stem, (height, width), self.roimask_dir,
+                                        out_stem=stem):
+                        n_masks += 1
+                elif height*width > max_size**2 and bright_percent > 0.0001:
                     if self.ignore_large:
                         count_oversized += 1
                         f.write(img_path+"\n")
@@ -161,10 +177,15 @@ class BatchCabana:
                                     box = (j, height - row_blk_sz, j + col_blk_sz, height)
 
                                 img_crop = img[box[1]:box[3], box[0]:box[2]]
-                                cv2.imwrite(join_path(
-                                    self.eligible_dir, img_name[:-4] + "_blk_{}_{}.png".format(
-                                        i//row_blk_sz, j//col_blk_sz)), img_crop)
+                                blk_stem = img_name[:-4] + "_blk_{}_{}".format(i//row_blk_sz, j//col_blk_sz)
+                                cv2.imwrite(join_path(self.eligible_dir, blk_stem + ".png"), img_crop)
+                                src_stem = os.path.splitext(os.path.basename(img_path))[0]
+                                if prepare_roi_mask(self.ext_mask_dir, src_stem, (height, width),
+                                                    self.roimask_dir, out_stem=blk_stem, crop_box=box):
+                                    n_masks += 1
 
+        if self.ext_mask_dir:
+            Log.logger.info('{} external ROI masks found in {}'.format(n_masks, self.ext_mask_dir))
         if count_black > 0:
             Log.logger.warning('{} black or small-sized images have been ignored.'.format(count_black))
         if count_oversized > 0:
@@ -174,13 +195,24 @@ class BatchCabana:
         self.input_folder = self.eligible_dir
         self.ims_res = res_batches[self.batch_idx]
 
+    def _roi_mask_path(self, img_path):
+        """Prepared ROI mask path for an eligible image, or ``None``."""
+        roimask_dir = getattr(self, 'roimask_dir', None)
+        if not roimask_dir:
+            return None
+        stem = os.path.splitext(os.path.basename(img_path))[0]
+        path = join_path(roimask_dir, stem + '.png')
+        return path if os.path.exists(path) else None
+
     def generate_rois(self):
+        from .segmenter import generate_rois, load_roi_mask
         img_paths = get_img_paths(self.input_folder)
         img_paths.sort()
         if self.args["Configs"]["Segmentation"]:
             Log.logger.info('Segmenting {} images in {}'.format(len(img_paths), self.input_folder))
             for i, img_path in enumerate(img_paths):
                 setattr(self.seg_args, 'input', img_path)
+                setattr(self.seg_args, 'roi_mask_path', self._roi_mask_path(img_path))
                 # Sub-image progress: emit a fractional position inside the
                 # current image's tick window so the bar advances during the
                 # CNN max_iter loop (the slowest stage). The permanent
@@ -202,9 +234,16 @@ class BatchCabana:
             for i, img_path in enumerate(img_paths):
                 setattr(self.seg_args, 'input', img_path)
                 img = cv2.imread(self.seg_args.input)
-                mask = np.ones((img.shape[0], img.shape[1]), dtype=np.uint8) * 255
                 img_name = os.path.splitext(os.path.basename(self.seg_args.input))[0]
-                cv2.imwrite(join_path(self.seg_args.roi_dir, img_name + '_roi.png'), img)
+                # The external ROI mask (if any) is the analysis region even
+                # when segmentation is off; otherwise the whole image is used.
+                mask = load_roi_mask(self._roi_mask_path(img_path), img.shape)
+                if mask is None:
+                    mask = np.ones((img.shape[0], img.shape[1]), dtype=np.uint8) * 255
+                    roi_img = img
+                else:
+                    roi_img = generate_rois(img, mask, getattr(self.seg_args, 'white_background', True))
+                cv2.imwrite(join_path(self.seg_args.roi_dir, img_name + '_roi.png'), roi_img)
                 cv2.imwrite(join_path(self.seg_args.bin_dir, img_name + '_mask.png'), mask)
                 self._tick()
 
@@ -212,7 +251,7 @@ class BatchCabana:
         Log.logger.info('Masks have been saved in {}'.format(self.seg_args.bin_dir))
 
     def detect_fibres(self):
-        from .stages import build_fibre_detector, detect_one_image
+        from .stages import build_fibre_detector, detect_one_image, roi_mask_for
         d = self.args["Detection"]
         img_paths = glob(join_path(self.roi_dir, '*.png'))
         Log.logger.info(f"Detecting fibres with line widths in "
@@ -225,7 +264,9 @@ class BatchCabana:
             detect_one_image(det, img_path,
                              mask_dir=self.mask_dir,
                              export_subdir=join_path(self.export_dir, name_wo_ext),
-                             color_subdir=join_path(self.color_dir, name_wo_ext))
+                             color_subdir=join_path(self.color_dir, name_wo_ext),
+                             roi_mask=roi_mask_for(self.roimask_dir, name_wo_ext[:-4]),
+                             roi_erode_px=int(d['Max Line Width']))
             self._tick()
 
     def analyze_orientations(self):
@@ -285,7 +326,8 @@ class BatchCabana:
         n_elig = len(glob(join_path(self.eligible_dir, '*.png')))
         Log.logger.info(f"Quantifying High Density Matrix (HDM) areas for "
                         f"{n_elig} images.")
-        self.df_stats = run_hdm(self.args, self.eligible_dir, self.hdm_dir, ext=".png")
+        self.df_stats = run_hdm(self.args, self.eligible_dir, self.hdm_dir, ext=".png",
+                                mask_dir=self.roimask_dir)
         # HDM loops internally; emit a coarse tick batch covering the whole stage.
         self._tick(n_elig)
 
@@ -327,6 +369,7 @@ class BatchCabana:
                     ori_img_path=join_path(self.eligible_dir, stem + ".png"),
                     width_mask_path=join_path(self.export_dir, roi_stem, "Width.png"),
                     hdm_mask_path=join_path(self.hdm_dir, roi_name),
+    roi_mask_path=self._roi_mask_path(stem + '.png'),
                 )
                 if metrics['Area (ROI)'] == 0:
                     writer.writerow([roi_name, *(0 for _ in FIBRE_AREA_METRICS)])
@@ -336,6 +379,7 @@ class BatchCabana:
             Log.logger.info('Areas have been saved in {}'.format(join_path(self.bin_dir, 'ResultsROI.csv')))
 
     def analyze_all_gaps(self):
+        from .stages import roi_mask_for
         min_gap_diameter = self.args["Gap Analysis"]["Minimum Gap Diameter"]
         if min_gap_diameter == 0:
             Log.logger.warning("minimum gap diameter = 0 pixels. Skipping gap analysis.")
@@ -358,6 +402,11 @@ class BatchCabana:
                 img = cv2.imread(img_path, 0)
                 color_img = cv2.imread(join_path(self.eligible_dir, os.path.splitext(img_name)[0][:-4] + ".png"))
                 mask = img.copy()
+
+                # space outside the external ROI mask (e.g. TMA core corners) is not a gap
+                roi = roi_mask_for(self.roimask_dir, os.path.splitext(img_name)[0][:-4])
+                if roi is not None:
+                    mask[roi == 0] = 0
 
                 # set border pixels to zero to avoid partial circles
                 mask[0, :] = mask[-1, :] = mask[:, :1] = mask[:, -1:] = 0
@@ -1026,7 +1075,7 @@ class BatchProcessor():
 
     def __init__(self, param_file, input_folder, output_folder, batch_size=5,
                  batch_num=0, resume=False, ignore_large=False,
-                 generate_stats=False, generate_scores=False):
+                 generate_stats=False, generate_scores=False, mask_dir=None):
         """
         Initialize a BatchProcessor with the given parameters.
 
@@ -1050,7 +1099,13 @@ class BatchProcessor():
             Whether to generate per-patient MEAN/STD/SEM statistics, by default False
         generate_scores : bool, optional
             Whether to generate collagen risk scores, by default False
+        mask_dir : str, optional
+            Folder of external ROI masks (one ``<image stem>.png`` per input
+            image, e.g. TMA core circles). When omitted, ``Configs: ROI Masks``
+            in the parameter file is used; when that is empty too, only the
+            segmentation mask defines the analysis region.
         """
+        self.mask_dir = mask_dir
         self.batch_size = batch_size
         self.batch_num = batch_num
         self.resume = resume
@@ -1246,7 +1301,8 @@ class BatchProcessor():
             # Process batch with BatchCabana
             batch_cabana = BatchCabana(self.param_file, self.input_folder,
                                   batch_folder, self.batch_size, batch_idx, self.ignore_large,
-                                  progress_callback=on_batch_progress)
+                                  progress_callback=on_batch_progress,
+                                  mask_dir=getattr(self, 'mask_dir', None))
             batch_cabana.run()
 
             # Update checkpoint file with completed batch

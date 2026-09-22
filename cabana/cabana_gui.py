@@ -2,23 +2,26 @@ import os
 os.environ["NUMEXPR_MAX_THREADS"] = "20"
 import sys
 import colorsys
+import numpy as np
 import yaml
 import imageio.v3 as iio
 import tifffile as tiff
 from pathlib import Path
-from .utils import join_path
+from .utils import join_path, sanitize_filename
 
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QSpinBox,
                              QVBoxLayout, QHBoxLayout, QTabWidget, QCheckBox,
                              QPushButton, QFileDialog, QSizePolicy, QColorDialog,
                              QMessageBox, QGroupBox, QComboBox, QWidget,
-                             QStatusBar, QLineEdit)
+                             QStatusBar, QLineEdit, QDoubleSpinBox, QStackedWidget, QGridLayout)
 from PyQt5.QtGui import QIcon, QPalette, QFont
 from PyQt5.QtCore import QSettings, QUrl
 from PyQt5.QtGui import QDesktopServices
 
 from .ui import *
 from .themes import THEMES, DEFAULT_THEME
+from .tma import ORIENTATIONS
+from .tma_maps import available_arrays
 from . import __version__
 
 
@@ -118,32 +121,42 @@ class MainWindow(QMainWindow):
         self.dock_inner_layout.setSpacing(6)
         self.dock_layout.addWidget(self.analysis_group, 1)
 
-        # Create tab widget
-        self.tabs = QTabWidget()
-        self.tabs.setTabBar(AutoWidthTabBar())
-        self.tabs.setUsesScrollButtons(False)
-        self.tabs.tabBar().setElideMode(Qt.ElideRight)
-        self.tabs.setStyleSheet(self.tab_style)
+        # Analysis pages: a narrow vertical navigation rail on the left drives
+        # a stacked widget, so page titles never compete for horizontal space.
+        self.nav_rail = NavRail()
+        self.nav_rail.setStyleSheet(self.nav_rail_style)
+        self.pages = QStackedWidget()
+        self.pages.setStyleSheet(self.page_stack_style)
 
-        # Create tabs
+        # Create pages
+        self.tma_tab = QWidget()
         self.seg_tab = QWidget()
         self.det_tab = QWidget()
         self.gap_tab = QWidget()
         self.bat_tab = QWidget()
 
-        # Set up each tab
+        # Set up each page (TMA first so batch widgets it refers to exist later)
         self.setup_segmentation_tab()
         self.setup_detection_tab()
         self.setup_gap_analysis_tab()
         self.setup_batch_processing_tab()
+        self.setup_tma_tab()
 
-        # Add tabs to widget
-        self.tabs.addTab(self.seg_tab, "Segment")
-        self.tabs.addTab(self.det_tab, "Detect Fibres")
-        self.tabs.addTab(self.gap_tab, "Analyse Gaps")
-        self.tabs.addTab(self.bat_tab, "Batch Run")
+        # Register pages in display order
+        for label, page in (("TMA", self.tma_tab), ("Segment", self.seg_tab),
+                            ("Detect Fibres", self.det_tab), ("Analyse Gaps", self.gap_tab),
+                            ("Batch Run", self.bat_tab)):
+            self.nav_rail.add_page(label)
+            self.pages.addWidget(page)
+        self.nav_rail.currentRowChanged.connect(self.pages.setCurrentIndex)
+        self.nav_rail.setCurrentRow(1)   # open on Segment, the usual entry point
 
-        self.dock_inner_layout.addWidget(self.tabs)
+        pages_layout = QHBoxLayout()
+        pages_layout.setContentsMargins(0, 0, 0, 0)
+        pages_layout.setSpacing(4)
+        pages_layout.addWidget(self.nav_rail)
+        pages_layout.addWidget(self.pages, 1)
+        self.dock_inner_layout.addLayout(pages_layout)
 
         # Add a spacer to push content to the top
         self.dock_inner_layout.addStretch()
@@ -185,14 +198,13 @@ class MainWindow(QMainWindow):
         # Set initial sizes so the left panel opens wide enough for the full Analysis tab labels.
         # Account for all nesting: dock_layout margins, QGroupBox stylesheet padding+border,
         # inner layout margins, and the splitter handle.
-        self.tabs.tabBar().adjustSize()
         dock_margins = self.dock_layout.contentsMargins()
         inner_margins = self.dock_inner_layout.contentsMargins()
         # QGroupBox CSS: padding 8px L/R + border 1px L/R = 18px total
         groupbox_chrome = 18
         initial_dock_width = max(
             self.dock_contents.minimumWidth(),
-            self.tabs.tabBar().sizeHint().width()
+            self.nav_rail.width() + 320
             + dock_margins.left() + dock_margins.right()
             + groupbox_chrome
             + inner_margins.left() + inner_margins.right()
@@ -290,8 +302,13 @@ class MainWindow(QMainWindow):
         # Button style
         self.btn_style = generate_button_style()
 
-        # Tab style
+        # Tab style (kept for any remaining QTabWidget users)
         self.tab_style = generate_tab_style()
+
+        # Navigation rail / page stack / combo box styles
+        self.nav_rail_style = generate_nav_rail_style()
+        self.page_stack_style = generate_page_stack_style()
+        self.combo_style = generate_combo_style()
 
         # Progress bar style
         self.progressbar_style = generate_progressbar_style()
@@ -412,6 +429,38 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(output_layout)
 
+        # Optional ROI mask folder (e.g. TMA core circles)
+        mask_layout = QHBoxLayout()
+        mask_label = QLabel("ROI Masks:")
+        mask_label.setFixedWidth(95)
+        mask_label.setToolTip("Optional folder of binary masks, one <image name>.png per input image.")
+        mask_layout.addWidget(mask_label)
+
+        self.mask_folder_path = QLineEdit("")
+        self.mask_folder_path.setReadOnly(True)
+        self.mask_folder_path.setPlaceholderText("Optional: leave empty to use segmentation only")
+        self.mask_folder_path.setStyleSheet(self.path_edit_style)
+        self.mask_folder_path.setToolTip(
+            "Optional. Binary masks (white = analyse, black = ignore) named like the input images,\n"
+            "e.g. the Masks folder written by the TMA page. Leave empty to rely on segmentation alone.")
+        mask_layout.addWidget(self.mask_folder_path, 1)
+
+        self.mask_btn = QPushButton("Select")
+        self.mask_btn.clicked.connect(self.select_mask_folder)
+        self.mask_btn.setStyleSheet(self.btn_style)
+        mask_layout.addWidget(self.mask_btn)
+
+        self.mask_clear_btn = QPushButton("✕")
+        self.mask_clear_btn.setToolTip("Clear the ROI mask folder")
+        self.mask_clear_btn.clicked.connect(self.clear_mask_folder)
+        self.mask_clear_btn.setStyleSheet(self.btn_style)
+        self.mask_clear_btn.setFixedWidth(34)
+        self.mask_clear_btn.setEnabled(False)
+        mask_layout.addWidget(self.mask_clear_btn)
+
+        layout.addLayout(mask_layout)
+        self.mask_folder = None
+
         # Batch size spinbox
         batch_size_layout = QHBoxLayout()
         batch_size_label = QLabel("Batch Size:")
@@ -472,6 +521,364 @@ class MainWindow(QMainWindow):
         layout.addStretch()
         self.bat_tab.setLayout(layout)
 
+    # ------------------------------------------------------------------
+    # TMA page
+    # ------------------------------------------------------------------
+    def setup_tma_tab(self):
+        """Set up the TMA preprocessing page: load slide -> fit cores -> export."""
+        layout = QVBoxLayout()
+        layout.setContentsMargins(6, 10, 6, 6)
+        layout.setSpacing(10)
+
+        # --- Slide -------------------------------------------------------
+        slide_layout = QHBoxLayout()
+        slide_label = QLabel("Slide:")
+        slide_label.setFixedWidth(95)
+        slide_layout.addWidget(slide_label)
+        self.tma_slide_path = QLineEdit("")
+        self.tma_slide_path.setReadOnly(True)
+        self.tma_slide_path.setPlaceholderText("Olympus .vsi or whole-slide TIFF/PNG")
+        self.tma_slide_path.setStyleSheet(self.path_edit_style)
+        slide_layout.addWidget(self.tma_slide_path, 1)
+        self.tma_slide_btn = QPushButton("Open")
+        self.tma_slide_btn.setStyleSheet(self.btn_style)
+        self.tma_slide_btn.clicked.connect(self.select_tma_slide)
+        slide_layout.addWidget(self.tma_slide_btn)
+        layout.addLayout(slide_layout)
+
+        # --- Array / orientation ------------------------------------------
+        map_layout = QHBoxLayout()
+        array_label = QLabel("Array Map:")
+        array_label.setFixedWidth(95)
+        map_layout.addWidget(array_label)
+        self.tma_array_combo = QComboBox()
+        self.tma_array_combo.addItem("None (grid position only)", None)
+        for n in available_arrays():
+            self.tma_array_combo.addItem(f"ICGC Array {n}", n)
+        self.tma_array_combo.setStyleSheet(self.combo_style)
+        self.tma_array_combo.setToolTip("Printed ICGC/APGI array map used to name cores by patient ID.")
+        map_layout.addWidget(self.tma_array_combo, 1)
+        layout.addLayout(map_layout)
+
+        orient_layout = QHBoxLayout()
+        orient_label = QLabel("Orientation:")
+        orient_label.setFixedWidth(95)
+        orient_layout.addWidget(orient_label)
+        self.tma_orientation_combo = QComboBox()
+        for o in ORIENTATIONS:
+            self.tma_orientation_combo.addItem("Auto (from missing cores)" if o == "auto" else o, o)
+        self.tma_orientation_combo.setStyleSheet(self.combo_style)
+        self.tma_orientation_combo.setToolTip(
+            "How the printed map sits on the scan. Auto compares the pattern of missing cores;\n"
+            "a fully populated array cannot distinguish a rotation from its mirror image,\n"
+            "so check the labels on the overlay and pick the orientation explicitly if needed.")
+        orient_layout.addWidget(self.tma_orientation_combo, 1)
+        layout.addLayout(orient_layout)
+
+        # --- Geometry ------------------------------------------------------
+        geo = QGridLayout()
+        geo.setHorizontalSpacing(8)
+        geo.setVerticalSpacing(8)
+        geo.setColumnStretch(1, 1)
+        geo.setColumnStretch(3, 1)
+
+        geo.addWidget(QLabel("Pixel Size:"), 0, 0)
+        self.tma_pixel_size_spin = QDoubleSpinBox()
+        self.tma_pixel_size_spin.setRange(0.01, 50.0)
+        self.tma_pixel_size_spin.setDecimals(4)
+        self.tma_pixel_size_spin.setSingleStep(0.01)
+        self.tma_pixel_size_spin.setValue(0.2738)
+        self.tma_pixel_size_spin.setSuffix(" µm")
+        self.tma_pixel_size_spin.setStyleSheet(self.spinner_style)
+        self.tma_pixel_size_spin.setToolTip("Filled from the slide metadata when available.")
+        geo.addWidget(self.tma_pixel_size_spin, 0, 1)
+
+        geo.addWidget(QLabel("Core Ø:"), 0, 2)
+        self.tma_core_diameter_spin = QSpinBox()
+        self.tma_core_diameter_spin.setRange(100, 5000)
+        self.tma_core_diameter_spin.setSingleStep(50)
+        self.tma_core_diameter_spin.setValue(1000)
+        self.tma_core_diameter_spin.setSuffix(" µm")
+        self.tma_core_diameter_spin.setStyleSheet(self.spinner_style)
+        self.tma_core_diameter_spin.setToolTip("Nominal core diameter.")
+        geo.addWidget(self.tma_core_diameter_spin, 0, 3)
+
+        geo.addWidget(QLabel("Margin:"), 1, 0)
+        self.tma_margin_spin = QSpinBox()
+        self.tma_margin_spin.setRange(0, 1000)
+        self.tma_margin_spin.setSingleStep(10)
+        self.tma_margin_spin.setValue(50)
+        self.tma_margin_spin.setSuffix(" µm")
+        self.tma_margin_spin.setStyleSheet(self.spinner_style)
+        self.tma_margin_spin.setToolTip("Extra border around the fitted circle in each crop.")
+        geo.addWidget(self.tma_margin_spin, 1, 1)
+
+        geo.addWidget(QLabel("Mask Shrink:"), 1, 2)
+        self.tma_erode_spin = QSpinBox()
+        self.tma_erode_spin.setRange(0, 200)
+        self.tma_erode_spin.setValue(8)
+        self.tma_erode_spin.setSuffix(" px")
+        self.tma_erode_spin.setStyleSheet(self.spinner_style)
+        self.tma_erode_spin.setToolTip("Shrink of the circular mask so the core edge stays out of the analysis.")
+        geo.addWidget(self.tma_erode_spin, 1, 3)
+        layout.addLayout(geo)
+
+        # --- Channels ------------------------------------------------------
+        layout.addWidget(create_separator())
+        ch_layout = QHBoxLayout()
+        ch_layout.setSpacing(16)
+        ch_label = QLabel("Channels:")
+        ch_label.setFixedWidth(95)
+        ch_layout.addWidget(ch_label)
+        self.tma_channel_cbs = {}
+        for name in ("BF", "POL"):
+            cb = QCheckBox(name)
+            cb.setChecked(True)
+            cb.setEnabled(False)
+            cb.setStyleSheet(self.checkbox_style)
+            self.tma_channel_cbs[name] = cb
+            ch_layout.addWidget(cb)
+        ch_layout.addStretch()
+        layout.addLayout(ch_layout)
+
+        # --- Output --------------------------------------------------------
+        out_layout = QHBoxLayout()
+        out_label = QLabel("Output Folder:")
+        out_label.setFixedWidth(95)
+        out_layout.addWidget(out_label)
+        self.tma_output_path = QLineEdit("")
+        self.tma_output_path.setReadOnly(True)
+        self.tma_output_path.setPlaceholderText("Images/, Masks/, cores.csv, overlay.png")
+        self.tma_output_path.setStyleSheet(self.path_edit_style)
+        out_layout.addWidget(self.tma_output_path, 1)
+        self.tma_output_btn = QPushButton("Select")
+        self.tma_output_btn.setStyleSheet(self.btn_style)
+        self.tma_output_btn.clicked.connect(self.select_tma_output)
+        out_layout.addWidget(self.tma_output_btn)
+        layout.addLayout(out_layout)
+
+        # --- Status + actions ----------------------------------------------
+        self.tma_status_label = QLabel("No slide loaded")
+        self.tma_status_label.setWordWrap(True)
+        self.tma_status_label.setMinimumHeight(40)
+        self.tma_status_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self.tma_status_label.setStyleSheet(self.value_label_style)
+        layout.addWidget(self.tma_status_label)
+
+        btn_layout = QHBoxLayout()
+        self.tma_fit_btn = QPushButton("Fit Cores")
+        self.tma_fit_btn.setStyleSheet(self.primary_btn_style)
+        self.tma_fit_btn.setEnabled(False)
+        self.tma_fit_btn.setToolTip("Detect the cores and draw the numbered overlay. Re-run after changing settings.")
+        self.tma_fit_btn.clicked.connect(self.run_tma_fit)
+        btn_layout.addWidget(self.tma_fit_btn)
+        self.tma_export_btn = QPushButton("Export Cores")
+        self.tma_export_btn.setStyleSheet(self.primary_btn_style)
+        self.tma_export_btn.setEnabled(False)
+        self.tma_export_btn.setToolTip("Write one image and one mask per core and channel to the output folder.")
+        self.tma_export_btn.clicked.connect(self.run_tma_export)
+        btn_layout.addWidget(self.tma_export_btn)
+        self.tma_cancel_btn = QPushButton("Cancel")
+        self.tma_cancel_btn.setStyleSheet(self.btn_style)
+        self.tma_cancel_btn.setVisible(False)
+        self.tma_cancel_btn.clicked.connect(self.cancel_tma)
+        btn_layout.addWidget(self.tma_cancel_btn)
+        layout.addLayout(btn_layout)
+
+        layout.addStretch()
+        self.tma_tab.setLayout(layout)
+
+        self.tma_slide = None
+        self.tma_output = None
+        self.tma_pre = None
+        self.tma_worker = None
+        self.tma_overlay = None
+
+    def select_tma_slide(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select TMA Slide", "",
+            "Slides (*.vsi *.tif *.tiff *.png *.jpg *.jpeg);;All files (*)")
+        if not file_path:
+            return
+        self.tma_slide = file_path
+        self.tma_slide_path.setText(file_path)
+        self.tma_slide_path.setToolTip(file_path)
+        self.tma_pre = None
+        self.tma_export_btn.setEnabled(False)
+        self.tma_fit_btn.setEnabled(True)
+        self.tma_status_label.setText("Slide selected. Choose the array map, then Fit Cores.")
+        if not self.tma_output:
+            default_out = join_path(os.path.dirname(file_path),
+                                    sanitize_filename(os.path.splitext(os.path.basename(file_path))[0]) + "_cores")
+            self.tma_output = default_out
+            self.tma_output_path.setText(default_out)
+            self.tma_output_path.setToolTip(default_out)
+
+    def select_tma_output(self):
+        start = self.tma_output or (os.path.dirname(self.tma_slide) if self.tma_slide else "")
+        folder = QFileDialog.getExistingDirectory(self, "Select TMA Output Folder", start,
+                                                  QFileDialog.ShowDirsOnly)
+        if folder:
+            self.tma_output = folder
+            self.tma_output_path.setText(folder)
+            self.tma_output_path.setToolTip(folder)
+
+    def _tma_options(self):
+        return dict(
+            array_number=self.tma_array_combo.currentData(),
+            pixel_size_um=float(self.tma_pixel_size_spin.value()) if self.tma_pixel_size_spin.value() > 0 else None,
+            core_diameter_um=float(self.tma_core_diameter_spin.value()),
+            margin_um=float(self.tma_margin_spin.value()),
+            erode_px=int(self.tma_erode_spin.value()),
+            orientation=self.tma_orientation_combo.currentData(),
+        )
+
+    def _tma_set_busy(self, busy):
+        for w in (self.tma_slide_btn, self.tma_output_btn, self.tma_array_combo,
+                  self.tma_orientation_combo, self.tma_pixel_size_spin, self.tma_core_diameter_spin,
+                  self.tma_margin_spin, self.tma_erode_spin):
+            w.setEnabled(not busy)
+        self.tma_fit_btn.setEnabled(not busy and self.tma_slide is not None)
+        self.tma_export_btn.setEnabled(not busy and self.tma_pre is not None)
+        self.tma_cancel_btn.setVisible(busy)
+        self.tma_cancel_btn.setEnabled(busy)
+        self.tma_cancel_btn.setText("Cancel")
+        if busy:
+            self.show_progress_bar()
+        else:
+            self.hide_progress_bar()
+
+    def run_tma_fit(self):
+        if not self.tma_slide:
+            return
+        if self.tma_pre is not None:
+            self.tma_pre.close()
+            self.tma_pre = None
+        # a VSI carries its own calibration: let the reader override the spin box
+        options = self._tma_options()
+        if self.tma_slide.lower().endswith(".vsi"):
+            options["pixel_size_um"] = None
+        self._tma_set_busy(True)
+        self.tma_fit_btn.setText("Fitting…")
+        self.tma_status_label.setText("Fitting cores…")
+        self.tma_worker = TMAWorker('fit', slide_path=self.tma_slide, options=options)
+        self.tma_worker.progress_updated.connect(self.progress_bar.setValue)
+        self.tma_worker.status_updated.connect(self.tma_status_label.setText)
+        self.tma_worker.fit_complete.connect(self.handle_tma_fit_complete)
+        self.tma_worker.failed.connect(self.handle_tma_failed)
+        self.tma_worker.start()
+
+    def handle_tma_fit_complete(self, pre):
+        self.tma_pre = pre
+        self.tma_fit_btn.setText("Fit Cores")
+        self._tma_set_busy(False)
+        reader = pre.reader
+        if reader.pixel_size_um:
+            self.tma_pixel_size_spin.setValue(float(reader.pixel_size_um))
+        for name, cb in self.tma_channel_cbs.items():
+            available = name in reader.channels
+            cb.setEnabled(available)
+            cb.setChecked(available)
+        # show the numbered overlay in the image panel (BGR -> RGB)
+        self.tma_overlay = np.ascontiguousarray(pre.draw_overlay()[:, :, ::-1])
+        self.image_panel.setImage(self.tma_overlay)
+        n_rows, n_cols = pre.grid_shape
+        n_out = len([c for c in pre.cores if c.outside_map])
+        msg = f"{len(pre.cores)} cores on a {n_rows}x{n_cols} grid"
+        if pre.matched_orientation:
+            msg += f"; orientation {pre.matched_orientation}"
+            if len(getattr(pre, 'orientation_ties', [])) > 1:
+                msg += (f" (also fits: {', '.join(o for o in pre.orientation_ties if o != pre.matched_orientation)}"
+                        f" — confirm labels against the printed map)")
+        if n_out:
+            msg += f"; {n_out} outside the map (not exported)"
+        flagged = [c.index for c in pre.cores if c.flag in ("partial", "sparse")]
+        if flagged:
+            msg += f"; check cores {', '.join(map(str, flagged[:12]))}{'…' if len(flagged) > 12 else ''}"
+        self.tma_status_label.setText(msg)
+        self.status_file_label.setText(f"  {os.path.basename(self.tma_slide)}")
+        self.status_dims_label.setText(f"{reader.level_shape(0)[1]} x {reader.level_shape(0)[0]}  ")
+
+    def run_tma_export(self):
+        if self.tma_pre is None:
+            return
+        if not self.tma_output:
+            self.select_tma_output()
+            if not self.tma_output:
+                return
+        channels = [n for n, cb in self.tma_channel_cbs.items() if cb.isEnabled() and cb.isChecked()]
+        if not channels:
+            QMessageBox.warning(self, "TMA Export", "Select at least one channel to export.")
+            return
+        # settings that only affect the crop can be changed without refitting
+        self.tma_pre.margin_um = float(self.tma_margin_spin.value())
+        self.tma_pre.erode_px = int(self.tma_erode_spin.value())
+        self._tma_set_busy(True)
+        self.tma_export_btn.setText("Exporting…")
+        self.tma_worker = TMAWorker('export', preprocessor=self.tma_pre, out_dir=self.tma_output,
+                                    channels=channels)
+        self.tma_worker.progress_updated.connect(self.progress_bar.setValue)
+        self.tma_worker.status_updated.connect(self.tma_status_label.setText)
+        self.tma_worker.export_complete.connect(self.handle_tma_export_complete)
+        self.tma_worker.export_cancelled.connect(self.handle_tma_export_cancelled)
+        self.tma_worker.failed.connect(self.handle_tma_failed)
+        self.tma_worker.start()
+
+    def cancel_tma(self):
+        self.tma_cancel_btn.setEnabled(False)
+        self.tma_cancel_btn.setText("Cancelling…")
+        if self.tma_worker is not None:
+            self.tma_worker.cancel()
+
+    def handle_tma_export_complete(self, out_dir):
+        self.tma_export_btn.setText("Export Cores")
+        self._tma_set_busy(False)
+        n = len(self.tma_pre.exportable_cores()) if self.tma_pre else 0
+        self.tma_status_label.setText(f"Exported {n} cores to {out_dir}")
+        msg = QMessageBox(self)
+        msg.setWindowTitle("TMA Export Complete")
+        msg.setText("Core images and masks were written.")
+        msg.setInformativeText(f"{out_dir}\n\nImages/ and Masks/ can be used directly as the input\n"
+                               f"and ROI-mask folders of Batch Run.")
+        msg.setStyleSheet(self.msgbox_style)
+        batch_btn = msg.addButton("Use in Batch Run", QMessageBox.ActionRole)
+        open_btn = msg.addButton("Open Folder", QMessageBox.ActionRole)
+        msg.addButton(QMessageBox.Ok)
+        msg.exec_()
+        if msg.clickedButton() == open_btn:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(out_dir))
+        elif msg.clickedButton() == batch_btn:
+            self.use_tma_export_in_batch(out_dir)
+
+    def use_tma_export_in_batch(self, out_dir):
+        """Point the Batch Run page at a TMA export and switch to it."""
+        images = join_path(out_dir, 'Images')
+        masks = join_path(out_dir, 'Masks')
+        self.input_folder = images
+        self.input_folder_path.setText(images)
+        self.input_folder_path.setToolTip(images)
+        self.set_mask_folder(masks if os.path.isdir(masks) else None)
+        self._check_batch_processing_ready()
+        self.nav_rail.setCurrentRow(self.pages.indexOf(self.bat_tab))
+
+    def handle_tma_export_cancelled(self):
+        self.tma_export_btn.setText("Export Cores")
+        self._tma_set_busy(False)
+        self.tma_status_label.setText("Export cancelled. Files written so far were kept.")
+
+    def handle_tma_failed(self, message):
+        self.tma_fit_btn.setText("Fit Cores")
+        self.tma_export_btn.setText("Export Cores")
+        self._tma_set_busy(False)
+        self.tma_status_label.setText(f"Error: {message}")
+        box = QMessageBox(self)
+        box.setWindowTitle("TMA Preprocessing")
+        box.setIcon(QMessageBox.Warning)
+        box.setText("TMA preprocessing failed.")
+        box.setInformativeText(message)
+        box.setStyleSheet(self.msgbox_style)
+        box.exec_()
+
     def select_param_file(self):
         """Open a file dialog to select a parameter file"""
         file_path, _ = QFileDialog.getOpenFileName(
@@ -493,9 +900,31 @@ class MainWindow(QMainWindow):
 
         if folder:
             self.input_folder = folder
+            # A TMA export is Images/ next to Masks/: offer the masks automatically
+            sibling = join_path(os.path.dirname(folder), 'Masks')
+            if os.path.basename(folder) == 'Images' and os.path.isdir(sibling) and not self.mask_folder:
+                self.set_mask_folder(sibling)
             self.input_folder_path.setText(folder)
             self.input_folder_path.setToolTip(folder)
             self._check_batch_processing_ready()
+
+    def select_mask_folder(self):
+        """Open a folder dialog to select the optional ROI mask folder"""
+        start = getattr(self, 'input_folder', None) or os.path.expanduser('~')
+        folder = QFileDialog.getExistingDirectory(
+            self, "Select ROI Mask Folder (optional)", str(Path(start).parent), QFileDialog.ShowDirsOnly
+        )
+        if folder:
+            self.set_mask_folder(folder)
+
+    def set_mask_folder(self, folder):
+        self.mask_folder = folder or None
+        self.mask_folder_path.setText(folder or "")
+        self.mask_folder_path.setToolTip(folder or "")
+        self.mask_clear_btn.setEnabled(bool(folder))
+
+    def clear_mask_folder(self):
+        self.set_mask_folder(None)
 
     def select_output_folder(self):
         """Open a file dialog to select an output folder"""
@@ -586,6 +1015,8 @@ class MainWindow(QMainWindow):
         self.param_btn.setEnabled(False)
         self.input_btn.setEnabled(False)
         self.output_btn.setEnabled(False)
+        self.mask_btn.setEnabled(False)
+        self.mask_clear_btn.setEnabled(False)
         self.stats_cb.setEnabled(False)
         self.scores_cb.setEnabled(False)
         self.show_progress_bar()
@@ -600,7 +1031,8 @@ class MainWindow(QMainWindow):
             self.param_file, self.input_folder, self.output_folder,
             batch_size, batch_num, resume, ignore_large,
             generate_stats=self.stats_cb.isChecked(),
-            generate_scores=self.scores_cb.isChecked()
+            generate_scores=self.scores_cb.isChecked(),
+            mask_dir=self.mask_folder
         )
 
         # Connect signals
@@ -618,6 +1050,8 @@ class MainWindow(QMainWindow):
         self.param_btn.setEnabled(True)
         self.input_btn.setEnabled(True)
         self.output_btn.setEnabled(True)
+        self.mask_btn.setEnabled(True)
+        self.mask_clear_btn.setEnabled(bool(self.mask_folder))
         self.stats_cb.setEnabled(True)
         self.scores_cb.setEnabled(True)
 
@@ -766,6 +1200,28 @@ class MainWindow(QMainWindow):
             self.value_label_style)
         max_iters_layout.addWidget(self.max_iters_value)
         layout.addLayout(max_iters_layout)
+
+        # Patch size (0 = segment the whole image at once)
+        patch_layout = QHBoxLayout()
+        patch_label = QLabel("Patch Size:")
+        patch_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        patch_label.setMinimumWidth(50)
+        patch_layout.addWidget(patch_label)
+        patch_layout.addStretch()
+        self.patch_size_spinner = QSpinBox()
+        self.patch_size_spinner.setRange(0, 8192)
+        self.patch_size_spinner.setSingleStep(256)
+        self.patch_size_spinner.setSpecialValueText("Off")
+        self.patch_size_spinner.setSuffix(" px")
+        self.patch_size_spinner.setValue(0)
+        self.patch_size_spinner.setFixedWidth(90)
+        self.patch_size_spinner.setStyleSheet(self.spinner_style)
+        self.patch_size_spinner.valueChanged.connect(self.update_patch_size)
+        self.patch_size_spinner.setToolTip(
+            "Segment large images in overlapping square patches of this size\n"
+            "instead of shrinking the whole image to 512 px. Off = whole image.")
+        patch_layout.addWidget(self.patch_size_spinner)
+        layout.addLayout(patch_layout)
 
         # White background checkbox
         layout.addWidget(create_separator())
@@ -1049,6 +1505,10 @@ class MainWindow(QMainWindow):
         self.max_iters_value.setText(str(value))
         self.yml_data["Segmentation"]["Max Iterations"] = value
 
+    def update_patch_size(self):
+        """Update segmentation patch size (0 disables patch-wise segmentation)"""
+        self.yml_data["Segmentation"]["Patch Size"] = int(self.patch_size_spinner.value())
+
     def update_white_bg(self):
         """Update white background setting"""
         self.yml_data["Segmentation"]["Dark Line"] = self.white_bg_cb.isChecked()
@@ -1098,6 +1558,7 @@ class MainWindow(QMainWindow):
                     "Segmentation": True,
                     "Quantification": True,
                     "Gap Analysis": True,
+                    "ROI Masks": "",
                 },
                 "Segmentation": {
                     "Number of Labels": 32,
@@ -1105,6 +1566,7 @@ class MainWindow(QMainWindow):
                     "Color Threshold": 0.2,
                     "Min Size": 64,
                     "Max Size": 2048,
+                    "Patch Size": 0,
                     "Normalized Hue Value": 0.96
                 },
                 "Detection": {
@@ -1175,6 +1637,8 @@ class MainWindow(QMainWindow):
             self.num_labels_slider.setValue(seg["Number of Labels"])
         if "Max Iterations" in seg:
             self.max_iters_slider.setValue(seg["Max Iterations"])
+        if "Patch Size" in seg:
+            self.patch_size_spinner.setValue(int(seg["Patch Size"] or 0))
         if "Dark Line" in seg:
             self.white_bg_cb.setChecked(seg["Dark Line"])
         if "Normalized Hue Value" in seg:
@@ -1408,6 +1872,7 @@ class MainWindow(QMainWindow):
         seg_args.max_iter = self.yml_data["Segmentation"]["Max Iterations"]
         seg_args.hue_value = self.yml_data["Segmentation"]["Normalized Hue Value"]
         seg_args.rt = self.yml_data["Segmentation"]["Color Threshold"]
+        seg_args.patch_size = int(self.yml_data["Segmentation"].get("Patch Size", 0) or 0)
         seg_args.white_background = self.white_bg_cb.isChecked()
 
         # Create and configure the worker
@@ -1736,31 +2201,43 @@ class MainWindow(QMainWindow):
 
         # Buttons
         for btn in (self.load_btn, self.reload_btn, self.load_params_btn, self.export_btn,
-                     self.param_btn, self.input_btn, self.output_btn, self.cancel_batch_btn):
+                     self.param_btn, self.input_btn, self.output_btn, self.cancel_batch_btn,
+                     self.mask_btn, self.mask_clear_btn, self.tma_slide_btn, self.tma_output_btn,
+                     self.tma_cancel_btn):
             btn.setStyleSheet(self.btn_style)
 
         # Primary buttons
-        for btn in (self.segment_btn, self.detect_btn, self.analyze_btn, self.process_batch_btn):
+        for btn in (self.segment_btn, self.detect_btn, self.analyze_btn, self.process_batch_btn,
+                    self.tma_fit_btn, self.tma_export_btn):
             btn.setStyleSheet(self.primary_btn_style)
 
-        # Tabs
-        self.tabs.setStyleSheet(self.tab_style)
+        # Navigation rail and page stack
+        self.nav_rail.setStyleSheet(self.nav_rail_style)
+        self.pages.setStyleSheet(self.page_stack_style)
 
         # Progress bar
         self.progress_bar.setStyleSheet(self.progressbar_style)
 
         # Spinboxes
-        self.batch_size_spinner.setStyleSheet(self.spinner_style)
+        for spin in (self.batch_size_spinner, self.patch_size_spinner, self.tma_pixel_size_spin,
+                     self.tma_core_diameter_spin, self.tma_margin_spin, self.tma_erode_spin):
+            spin.setStyleSheet(self.spinner_style)
+
+        # Combo boxes
+        for combo in (self.tma_array_combo, self.tma_orientation_combo):
+            combo.setStyleSheet(self.combo_style)
 
         # Checkboxes
         for cb in (self.white_bg_cb, self.toggle_img_cb, self.dark_line_cb,
                    self.extend_line_cb, self.overlay_fibres_cb, self.overlay_gaps_cb,
-                   self.stats_cb, self.scores_cb):
+                   self.stats_cb, self.scores_cb, *self.tma_channel_cbs.values()):
             cb.setStyleSheet(self.checkbox_style)
 
         # Path edits
-        for edit in (self.param_file_path, self.input_folder_path, self.output_folder_path):
+        for edit in (self.param_file_path, self.input_folder_path, self.output_folder_path,
+                     self.mask_folder_path, self.tma_slide_path, self.tma_output_path):
             edit.setStyleSheet(self.path_edit_style)
+        self.tma_status_label.setStyleSheet(self.value_label_style)
 
         # Value labels (slider readouts)
         for label in (self.color_thresh_value, self.num_labels_value, self.max_iters_value,

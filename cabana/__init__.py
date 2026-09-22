@@ -8,3 +8,4 @@ except PackageNotFoundError:
 
 from .batch_processor import BatchProcessor
 from .cabana import Cabana
+from .tma import TMAPreprocessor

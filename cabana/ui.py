@@ -12,8 +12,7 @@ from sklearn.metrics.pairwise import euclidean_distances
 
 from PyQt5.QtWidgets import (QSlider, QWidget, QSplitter, QSplitterHandle,
                              QMenu, QAction, QFileDialog, QMessageBox,
-                             QProgressBar, QSizePolicy, QTabBar, QPushButton,
-                             QListWidget, QListWidgetItem)
+                             QProgressBar, QSizePolicy, QPushButton)
 from PyQt5.QtCore import Qt, QSize, QEvent, QPoint, QRect, QPropertyAnimation, QEasingCurve, pyqtProperty
 from PyQt5.QtGui import QPixmap, QPainter, QPen, QColor, QDragEnterEvent, QDropEvent, QImage, QBrush, QFont
 from PyQt5.QtCore import QThread, pyqtSignal
@@ -48,21 +47,6 @@ def color_to_stylesheet(color: QColor) -> str:
     if color.alpha() < 255:
         return f"rgba({color.red()}, {color.green()}, {color.blue()}, {color.alpha() / 255:.2f})"
     return f"rgb({color.red()}, {color.green()}, {color.blue()})"
-
-
-class AutoWidthTabBar(QTabBar):
-    """Give tabs a larger ideal width while allowing elision when space is tight."""
-
-    EXTRA_TAB_WIDTH = 16
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.setElideMode(Qt.ElideRight)
-
-    def tabSizeHint(self, index):
-        size = super().tabSizeHint(index)
-        size.setWidth(size.width() + self.EXTRA_TAB_WIDTH)
-        return size
 
 
 def generate_spinner_style():
@@ -153,46 +137,6 @@ def generate_button_style():
             background-color: {color_to_stylesheet(COLORS['surface'])};
             color: {color_to_stylesheet(COLORS['text_muted'])};
             border-color: {color_to_stylesheet(COLORS['border_subtle'])};
-        }}
-    """
-
-
-def generate_tab_style():
-    """Generate tab widget stylesheet with specified colors."""
-    border_color = COLORS['border']
-    highlight_color = COLORS['highlight']
-    return f"""
-        QTabWidget::pane {{
-            border: 1px solid {color_to_stylesheet(border_color)};
-            border-top: none;
-            background-color: {color_to_stylesheet(COLORS['surface'])};
-            padding: 8px;
-        }}
-
-        QTabBar {{
-            background-color: {color_to_stylesheet(COLORS['dock'])};
-        }}
-
-        QTabBar::tab {{
-            background-color: transparent;
-            color: {color_to_stylesheet(COLORS['text_dim'])};
-            border: none;
-            border-bottom: 2px solid transparent;
-            padding: 6px 12px;
-            font-size: {FONT_SIZES['base']}px;
-            font-weight: 500;
-            margin: 0px;
-        }}
-
-        QTabBar::tab:hover {{
-            background-color: {color_to_stylesheet(COLORS['hover'])};
-            color: {color_to_stylesheet(highlight_color)};
-            border-bottom: 2px solid {color_to_stylesheet(highlight_color)};
-        }}
-
-        QTabBar::tab:selected {{
-            color: {color_to_stylesheet(highlight_color)};
-            border-bottom: 2px solid {color_to_stylesheet(highlight_color)};
         }}
     """
 
@@ -447,38 +391,6 @@ def generate_group_box_style():
     """
 
 
-def generate_nav_rail_style():
-    """Stylesheet for the vertical navigation rail (QListWidget) that replaces
-    the horizontal tab bar: compact, icon-less, centred labels with a
-    highlight accent on the selected page."""
-    return f"""
-        QListWidget {{
-            background-color: {color_to_stylesheet(COLORS['dock'])};
-            border: none;
-            outline: none;
-            padding: 2px 0px;
-        }}
-        QListWidget::item {{
-            color: {color_to_stylesheet(COLORS['text_dim'])};
-            padding: 6px 2px;
-            margin: 2px 4px;
-            border-radius: 6px;
-            border-left: 3px solid transparent;
-            font-size: {FONT_SIZES['small']}px;
-            font-weight: 600;
-        }}
-        QListWidget::item:hover {{
-            background-color: {color_to_stylesheet(COLORS['hover'])};
-            color: {color_to_stylesheet(COLORS['highlight'])};
-        }}
-        QListWidget::item:selected {{
-            background-color: {color_to_stylesheet(COLORS['surface'])};
-            color: {color_to_stylesheet(COLORS['highlight'])};
-            border-left: 3px solid {color_to_stylesheet(COLORS['highlight'])};
-        }}
-    """
-
-
 def generate_page_stack_style():
     """Stylesheet for the QStackedWidget holding the analysis pages; matches
     the former tab pane (thin border, surface background)."""
@@ -513,31 +425,48 @@ def generate_combo_style():
     )
 
 
-class NavRail(QListWidget):
-    """Narrow vertical page selector. ``add_page(label)`` returns the row
-    index; a label containing a space wraps onto two lines."""
-
-    RAIL_WIDTH = 78
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setFixedWidth(self.RAIL_WIDTH)
-        self.setSelectionMode(QListWidget.SingleSelection)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.setFocusPolicy(Qt.NoFocus)
-        self.setSpacing(0)
-        self.setUniformItemSizes(True)
-        # two-line labels must wrap, never elide
-        self.setWordWrap(True)
-        self.setTextElideMode(Qt.ElideNone)
-
-    def add_page(self, label):
-        item = QListWidgetItem(label)
-        item.setTextAlignment(Qt.AlignCenter)
-        item.setSizeHint(QSize(self.RAIL_WIDTH - 8, 56 if " " in label else 44))
-        self.addItem(item)
-        return self.count() - 1
+def generate_menubar_style():
+    """Stylesheet for the in-window menu bar (ignored by the native macOS bar)."""
+    return f"""
+        QMenuBar {{
+            background-color: {color_to_stylesheet(COLORS['background'])};
+            color: {color_to_stylesheet(COLORS['text'])};
+            border-bottom: 1px solid {color_to_stylesheet(COLORS['border'])};
+            font-size: {FONT_SIZES['base']}px;
+            padding: 2px 4px;
+        }}
+        QMenuBar::item {{
+            background: transparent;
+            padding: 4px 10px;
+            border-radius: 4px;
+        }}
+        QMenuBar::item:selected {{
+            background-color: {color_to_stylesheet(COLORS['hover'])};
+            color: {color_to_stylesheet(COLORS['highlight'])};
+        }}
+        QMenu {{
+            background-color: {color_to_stylesheet(COLORS['elevated'])};
+            color: {color_to_stylesheet(COLORS['text'])};
+            border: 1px solid {color_to_stylesheet(COLORS['border'])};
+            padding: 4px;
+        }}
+        QMenu::item {{
+            padding: 6px 24px 6px 12px;
+            border-radius: 4px;
+        }}
+        QMenu::item:selected {{
+            background-color: {color_to_stylesheet(COLORS['highlight'])};
+            color: {color_to_stylesheet(COLORS['background'])};
+        }}
+        QMenu::item:disabled {{
+            color: {color_to_stylesheet(COLORS['text_muted'])};
+        }}
+        QMenu::separator {{
+            height: 1px;
+            background: {color_to_stylesheet(COLORS['border'])};
+            margin: 4px 8px;
+        }}
+    """
 
 
 def create_separator():

@@ -10,11 +10,12 @@ from pathlib import Path
 from .utils import join_path, sanitize_filename
 
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QSpinBox,
-                             QVBoxLayout, QHBoxLayout, QTabWidget, QCheckBox,
+                             QVBoxLayout, QHBoxLayout, QCheckBox,
                              QPushButton, QFileDialog, QSizePolicy, QColorDialog,
                              QMessageBox, QGroupBox, QComboBox, QWidget,
-                             QStatusBar, QLineEdit, QDoubleSpinBox, QStackedWidget, QGridLayout)
-from PyQt5.QtGui import QIcon, QPalette, QFont
+                             QStatusBar, QLineEdit, QDoubleSpinBox, QStackedWidget, QGridLayout,
+                             QAction, QActionGroup)
+from PyQt5.QtGui import QIcon, QPalette, QFont, QKeySequence
 from PyQt5.QtCore import QSettings, QUrl
 from PyQt5.QtGui import QDesktopServices
 
@@ -68,63 +69,24 @@ class MainWindow(QMainWindow):
         self.dock_layout = QVBoxLayout(self.dock_contents)
         self.dock_layout.setContentsMargins(6, 8, 6, 10)
         self.dock_layout.setSpacing(4)
+        self.panel_visible = True
 
         self._setup_styles()
 
-        # --- Image group ---
-        self.image_group = QGroupBox("Image")
-        self.image_group.setStyleSheet(self.group_style)
-        image_btn_layout = QHBoxLayout(self.image_group)
-        image_btn_layout.setContentsMargins(8, 4, 8, 4)
+        # Menu bar carries the Image / Parameters / Analysis / About commands,
+        # so the side panel holds only the selected analysis page.
+        self._setup_menu_bar()
 
-        self.load_btn = QPushButton("Open")
-        self.load_btn.setStyleSheet(self.btn_style)
-        self.load_btn.setToolTip("Load an image file")
-        self.load_btn.clicked.connect(self.load_image)
-        image_btn_layout.addWidget(self.load_btn)
+        self.page_title = QLabel("")
+        self.page_title.setStyleSheet(self.page_title_style)
+        self.dock_layout.addWidget(self.page_title)
 
-        self.reload_btn = QPushButton("Reload")
-        self.reload_btn.setStyleSheet(self.btn_style)
-        self.reload_btn.setToolTip("Reload the original image")
-        self.reload_btn.clicked.connect(self.reload_image)
-        self.reload_btn.setEnabled(False)
-        image_btn_layout.addWidget(self.reload_btn)
-
-        self.dock_layout.addWidget(self.image_group)
-
-        # --- Parameters group ---
-        self.params_group = QGroupBox("Parameters")
-        self.params_group.setStyleSheet(self.group_style)
-        params_btn_layout = QHBoxLayout(self.params_group)
-        params_btn_layout.setContentsMargins(8, 4, 8, 4)
-
-        self.load_params_btn = QPushButton("Import")
-        self.load_params_btn.setStyleSheet(self.btn_style)
-        self.load_params_btn.setToolTip("Load parameters from YAML file")
-        self.load_params_btn.clicked.connect(self.import_parameters)
-        params_btn_layout.addWidget(self.load_params_btn)
-
-        self.export_btn = QPushButton("Export")
-        self.export_btn.setStyleSheet(self.btn_style)
-        self.export_btn.setToolTip("Export parameters to YAML file")
-        self.export_btn.clicked.connect(self.export_parameters)
-        params_btn_layout.addWidget(self.export_btn)
-
-        self.dock_layout.addWidget(self.params_group)
-        self.dock_layout.addSpacing(6)
-
-        # --- Analysis group ---
-        self.analysis_group = QGroupBox("Analysis")
-        self.analysis_group.setStyleSheet(self.group_style)
-        self.dock_inner_layout = QVBoxLayout(self.analysis_group)
-        self.dock_inner_layout.setContentsMargins(6, 10, 6, 6)
+        self.dock_inner_layout = QVBoxLayout()
+        self.dock_inner_layout.setContentsMargins(0, 4, 0, 0)
         self.dock_inner_layout.setSpacing(6)
-        self.dock_layout.addWidget(self.analysis_group, 1)
+        self.dock_layout.addLayout(self.dock_inner_layout, 1)
 
-        # Analysis pages: a narrow vertical navigation rail on the left drives
-        # a stacked widget, so page titles never compete for horizontal space.
-        self.nav_rail = NavRail()
-        self.nav_rail.setStyleSheet(self.nav_rail_style)
+        # Analysis pages live in a stacked widget selected from the Analysis menu.
         self.pages = QStackedWidget()
         self.pages.setStyleSheet(self.page_stack_style)
 
@@ -135,28 +97,23 @@ class MainWindow(QMainWindow):
         self.gap_tab = QWidget()
         self.bat_tab = QWidget()
 
-        # Set up each page (TMA first so batch widgets it refers to exist later)
+        # Set up each page (TMA last: it refers to batch widgets)
         self.setup_segmentation_tab()
         self.setup_detection_tab()
         self.setup_gap_analysis_tab()
         self.setup_batch_processing_tab()
         self.setup_tma_tab()
 
-        # Register pages in display order
-        for label, page in (("TMA", self.tma_tab), ("Segment", self.seg_tab),
-                            ("Detect Fibres", self.det_tab), ("Analyse Gaps", self.gap_tab),
-                            ("Batch Run", self.bat_tab)):
-            self.nav_rail.add_page(label)
-            self.pages.addWidget(page)
-        self.nav_rail.currentRowChanged.connect(self.pages.setCurrentIndex)
-        self.nav_rail.setCurrentRow(1)   # open on Segment, the usual entry point
-
-        pages_layout = QHBoxLayout()
-        pages_layout.setContentsMargins(0, 0, 0, 0)
-        pages_layout.setSpacing(4)
-        pages_layout.addWidget(self.nav_rail)
-        pages_layout.addWidget(self.pages, 1)
-        self.dock_inner_layout.addLayout(pages_layout)
+        # Register pages in menu order and bind them to the Analysis actions
+        self._page_titles = []
+        for (title, action), page in zip(self._page_actions,
+                                         (self.tma_tab, self.seg_tab, self.det_tab,
+                                          self.gap_tab, self.bat_tab)):
+            index = self.pages.addWidget(page)
+            self._page_titles.append(title)
+            action.triggered.connect(lambda _checked=False, i=index: self.show_page(i))
+        self.dock_inner_layout.addWidget(self.pages)
+        self.show_page(1)   # open on Segmentation, the usual entry point
 
         # Add a spacer to push content to the top
         self.dock_inner_layout.addStretch()
@@ -204,7 +161,7 @@ class MainWindow(QMainWindow):
         groupbox_chrome = 18
         initial_dock_width = max(
             self.dock_contents.minimumWidth(),
-            self.nav_rail.width() + 320
+            400
             + dock_margins.left() + dock_margins.right()
             + groupbox_chrome
             + inner_margins.left() + inner_margins.right()
@@ -273,6 +230,126 @@ class MainWindow(QMainWindow):
         self.image_panel.zoomChanged.connect(self._update_zoom_status)
 
 
+    def _setup_menu_bar(self):
+        """Build File / Parameters / Analysis / About menus.
+
+        The actions replace the former Image and Parameters button groups and
+        the page navigation rail. ``self.load_btn``-style aliases are kept so
+        existing enable/disable logic keeps working on the actions.
+        """
+        bar = self.menuBar()
+        bar.setNativeMenuBar(sys.platform == 'darwin')
+        bar.setStyleSheet(self.menubar_style)
+
+        # --- File ---
+        file_menu = bar.addMenu("&File")
+        self.load_action = QAction("&Open Image…", self)
+        self.load_action.setShortcut(QKeySequence.Open)
+        self.load_action.setStatusTip("Load an image file")
+        self.load_action.triggered.connect(self.load_image)
+        file_menu.addAction(self.load_action)
+
+        self.reload_action = QAction("&Reload Image", self)
+        self.reload_action.setShortcut(QKeySequence("Ctrl+R"))
+        self.reload_action.setStatusTip("Reload the original image")
+        self.reload_action.setEnabled(False)
+        self.reload_action.triggered.connect(self.reload_image)
+        file_menu.addAction(self.reload_action)
+
+        file_menu.addSeparator()
+        self.open_slide_action = QAction("Open &TMA Slide…", self)
+        self.open_slide_action.setShortcut(QKeySequence("Ctrl+Shift+O"))
+        self.open_slide_action.setStatusTip("Choose a whole-slide TMA scan on the TMA page")
+        self.open_slide_action.triggered.connect(self._open_tma_slide_from_menu)
+        file_menu.addAction(self.open_slide_action)
+
+        file_menu.addSeparator()
+        quit_action = QAction("&Quit", self)
+        quit_action.setShortcut(QKeySequence.Quit)
+        quit_action.setMenuRole(QAction.QuitRole)
+        quit_action.triggered.connect(self.close)
+        file_menu.addAction(quit_action)
+
+        # --- Parameters ---
+        params_menu = bar.addMenu("&Parameters")
+        self.import_params_action = QAction("&Import…", self)
+        self.import_params_action.setShortcut(QKeySequence("Ctrl+I"))
+        self.import_params_action.setStatusTip("Load parameters from a YAML file")
+        self.import_params_action.triggered.connect(self.import_parameters)
+        params_menu.addAction(self.import_params_action)
+
+        self.export_params_action = QAction("&Export…", self)
+        self.export_params_action.setShortcut(QKeySequence("Ctrl+E"))
+        self.export_params_action.setStatusTip("Save the current parameters to a YAML file")
+        self.export_params_action.triggered.connect(self.export_parameters)
+        params_menu.addAction(self.export_params_action)
+
+        params_menu.addSeparator()
+        reset_action = QAction("Restore &Defaults", self)
+        reset_action.setStatusTip("Reset every parameter to the bundled defaults")
+        reset_action.triggered.connect(self.restore_default_parameters)
+        params_menu.addAction(reset_action)
+
+        # --- Analysis ---
+        analysis_menu = bar.addMenu("&Analysis")
+        self._page_group = QActionGroup(self)
+        self._page_group.setExclusive(True)
+        self._page_actions = []
+        for i, title in enumerate(("TMA", "Segmentation", "Fibre Detection",
+                                   "Gap Analysis", "Batch Run")):
+            action = QAction(title, self)
+            action.setCheckable(True)
+            action.setShortcut(QKeySequence(f"Ctrl+{i + 1}"))
+            action.setStatusTip(f"Show the {title} parameters in the side panel")
+            self._page_group.addAction(action)
+            analysis_menu.addAction(action)
+            self._page_actions.append((title, action))
+        analysis_menu.addSeparator()
+        self.toggle_panel_action = QAction("Show Side &Panel", self)
+        self.toggle_panel_action.setCheckable(True)
+        self.toggle_panel_action.setChecked(True)
+        self.toggle_panel_action.setShortcut(QKeySequence("Ctrl+B"))
+        self.toggle_panel_action.triggered.connect(self.toggle_panel)
+        analysis_menu.addAction(self.toggle_panel_action)
+
+        # --- About ---
+        about_menu = bar.addMenu("A&bout")
+        about_action = QAction("&About Cabana", self)
+        about_action.setMenuRole(QAction.AboutRole)
+        about_action.triggered.connect(self._show_about_dialog)
+        about_menu.addAction(about_action)
+        docs_action = QAction("&Documentation", self)
+        docs_action.triggered.connect(
+            lambda: QDesktopServices.openUrl(QUrl("https://cabana.readthedocs.io")))
+        about_menu.addAction(docs_action)
+        issue_action = QAction("Report an &Issue", self)
+        issue_action.triggered.connect(
+            lambda: QDesktopServices.openUrl(QUrl("https://github.com/lxfhfut/Cabana/issues")))
+        about_menu.addAction(issue_action)
+
+        # Aliases used by existing enable/disable logic
+        self.load_btn = self.load_action
+        self.reload_btn = self.reload_action
+        self.load_params_btn = self.import_params_action
+        self.export_btn = self.export_params_action
+
+    def show_page(self, index):
+        """Show analysis page ``index`` in the side panel and sync the menu."""
+        self.pages.setCurrentIndex(index)
+        self.page_title.setText(self._page_titles[index])
+        self._page_actions[index][1].setChecked(True)
+        if not self.panel_visible:
+            self.toggle_panel()
+
+    def _open_tma_slide_from_menu(self):
+        self.show_page(self.pages.indexOf(self.tma_tab))
+        self.select_tma_slide()
+
+    def restore_default_parameters(self):
+        """Reload the bundled default parameters into the widgets."""
+        self.load_default_params()
+        self.apply_params_to_widgets()
+
     def _update_zoom_status(self, zoom_factor):
         """Update the zoom display in the status bar"""
         self.status_zoom_label.setText(f"Zoom: {zoom_factor:.0%}  ")
@@ -295,6 +372,8 @@ class MainWindow(QMainWindow):
             self.dock_contents.show()
         self.panel_visible = not self.panel_visible
         self.toggle_button.setChecked(not self.panel_visible)
+        if hasattr(self, 'toggle_panel_action'):
+            self.toggle_panel_action.setChecked(self.panel_visible)
 
 
     def _setup_styles(self) -> None:
@@ -302,13 +381,13 @@ class MainWindow(QMainWindow):
         # Button style
         self.btn_style = generate_button_style()
 
-        # Tab style (kept for any remaining QTabWidget users)
-        self.tab_style = generate_tab_style()
-
-        # Navigation rail / page stack / combo box styles
-        self.nav_rail_style = generate_nav_rail_style()
+        # Page stack / combo box / menu bar / page title styles
         self.page_stack_style = generate_page_stack_style()
         self.combo_style = generate_combo_style()
+        self.menubar_style = generate_menubar_style()
+        self.page_title_style = (
+            f"color: {color_to_stylesheet(COLORS['text'])}; font-weight: 600; "
+            f"font-size: {FONT_SIZES['title']}px; padding: 2px 4px 4px 4px;")
 
         # Progress bar style
         self.progressbar_style = generate_progressbar_style()
@@ -859,7 +938,7 @@ class MainWindow(QMainWindow):
         self.input_folder_path.setToolTip(images)
         self.set_mask_folder(masks if os.path.isdir(masks) else None)
         self._check_batch_processing_ready()
-        self.nav_rail.setCurrentRow(self.pages.indexOf(self.bat_tab))
+        self.show_page(self.pages.indexOf(self.bat_tab))
 
     def handle_tma_export_cancelled(self):
         self.tma_export_btn.setText("Export Cores")
@@ -2195,13 +2274,12 @@ class MainWindow(QMainWindow):
 
     def _reapply_widget_styles(self) -> None:
         """Re-apply cached styles to all individually-styled widgets after theme change."""
-        # Group boxes
-        for group in (self.image_group, self.params_group, self.analysis_group):
-            group.setStyleSheet(self.group_style)
+        # Menu bar and page title
+        self.menuBar().setStyleSheet(self.menubar_style)
+        self.page_title.setStyleSheet(self.page_title_style)
 
         # Buttons
-        for btn in (self.load_btn, self.reload_btn, self.load_params_btn, self.export_btn,
-                     self.param_btn, self.input_btn, self.output_btn, self.cancel_batch_btn,
+        for btn in (self.param_btn, self.input_btn, self.output_btn, self.cancel_batch_btn,
                      self.mask_btn, self.mask_clear_btn, self.tma_slide_btn, self.tma_output_btn,
                      self.tma_cancel_btn):
             btn.setStyleSheet(self.btn_style)
@@ -2211,8 +2289,7 @@ class MainWindow(QMainWindow):
                     self.tma_fit_btn, self.tma_export_btn):
             btn.setStyleSheet(self.primary_btn_style)
 
-        # Navigation rail and page stack
-        self.nav_rail.setStyleSheet(self.nav_rail_style)
+        # Page stack
         self.pages.setStyleSheet(self.page_stack_style)
 
         # Progress bar

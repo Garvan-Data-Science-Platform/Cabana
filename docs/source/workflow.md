@@ -1,6 +1,6 @@
 # Image Analysis Workflow
 
-Once the Cabana GUI is launched, you'll see a window split horizontally: the control panel on the left and the image viewing area on the right. The control panel's **Analysis** section is organised as pages selected from a narrow vertical rail: **TMA**, **Segment**, **Detect Fibres**, **Analyse Gaps** and **Batch Run**. The TMA page ([TMA preprocessing](tma.md)) is only needed for tissue micro-array slides. The program is designed to let you:
+Once the Cabana GUI is launched, you'll see a window split horizontally: the control panel on the left and the image viewing area on the right. Commands live in the menu bar: **File** (open or reload an image, open a TMA slide, quit), **Parameters** (import, export, restore defaults), **Analysis** (choose which parameter page the side panel shows: **TMA**, **Segmentation**, **Fibre Detection**, **Gap Analysis** or **Batch Run**, shortcuts Ctrl/Cmd+1 to 5) and **About**. The side panel shows only the selected page. The TMA page ([TMA preprocessing](tma.md)) is only needed for tissue micro-array slides. The program is designed to let you:
 
 1. experiment with parameters for different components using your data, and
 2. export the optimized parameters for batch processing on larger datasets.
@@ -25,7 +25,7 @@ Under the **`Segmentation`** tab, you will find the parameters for adjusting the
 
 7. **White Background**: Determines whether the non-ROI areas are filled with white. Enabled by default. Disable this option if you're detecting bright fibres on a dark background.
 
-Note: if you want to select a different colour of interest on the image, you can use the button "**Reload Image**" to reload image so that the original image will be shown again on the image viewer.
+Note: if you want to select a different colour of interest on the image, use **File > Reload Image** so that the original image is shown again on the image viewer.
 
 ![Segmentation interface](media/segmentation.png)
 

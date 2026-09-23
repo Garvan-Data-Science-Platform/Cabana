@@ -546,7 +546,7 @@ class TMAPreprocessor:
                  core_diameter_um=1250.0, margin_um=50.0, erode_px=8, fit_pixel_size_um=5.0,
                  orientation="auto", reader=None, sat_thresh=15, val_ratio=0.965,
                  recover_faint=True, min_fill=0.03, max_grid_offset=0.35,
-                 min_diameter_frac=0.7, max_diameter_frac=1.2,
+                 min_diameter_frac=0.8, max_diameter_frac=1.2,
                  min_stain_frac=0.02, stain_sat=40):
         self.reader = reader if reader is not None else open_slide(slide_path, pixel_size_um=pixel_size_um)
         if reader is not None and pixel_size_um:
@@ -851,8 +851,8 @@ def main(argv=None):
                    help="minimum tissue fraction for a faint core (default 0.03)")
     p.add_argument("--max-grid-offset", type=float, default=0.35,
                    help="QC: max distance from the grid position, in pitches (default 0.35)")
-    p.add_argument("--diameter-range", type=float, nargs=2, default=(0.7, 1.2), metavar=("MIN", "MAX"),
-                   help="QC: allowed diameter as fractions of --core-diameter (default 0.7 1.2)")
+    p.add_argument("--diameter-range", type=float, nargs=2, default=(0.8, 1.2), metavar=("MIN", "MAX"),
+                   help="QC: allowed diameter as fractions of --core-diameter (default 0.8 1.2)")
     p.add_argument("--min-stain", type=float, default=0.02,
                    help="QC: minimum stained fraction; controls exempt (default 0.02)")
     p.add_argument("--stain-sat", type=int, default=40,

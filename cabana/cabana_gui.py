@@ -881,7 +881,7 @@ class MainWindow(QMainWindow):
         self.tma_margin_spin = QSpinBox()
         self.tma_margin_spin.setRange(0, 1000)
         self.tma_margin_spin.setSingleStep(10)
-        self.tma_margin_spin.setValue(50)
+        self.tma_margin_spin.setValue(30)
         self.tma_margin_spin.setSuffix(" µm")
         self.tma_margin_spin.setStyleSheet(self.spinner_style)
         self.tma_margin_spin.setToolTip("Extra border around the fitted circle in each crop.")
@@ -1217,11 +1217,24 @@ class MainWindow(QMainWindow):
         batch_btn = msg.addButton("Use in Batch Run", QMessageBox.ActionRole)
         open_btn = msg.addButton("Open Folder", QMessageBox.ActionRole)
         msg.addButton(QMessageBox.Ok)
+        self._fit_dialog_buttons(msg)
+
         msg.exec_()
         if msg.clickedButton() == open_btn:
             QDesktopServices.openUrl(QUrl.fromLocalFile(out_dir))
         elif msg.clickedButton() == batch_btn:
             self.use_tma_export_in_batch(out_dir)
+
+    @staticmethod
+    def _fit_dialog_buttons(box):
+        """Widen message-box buttons so their full text fits.
+
+        The dialog stylesheet adds horizontal padding that Qt's size hint for
+        QMessageBox buttons does not account for, which clips longer labels.
+        """
+        for btn in box.buttons():
+            need = btn.fontMetrics().horizontalAdvance(btn.text().replace("&", "")) + 40
+            btn.setMinimumWidth(max(btn.minimumWidth(), need))
 
     def use_tma_export_in_batch(self, out_dir):
         """Point the Batch Run page at a TMA export and switch to it."""
@@ -1446,6 +1459,8 @@ class MainWindow(QMainWindow):
         msg.setStyleSheet(self.msgbox_style)
         open_btn = msg.addButton("Open Folder", QMessageBox.ActionRole)
         msg.addButton(QMessageBox.Ok)
+        self._fit_dialog_buttons(msg)
+
         msg.exec_()
         if msg.clickedButton() == open_btn:
             QDesktopServices.openUrl(QUrl.fromLocalFile(output_folder))
@@ -1464,6 +1479,8 @@ class MainWindow(QMainWindow):
         msg.setStyleSheet(self.msgbox_style)
         open_btn = msg.addButton("Open Folder", QMessageBox.ActionRole)
         msg.addButton(QMessageBox.Ok)
+        self._fit_dialog_buttons(msg)
+
         msg.exec_()
         if msg.clickedButton() == open_btn:
             QDesktopServices.openUrl(QUrl.fromLocalFile(output_folder))
@@ -2147,6 +2164,8 @@ class MainWindow(QMainWindow):
                     color: {COLORS['text'].name()};
                 }}
             """)
+            self._fit_dialog_buttons(msg)
+
             msg.exec_()
 
     def update_overlay_fibres(self):
@@ -2169,6 +2188,8 @@ class MainWindow(QMainWindow):
                                 color: {COLORS['text'].name()};
                             }}
                         """)
+            self._fit_dialog_buttons(msg)
+
             msg.exec_()
 
     def update_overlay_gaps(self):
@@ -2189,6 +2210,8 @@ class MainWindow(QMainWindow):
                                 color: {COLORS['text'].name()};
                             }}
                         """)
+            self._fit_dialog_buttons(msg)
+
             msg.exec_()
 
     def toggle_segmentation(self):

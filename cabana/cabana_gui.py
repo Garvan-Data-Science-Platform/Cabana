@@ -91,6 +91,7 @@ class MainWindow(QMainWindow):
         self.pages.setStyleSheet(self.page_stack_style)
 
         # Create pages
+        self.start_tab = QWidget()
         self.tma_tab = QWidget()
         self.seg_tab = QWidget()
         self.det_tab = QWidget()
@@ -103,9 +104,11 @@ class MainWindow(QMainWindow):
         self.setup_gap_analysis_tab()
         self.setup_batch_processing_tab()
         self.setup_tma_tab()
+        self.setup_start_tab()
 
-        # Register pages in menu order and bind them to the Analysis actions
-        self._page_titles = []
+        # Page 0 is the Start page (not in the Analysis menu); the rest follow menu order
+        self._page_titles = ["Start"]
+        self.pages.addWidget(self.start_tab)
         for (title, action), page in zip(self._page_actions,
                                          (self.tma_tab, self.seg_tab, self.det_tab,
                                           self.gap_tab, self.bat_tab)):
@@ -113,7 +116,8 @@ class MainWindow(QMainWindow):
             self._page_titles.append(title)
             action.triggered.connect(lambda _checked=False, i=index: self.show_page(i))
         self.dock_inner_layout.addWidget(self.pages)
-        self.show_page(1)   # open on Segmentation, the usual entry point
+        self._share_hints_with_labels()
+        self.show_page(0)
 
         # Add a spacer to push content to the top
         self.dock_inner_layout.addStretch()
@@ -293,7 +297,8 @@ class MainWindow(QMainWindow):
         # --- Analysis ---
         analysis_menu = bar.addMenu("&Analysis")
         self._page_group = QActionGroup(self)
-        self._page_group.setExclusive(True)
+        # ExclusiveOptional lets the Start page leave every Analysis entry unchecked
+        self._page_group.setExclusionPolicy(QActionGroup.ExclusionPolicy.ExclusiveOptional)
         self._page_actions = []
         for i, title in enumerate(("TMA", "Segmentation", "Fibre Detection",
                                    "Gap Analysis", "Batch Run")):
@@ -334,12 +339,51 @@ class MainWindow(QMainWindow):
         self.export_btn = self.export_params_action
 
     def show_page(self, index):
-        """Show analysis page ``index`` in the side panel and sync the menu."""
+        """Show side-panel page ``index`` (0 = Start) and sync the Analysis menu."""
         self.pages.setCurrentIndex(index)
         self.page_title.setText(self._page_titles[index])
-        self._page_actions[index][1].setChecked(True)
+        if index == 0:
+            checked = self._page_group.checkedAction()
+            if checked is not None:
+                checked.setChecked(False)
+        else:
+            self._page_actions[index - 1][1].setChecked(True)
         if not self.panel_visible:
             self.toggle_panel()
+
+    def setup_start_tab(self):
+        """Landing page shown at launch: the three ways to begin."""
+        layout = QVBoxLayout()
+        layout.setContentsMargins(6, 10, 6, 6)
+        layout.setSpacing(10)
+
+        intro = QLabel("Open an image to tune parameters on it, open a TMA slide to cut it into "
+                       "cores, or import a saved parameter file. Analysis pages are also under the "
+                       "Analysis menu (Ctrl/Cmd+1 to 5).")
+        intro.setWordWrap(True)
+        intro.setStyleSheet(self.value_label_style)
+        layout.addWidget(intro)
+
+        self.start_open_btn = QPushButton("Open Image…")
+        self.start_open_btn.setStyleSheet(self.primary_btn_style)
+        self.start_open_btn.setToolTip("Load a single image; the Segmentation page opens once it is loaded.")
+        self.start_open_btn.clicked.connect(self.load_image)
+        layout.addWidget(self.start_open_btn)
+
+        self.start_slide_btn = QPushButton("Open TMA Slide…")
+        self.start_slide_btn.setStyleSheet(self.btn_style)
+        self.start_slide_btn.setToolTip("Choose a whole-slide TMA scan and switch to the TMA page.")
+        self.start_slide_btn.clicked.connect(self._open_tma_slide_from_menu)
+        layout.addWidget(self.start_slide_btn)
+
+        self.start_params_btn = QPushButton("Import Parameters…")
+        self.start_params_btn.setStyleSheet(self.btn_style)
+        self.start_params_btn.setToolTip("Load a Parameters.yml exported earlier; all pages update to its values.")
+        self.start_params_btn.clicked.connect(self.import_parameters)
+        layout.addWidget(self.start_params_btn)
+
+        layout.addStretch()
+        self.start_tab.setLayout(layout)
 
     def _open_tma_slide_from_menu(self):
         self.show_page(self.pages.indexOf(self.tma_tab))
@@ -349,6 +393,56 @@ class MainWindow(QMainWindow):
         """Reload the bundled default parameters into the widgets."""
         self.load_default_params()
         self.apply_params_to_widgets()
+
+    def _share_hints_with_labels(self):
+        """Give every row label the tooltip of the control it names.
+
+        Qt shows a tooltip only for the widget under the cursor, so a hint set
+        on a slider is invisible when the user hovers its label. For each
+        layout on every page the tooltip of a control is copied to the
+        neighbouring QLabel(s) that have none, and every tooltip is mirrored
+        as a status tip so it also appears in the status bar.
+        """
+        from PyQt5.QtWidgets import QLayout, QGridLayout as _Grid
+
+        def items(layout):
+            return [layout.itemAt(i) for i in range(layout.count())]
+
+        def walk(layout):
+            if layout is None:
+                return
+            if isinstance(layout, _Grid):
+                for r in range(layout.rowCount()):
+                    row = []
+                    for c in range(layout.columnCount()):
+                        it = layout.itemAtPosition(r, c)
+                        if it is not None and it.widget() is not None:
+                            row.append(it.widget())
+                    pair_up(row)
+            else:
+                widgets = [it.widget() for it in items(layout) if it.widget() is not None]
+                pair_up(widgets)
+            for it in items(layout):
+                if it.layout() is not None:
+                    walk(it.layout())
+                elif it.widget() is not None and it.widget().layout() is not None \
+                        and not isinstance(it.widget(), QStackedWidget):
+                    walk(it.widget().layout())
+
+        def pair_up(widgets):
+            # a label takes the hint of the nearest following non-label widget
+            for i, w in enumerate(widgets):
+                if isinstance(w, QLabel) and not w.toolTip():
+                    for other in widgets[i + 1:]:
+                        if not isinstance(other, QLabel) and other.toolTip():
+                            w.setToolTip(other.toolTip())
+                            break
+            for w in widgets:
+                if w.toolTip() and not w.statusTip():
+                    w.setStatusTip(w.toolTip().replace("\n", " "))
+
+        for i in range(self.pages.count()):
+            walk(self.pages.widget(i).layout())
 
     def _update_zoom_status(self, zoom_factor):
         """Update the zoom display in the status bar"""
@@ -463,6 +557,8 @@ class MainWindow(QMainWindow):
         self.param_file_path = QLineEdit("Not selected")
         self.param_file_path.setReadOnly(True)
         self.param_file_path.setStyleSheet(self.path_edit_style)
+        self.param_file_path.setToolTip("Parameters.yml to apply to every image; export one from Parameters > Export\n"
+                                        "after tuning on a representative image.")
         param_layout.addWidget(self.param_file_path, 1)
 
         self.param_btn = QPushButton("Select")
@@ -481,6 +577,8 @@ class MainWindow(QMainWindow):
         self.input_folder_path = QLineEdit("Not selected")
         self.input_folder_path.setReadOnly(True)
         self.input_folder_path.setStyleSheet(self.path_edit_style)
+        self.input_folder_path.setToolTip("Folder of images to analyse (TIFF/PNG/JPEG). Pixel size is read from the\n"
+                                          "image metadata; the Images/ folder of a TMA export works directly.")
         input_layout.addWidget(self.input_folder_path, 1)
 
         self.input_btn = QPushButton("Select")
@@ -499,6 +597,8 @@ class MainWindow(QMainWindow):
         self.output_folder_path = QLineEdit("Not selected")
         self.output_folder_path.setReadOnly(True)
         self.output_folder_path.setStyleSheet(self.path_edit_style)
+        self.output_folder_path.setToolTip("Where results are written (QuantificationResults.csv, per-image exports,\n"
+                                           "colour maps). A checkpoint here lets an interrupted run resume.")
         output_layout.addWidget(self.output_folder_path, 1)
 
         self.output_btn = QPushButton("Select")
@@ -550,6 +650,8 @@ class MainWindow(QMainWindow):
         self.batch_size_spinner.setValue(5)
         self.batch_size_spinner.setFixedWidth(50)
         self.batch_size_spinner.setStyleSheet(self.spinner_style)
+        self.batch_size_spinner.setToolTip("Images processed per batch. Lower it for very large images (e.g. 2 for\n"
+                                           "full-resolution TMA cores) to keep memory use flat.")
         batch_size_layout.addWidget(self.batch_size_spinner)
 
         layout.addLayout(batch_size_layout)
@@ -618,9 +720,13 @@ class MainWindow(QMainWindow):
         self.tma_slide_path.setReadOnly(True)
         self.tma_slide_path.setPlaceholderText("Olympus .vsi or whole-slide TIFF/PNG")
         self.tma_slide_path.setStyleSheet(self.path_edit_style)
+        self.tma_slide_path.setToolTip(
+            "Whole-slide scan of the tissue micro-array. Olympus .vsi files are read natively\n"
+            "(keep the _<name>_ tile folder next to the .vsi); TIFF/PNG exports also work.")
         slide_layout.addWidget(self.tma_slide_path, 1)
         self.tma_slide_btn = QPushButton("Open")
         self.tma_slide_btn.setStyleSheet(self.btn_style)
+        self.tma_slide_btn.setToolTip("Choose the slide file (File > Open TMA Slide).")
         self.tma_slide_btn.clicked.connect(self.select_tma_slide)
         slide_layout.addWidget(self.tma_slide_btn)
         layout.addLayout(slide_layout)
@@ -710,11 +816,16 @@ class MainWindow(QMainWindow):
         ch_label.setFixedWidth(95)
         ch_layout.addWidget(ch_label)
         self.tma_channel_cbs = {}
+        ch_hints = {"BF": "Bright-field layer (Picrosirius Red in transmitted light). Analyse with Dark Line on.",
+                    "POL": "Polarised-light layer (collagen birefringence on black). Analyse with Dark Line off."}
+        ch_label.setToolTip("Slide layers to export; each core gets one image per ticked channel.\n"
+                            "Enabled after Fit Cores once the slide's layers are known.")
         for name in ("BF", "POL"):
             cb = QCheckBox(name)
             cb.setChecked(True)
             cb.setEnabled(False)
             cb.setStyleSheet(self.checkbox_style)
+            cb.setToolTip(ch_hints[name])
             self.tma_channel_cbs[name] = cb
             ch_layout.addWidget(cb)
         ch_layout.addStretch()
@@ -729,9 +840,13 @@ class MainWindow(QMainWindow):
         self.tma_output_path.setReadOnly(True)
         self.tma_output_path.setPlaceholderText("Images/, Masks/, cores.csv, overlay.png")
         self.tma_output_path.setStyleSheet(self.path_edit_style)
+        self.tma_output_path.setToolTip(
+            "Destination for Images/ (core crops), Masks/ (circle masks with the same names),\n"
+            "cores.csv (manifest with patient IDs) and overlay.png. Defaults to <slide>_cores.")
         out_layout.addWidget(self.tma_output_path, 1)
         self.tma_output_btn = QPushButton("Select")
         self.tma_output_btn.setStyleSheet(self.btn_style)
+        self.tma_output_btn.setToolTip("Choose a different output folder.")
         self.tma_output_btn.clicked.connect(self.select_tma_output)
         out_layout.addWidget(self.tma_output_btn)
         layout.addLayout(out_layout)
@@ -742,6 +857,10 @@ class MainWindow(QMainWindow):
         self.tma_status_label.setMinimumHeight(40)
         self.tma_status_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.tma_status_label.setStyleSheet(self.value_label_style)
+        self.tma_status_label.setToolTip(
+            "Fit summary: cores found, grid size, matched orientation and any orientations that\n"
+            "fit equally well. Cores listed as 'check' are partially filled or sparse (orange/red\n"
+            "on the overlay); grey circles lie outside the printed map and are not exported.")
         layout.addWidget(self.tma_status_label)
 
         btn_layout = QHBoxLayout()
@@ -759,6 +878,7 @@ class MainWindow(QMainWindow):
         btn_layout.addWidget(self.tma_export_btn)
         self.tma_cancel_btn = QPushButton("Cancel")
         self.tma_cancel_btn.setStyleSheet(self.btn_style)
+        self.tma_cancel_btn.setToolTip("Stop the export after the current core; files already written are kept.")
         self.tma_cancel_btn.setVisible(False)
         self.tma_cancel_btn.clicked.connect(self.cancel_tma)
         btn_layout.addWidget(self.tma_cancel_btn)
@@ -1184,6 +1304,8 @@ class MainWindow(QMainWindow):
 
         color_toggle_layout = QHBoxLayout()
         color_label = QLabel("Color of Interest:")
+        color_label.setToolTip("Colour of the structures to keep (e.g. Picrosirius Red collagen). Click the swatch\n"
+                               "to pick it; the normalised hue is written to the parameters.")
         self.toggle_seg_label = QLabel()
         self.toggle_seg_label.setText(
             f"Segmentation <b><span style='color: {COLORS['highlight'].name()};'>Enabled</span></b>")
@@ -1772,6 +1894,9 @@ class MainWindow(QMainWindow):
                 # Remove alpha channel if present
                 self.ori_img = self.ori_img[:, :, :3]
 
+            if self.pages.currentIndex() == 0:
+                self.show_page(self.pages.indexOf(self.seg_tab))
+
             # Enable processing buttons (Segment also requires the toggle on)
             self.segment_btn.setEnabled(self.toggle_seg_btn.isChecked())
             self.detect_btn.setEnabled(True)
@@ -2279,14 +2404,15 @@ class MainWindow(QMainWindow):
         self.page_title.setStyleSheet(self.page_title_style)
 
         # Buttons
-        for btn in (self.param_btn, self.input_btn, self.output_btn, self.cancel_batch_btn,
+        for btn in (self.start_slide_btn, self.start_params_btn,
+                    self.param_btn, self.input_btn, self.output_btn, self.cancel_batch_btn,
                      self.mask_btn, self.mask_clear_btn, self.tma_slide_btn, self.tma_output_btn,
                      self.tma_cancel_btn):
             btn.setStyleSheet(self.btn_style)
 
         # Primary buttons
         for btn in (self.segment_btn, self.detect_btn, self.analyze_btn, self.process_batch_btn,
-                    self.tma_fit_btn, self.tma_export_btn):
+                    self.tma_fit_btn, self.tma_export_btn, self.start_open_btn):
             btn.setStyleSheet(self.primary_btn_style)
 
         # Page stack

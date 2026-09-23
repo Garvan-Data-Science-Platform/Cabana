@@ -69,7 +69,7 @@ exported. Filters update instantly; no refit is needed.
 | Setting | Excludes a core when | Default |
 |---|---|---|
 | Grid Offset | its centre is further than this from its grid position, in core spacings | 0.35 |
-| Min Ø / Max Ø | its fitted diameter is outside this range, as % of Core Ø | 80 % / 120 % |
+| Min Ø / Max Ø | its fitted diameter is outside this range, as % of Core Ø | 70 % / 120 % |
 | Min Stain | less than this fraction of the circle has HSV saturation above 40, i.e. the core is empty or unstained (control cores exempt) | 2 % |
 
 Filters never change patient IDs. The orientation match ignores only objects
@@ -80,10 +80,11 @@ more than 20 %), and any patient left with no core.
 
 On the APGI slides the weakest genuine patient cores have 3 to 5 % stained
 area and the Brain and Muscle controls about 0 to 1 %, which is why the stain
-default is 2 %. The diameter range is only meaningful when Core Ø is right: at the 1000 µm
-default every APGI core (about 1250 µm) falls outside 800 to 1200 µm. Set
-Core Ø to about 1250 for these slides; the status line warns when the median
-fitted diameter differs from Core Ø by more than 10 %.
+default is 2 %. Core Ø defaults to 1250 µm, the fitted size of the APGI
+cores; the diameter range is only meaningful when Core Ø matches the array, so
+change it for other arrays (the status line warns when the median fitted
+diameter differs from Core Ø by more than 10 %). Min Ø is 70 % so partial or
+torn cores, which fit a smaller circle, are kept.
 
 CLI: `--max-grid-offset`, `--diameter-range MIN MAX`, `--min-stain`, and
 `--stain-sat` (the saturation threshold, 40, not exposed in the GUI).

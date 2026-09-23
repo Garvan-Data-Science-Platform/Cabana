@@ -103,7 +103,7 @@ def _ellipse(diameter_px):
     return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (d, d))
 
 
-def fit_cores(img_bgr, pixel_size_um, core_diameter_um=1000.0,
+def fit_cores(img_bgr, pixel_size_um, core_diameter_um=1250.0,
               min_component_frac=0.05, debris_frac=0.05, sat_thresh=15, val_ratio=0.965,
               open_frac=0.1):
     """Fit a circle to each tissue core in a low-resolution slide image.
@@ -223,7 +223,7 @@ def stain_fraction(sat, cx, cy, r, sat_thresh):
 
 
 def recover_faint_cores(img_bgr, circles, rows, cols, n_rows, n_cols, pixel_size_um,
-                        core_diameter_um=1000.0, sat_thresh=15, val_ratio=0.965, min_fill=0.03):
+                        core_diameter_um=1250.0, sat_thresh=15, val_ratio=0.965, min_fill=0.03):
     """Look for pale cores at empty grid positions.
 
     A linear lattice model ``(x, y) = f(row, col)`` is fitted to the cores
@@ -475,10 +475,10 @@ class TMAPreprocessor:
     """
 
     def __init__(self, slide_path, array_number=None, slide_name=None, pixel_size_um=None,
-                 core_diameter_um=1000.0, margin_um=50.0, erode_px=8, fit_pixel_size_um=5.0,
+                 core_diameter_um=1250.0, margin_um=50.0, erode_px=8, fit_pixel_size_um=5.0,
                  orientation="auto", reader=None, sat_thresh=15, val_ratio=0.965,
                  recover_faint=True, min_fill=0.03, max_grid_offset=0.35,
-                 min_diameter_frac=0.8, max_diameter_frac=1.2,
+                 min_diameter_frac=0.7, max_diameter_frac=1.2,
                  min_stain_frac=0.02, stain_sat=40):
         self.reader = reader if reader is not None else open_slide(slide_path, pixel_size_um=pixel_size_um)
         if reader is not None and pixel_size_um:
@@ -763,7 +763,7 @@ def main(argv=None):
     p.add_argument("--array", type=int, default=None, help="ICGC array number for patient-ID lookup")
     p.add_argument("--slide-name", default=None, help="filename prefix (default: slide name)")
     p.add_argument("--pixel-size", type=float, default=None, help="µm per pixel if not in metadata")
-    p.add_argument("--core-diameter", type=float, default=1000.0, help="nominal core diameter in µm")
+    p.add_argument("--core-diameter", type=float, default=1250.0, help="nominal core diameter in µm (default 1250)")
     p.add_argument("--margin", type=float, default=50.0, help="crop margin around the circle in µm")
     p.add_argument("--erode", type=int, default=8, help="mask shrink in pixels")
     p.add_argument("--orientation", choices=ORIENTATIONS, default="auto")
@@ -777,8 +777,8 @@ def main(argv=None):
                    help="minimum tissue fraction for a faint core (default 0.03)")
     p.add_argument("--max-grid-offset", type=float, default=0.35,
                    help="QC: max distance from the grid position, in pitches (default 0.35)")
-    p.add_argument("--diameter-range", type=float, nargs=2, default=(0.8, 1.2), metavar=("MIN", "MAX"),
-                   help="QC: allowed diameter as fractions of --core-diameter (default 0.8 1.2)")
+    p.add_argument("--diameter-range", type=float, nargs=2, default=(0.7, 1.2), metavar=("MIN", "MAX"),
+                   help="QC: allowed diameter as fractions of --core-diameter (default 0.7 1.2)")
     p.add_argument("--min-stain", type=float, default=0.02,
                    help="QC: minimum stained fraction; controls exempt (default 0.02)")
     p.add_argument("--stain-sat", type=int, default=40,

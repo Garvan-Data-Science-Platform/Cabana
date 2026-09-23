@@ -787,7 +787,7 @@ class MainWindow(QMainWindow):
         self.tma_core_diameter_spin = QSpinBox()
         self.tma_core_diameter_spin.setRange(100, 5000)
         self.tma_core_diameter_spin.setSingleStep(50)
-        self.tma_core_diameter_spin.setValue(1000)
+        self.tma_core_diameter_spin.setValue(1250)
         self.tma_core_diameter_spin.setSuffix(" µm")
         self.tma_core_diameter_spin.setStyleSheet(self.spinner_style)
         self.tma_core_diameter_spin.setToolTip("Nominal core diameter.")
@@ -844,8 +844,8 @@ class MainWindow(QMainWindow):
         self.tma_offset_spin = _spin(0.05, 1.0, 0.35, 0.05, " pitch",
                                      "Exclude cores whose centre is further than this from its grid position\n"
                                      "(fraction of the core spacing). Catches debris between cores.", decimals=2)
-        self.tma_dmin_spin = _spin(10, 100, 80, 5, " %",
-                                   "Exclude cores smaller than this percentage of Core Ø.\n"
+        self.tma_dmin_spin = _spin(10, 100, 70, 5, " %",
+                                   "Exclude cores smaller than this percentage of Core Ø (70% keeps partial cores).\n"
                                    "Set Core Ø to the real diameter first (see the median in the status line).")
         self.tma_dmax_spin = _spin(100, 300, 120, 5, " %",
                                    "Exclude cores larger than this percentage of Core Ø.\n"

@@ -711,6 +711,11 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(6, 10, 6, 6)
         layout.setSpacing(10)
 
+        fit_title = QLabel("Fit")
+        fit_title.setStyleSheet(self.value_label_style + " font-weight: 600;")
+        fit_title.setToolTip("Settings used by Fit Cores; change them and fit again.")
+        layout.addWidget(fit_title)
+
         # --- Slide -------------------------------------------------------
         slide_layout = QHBoxLayout()
         slide_label = QLabel("Slide:")
@@ -788,26 +793,7 @@ class MainWindow(QMainWindow):
         self.tma_core_diameter_spin.setToolTip("Nominal core diameter.")
         geo.addWidget(self.tma_core_diameter_spin, 0, 3)
 
-        geo.addWidget(QLabel("Margin:"), 1, 0)
-        self.tma_margin_spin = QSpinBox()
-        self.tma_margin_spin.setRange(0, 1000)
-        self.tma_margin_spin.setSingleStep(10)
-        self.tma_margin_spin.setValue(50)
-        self.tma_margin_spin.setSuffix(" µm")
-        self.tma_margin_spin.setStyleSheet(self.spinner_style)
-        self.tma_margin_spin.setToolTip("Extra border around the fitted circle in each crop.")
-        geo.addWidget(self.tma_margin_spin, 1, 1)
-
-        geo.addWidget(QLabel("Mask Shrink:"), 1, 2)
-        self.tma_erode_spin = QSpinBox()
-        self.tma_erode_spin.setRange(0, 200)
-        self.tma_erode_spin.setValue(8)
-        self.tma_erode_spin.setSuffix(" px")
-        self.tma_erode_spin.setStyleSheet(self.spinner_style)
-        self.tma_erode_spin.setToolTip("Shrink of the circular mask so the core edge stays out of the analysis.")
-        geo.addWidget(self.tma_erode_spin, 1, 3)
-
-        geo.addWidget(QLabel("Sensitivity:"), 2, 0)
+        geo.addWidget(QLabel("Sensitivity:"), 1, 0)
         self.tma_sat_spin = QSpinBox()
         self.tma_sat_spin.setRange(2, 60)
         self.tma_sat_spin.setValue(15)
@@ -815,7 +801,7 @@ class MainWindow(QMainWindow):
         self.tma_sat_spin.setToolTip(
             "HSV saturation above which a pixel counts as tissue (default 15).\n"
             "Lower it to catch paler cores; raise it if debris or shading is picked up.")
-        geo.addWidget(self.tma_sat_spin, 2, 1)
+        geo.addWidget(self.tma_sat_spin, 1, 1)
 
         self.tma_recover_cb = QCheckBox("Recover faint")
         self.tma_recover_cb.setChecked(True)
@@ -823,11 +809,42 @@ class MainWindow(QMainWindow):
         self.tma_recover_cb.setToolTip(
             "After the grid is known, test every empty grid position for pale tissue with a\n"
             "more permissive threshold and add such cores (purple circles, flag 'recovered').")
-        geo.addWidget(self.tma_recover_cb, 2, 2, 1, 2)
+        geo.addWidget(self.tma_recover_cb, 1, 2, 1, 2)
         layout.addLayout(geo)
 
-        # --- Channels ------------------------------------------------------
+        # --- Export ------------------------------------------------------
+        # Settings below only affect Export Cores; changing them needs no refit.
         layout.addWidget(create_separator())
+        export_title = QLabel("Export")
+        export_title.setStyleSheet(self.value_label_style + " font-weight: 600;")
+        export_title.setToolTip("Settings used when writing the core images and masks; no refit needed.")
+        layout.addWidget(export_title)
+        exp = QGridLayout()
+        exp.setHorizontalSpacing(8)
+        exp.setVerticalSpacing(8)
+        exp.setColumnStretch(1, 1)
+        exp.setColumnStretch(3, 1)
+        exp.addWidget(QLabel("Margin:"), 0, 0)
+        self.tma_margin_spin = QSpinBox()
+        self.tma_margin_spin.setRange(0, 1000)
+        self.tma_margin_spin.setSingleStep(10)
+        self.tma_margin_spin.setValue(50)
+        self.tma_margin_spin.setSuffix(" µm")
+        self.tma_margin_spin.setStyleSheet(self.spinner_style)
+        self.tma_margin_spin.setToolTip("Extra border around the fitted circle in each crop.")
+        exp.addWidget(self.tma_margin_spin, 0, 1)
+
+        exp.addWidget(QLabel("Mask Shrink:"), 0, 2)
+        self.tma_erode_spin = QSpinBox()
+        self.tma_erode_spin.setRange(0, 200)
+        self.tma_erode_spin.setValue(8)
+        self.tma_erode_spin.setSuffix(" px")
+        self.tma_erode_spin.setStyleSheet(self.spinner_style)
+        self.tma_erode_spin.setToolTip("Shrink of the circular mask so the core edge stays out of the analysis.")
+        exp.addWidget(self.tma_erode_spin, 0, 3)
+
+        layout.addLayout(exp)
+
         ch_layout = QHBoxLayout()
         ch_layout.setSpacing(16)
         ch_label = QLabel("Channels:")

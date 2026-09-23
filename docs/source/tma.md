@@ -16,8 +16,8 @@ step lives on the **TMA** page of the GUI and in the `cabana-tma` command.
    fitted to every core, the circles are snapped to the array grid, and the
    grid is matched to the printed ICGC/APGI array map (arrays 1 to 8 are
    bundled). A numbered overlay is shown; green circles are well filled,
-   orange are partial, red are sparse, grey lie outside the printed map and
-   are not exported.
+   orange are partial, red are sparse, purple were recovered at empty grid
+   positions, grey lie outside the printed map and are not exported.
 3. **Export cores**: for every core and selected channel a square crop is
    written to `Images/` and a circular mask (white inside the fitted circle,
    shrunk by *Mask Shrink*, black in the corners) to `Masks/`. A `cores.csv`
@@ -25,6 +25,37 @@ step lives on the **TMA** page of the GUI and in the `cabana-tma` command.
 
 The three stages run independently: fitting can be repeated with new settings
 before exporting, and exporting can be repeated into a different folder.
+
+## How core fitting works and how to tune it
+
+1. **Tissue mask.** On a level of about 4 µm/px, a pixel is tissue when its
+   HSV saturation exceeds *Sensitivity* (default 15) or it is darker than
+   96.5% of the median brightness of its image column (the per-column
+   reference cancels scanner banding).
+2. **Clean-up.** Gaps of up to 30% of a core diameter are closed so a core
+   becomes one blob; an opening of 10% of a core diameter then cuts off thin
+   structures such as coverslip edges, scratches and streaks.
+3. **Components.** Blobs smaller than 5% of the largest are dropped. Inside
+   each blob detached debris smaller than 5% of the main tissue mass is
+   removed, and the minimum enclosing circle of what remains is the core.
+   Circles larger than 1.5 or smaller than 0.2 nominal core diameters are
+   rejected (fused neighbours, dust).
+4. **Grid.** Circle centres are snapped to a lattice whose pitch is the
+   median neighbour distance; fragments falling in one cell are merged.
+5. **Recovery.** With *Recover faint* on, every empty grid position is tested
+   with a permissive threshold (half the saturation, twice the brightness
+   margin). If at least 3% of the expected disc is tissue, a core is added
+   there with the median radius and flagged `recovered` (purple on the
+   overlay). Positions with less tissue stay empty.
+6. **Fill grade.** Each circle is graded by the fraction covered by tissue:
+   green ≥ 70%, orange ≥ 40%, red below.
+
+Tuning: lower *Sensitivity* (for example 8) when very pale cores are missed
+and debris is not a problem; raise it (25 to 30) when shading or dust on the
+glass is being fitted. *Core Ø* sets the scale of every morphological step
+and of the size gates, so set it to the real core diameter first. On the
+command line the same knobs are `--sat-thresh`, `--val-ratio`, `--min-fill`
+and `--no-recover`.
 
 ## Output naming
 

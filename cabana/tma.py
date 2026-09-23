@@ -58,11 +58,14 @@ class Core:
     map_row: int = -1     # row index in the printed map (0-based, A=0)
     map_col: int = -1     # column index in the printed map (0-based)
     outside_map: bool = False   # grid cell has no counterpart in the printed map
+    recovered: bool = False     # found by the faint-core pass at a predicted grid position
 
     @property
     def flag(self):
         if self.outside_map:
             return "outside_map"
+        if self.recovered:
+            return "recovered"
         if self.fill >= 0.7:
             return "ok"
         return "partial" if self.fill >= 0.4 else "sparse"
@@ -91,20 +94,27 @@ def _ellipse(diameter_px):
 
 
 def fit_cores(img_bgr, pixel_size_um, core_diameter_um=1000.0,
-              min_component_frac=0.05, debris_frac=0.05):
+              min_component_frac=0.05, debris_frac=0.05, sat_thresh=15, val_ratio=0.965,
+              open_frac=0.1):
     """Fit a circle to each tissue core in a low-resolution slide image.
 
     Returns a list of ``(cx, cy, r, fill)`` in pixels of ``img_bgr``.
 
-    Steps (ported from the original prototype): threshold tissue, close gaps
-    of ~30% core diameter, drop components smaller than ``min_component_frac``
-    of the largest, then inside each component remove small detached debris
-    blobs (< ``debris_frac`` of the main blob and not touching it) before
-    taking the minimum enclosing circle of the remaining tissue.
+    Steps (ported from the original prototype): threshold tissue
+    (``sat_thresh``, ``val_ratio``; see :func:`tissue_mask`), close gaps of
+    ~30% core diameter, open with ~``open_frac`` core diameters to cut thin
+    structures such as coverslip edges or scratches off the cores, drop
+    components smaller than ``min_component_frac`` of the largest, then inside
+    each component remove small detached debris blobs (< ``debris_frac`` of
+    the main blob and not touching it) before taking the minimum enclosing
+    circle of the remaining tissue. Circles larger than 1.5 or smaller than
+    0.2 nominal cores are rejected (merged neighbours, debris).
     """
-    raw = tissue_mask(img_bgr)
+    raw = tissue_mask(img_bgr, sat_thresh=sat_thresh, val_ratio=val_ratio)
     core_px = core_diameter_um / pixel_size_um
     closed = cv2.morphologyEx(raw, cv2.MORPH_CLOSE, _ellipse(0.3 * core_px))
+    if open_frac and open_frac > 0:
+        closed = cv2.morphologyEx(closed, cv2.MORPH_OPEN, _ellipse(open_frac * core_px))
     lbl, n = ndi.label(closed)
     if n == 0:
         return []
@@ -156,6 +166,72 @@ def fit_cores(img_bgr, pixel_size_um, core_diameter_um=1000.0,
 # ---------------------------------------------------------------------------
 # Grid inference and orientation
 # ---------------------------------------------------------------------------
+
+def recover_faint_cores(img_bgr, circles, rows, cols, n_rows, n_cols, pixel_size_um,
+                        core_diameter_um=1000.0, sat_thresh=15, val_ratio=0.965, min_fill=0.03):
+    """Look for pale cores at empty grid positions.
+
+    A linear lattice model ``(x, y) = f(row, col)`` is fitted to the cores
+    already found (this absorbs slide rotation). For every empty cell the
+    expected disc is tested with a more permissive tissue threshold (half the
+    saturation threshold, twice the brightness margin); when at least
+    ``min_fill`` of the disc is tissue a core is added at the tissue centroid
+    with the median radius. Returns ``(circles, rows, cols, recovered_flags)``.
+    """
+    n = len(circles)
+    if n < 3 or n_rows * n_cols <= n:
+        return circles, rows, cols, [False] * n
+    pts = np.array([[c[0], c[1]] for c in circles], dtype=float)
+    A = np.stack([np.ones(n), cols.astype(float), rows.astype(float)], axis=1)
+    coef_x, *_ = np.linalg.lstsq(A, pts[:, 0], rcond=None)
+    coef_y, *_ = np.linalg.lstsq(A, pts[:, 1], rcond=None)
+    # With a single populated row (or column) the lattice slope along that
+    # axis is undetermined; fall back to the pitch measured on the other axis.
+    d = np.sqrt(((pts[:, None, :] - pts[None, :, :]) ** 2).sum(-1))
+    np.fill_diagonal(d, np.inf)
+    pitch = float(np.median(d.min(axis=1)))
+    if len(np.unique(rows)) < 2:
+        coef_x[2], coef_y[2] = 0.0, pitch
+    if len(np.unique(cols)) < 2:
+        coef_x[1], coef_y[1] = pitch, 0.0
+    r_med = float(np.median([c[2] for c in circles]))
+    core_px = core_diameter_um / pixel_size_um
+    if not (0.2 * core_px / 2 < r_med < 1.5 * core_px / 2):
+        r_med = core_px / 2
+
+    permissive = tissue_mask(img_bgr, sat_thresh=max(2, sat_thresh / 2),
+                             val_ratio=1 - 2 * (1 - val_ratio))
+    h, w = permissive.shape
+    occupied = {(int(r), int(c)) for r, c in zip(rows, cols)}
+    out_c, out_r, out_k, flags = list(circles), list(rows), list(cols), [False] * n
+    for r in range(n_rows):
+        for c in range(n_cols):
+            if (r, c) in occupied:
+                continue
+            cx = coef_x[0] + coef_x[1] * c + coef_x[2] * r
+            cy = coef_y[0] + coef_y[1] * c + coef_y[2] * r
+            if not (r_med <= cx < w - r_med and r_med <= cy < h - r_med):
+                continue
+            y0, y1 = int(cy - r_med), int(cy + r_med) + 1
+            x0, x1 = int(cx - r_med), int(cx + r_med) + 1
+            win = permissive[y0:y1, x0:x1]
+            yy, xx = np.ogrid[y0:y1, x0:x1]
+            disc = (xx - cx) ** 2 + (yy - cy) ** 2 <= r_med ** 2
+            tissue = (win > 0) & disc
+            frac = float(tissue.sum() / max(1, disc.sum()))
+            if frac < min_fill:
+                continue
+            ys, xs = np.nonzero(tissue)
+            mx, my = float(xs.mean() + x0), float(ys.mean() + y0)
+            # keep the centre near the lattice prediction (tissue may be off-centre)
+            mx = cx + np.clip(mx - cx, -0.25 * r_med, 0.25 * r_med)
+            my = cy + np.clip(my - cy, -0.25 * r_med, 0.25 * r_med)
+            out_c.append((mx, my, r_med, frac))
+            out_r.append(r)
+            out_k.append(c)
+            flags.append(True)
+    return out_c, np.array(out_r, int), np.array(out_k, int), flags
+
 
 def _lattice_indices(v, pitch):
     """Snap 1-D positions to a lattice ``x0 + k * pitch``.
@@ -316,11 +392,23 @@ class TMAPreprocessor:
         Resolution at which circle fitting is performed.
     reader : SlideReader, optional
         An already opened slide; ``slide_path`` is then informational only.
+    sat_thresh : int
+        HSV saturation above which a pixel counts as tissue (lower = more
+        sensitive to pale cores, more debris).
+    val_ratio : float
+        Pixels darker than this fraction of the per-column background also
+        count as tissue.
+    recover_faint : bool
+        After grid inference, test empty grid positions for pale tissue with
+        a permissive threshold and add cores flagged ``recovered``.
+    min_fill : float
+        Minimum tissue fraction of the expected disc for a faint core.
     """
 
     def __init__(self, slide_path, array_number=None, slide_name=None, pixel_size_um=None,
                  core_diameter_um=1000.0, margin_um=50.0, erode_px=8, fit_pixel_size_um=5.0,
-                 orientation="auto", reader=None):
+                 orientation="auto", reader=None, sat_thresh=15, val_ratio=0.965,
+                 recover_faint=True, min_fill=0.03):
         self.reader = reader if reader is not None else open_slide(slide_path, pixel_size_um=pixel_size_um)
         if reader is not None and pixel_size_um:
             self.reader.pixel_size_um = pixel_size_um
@@ -334,6 +422,10 @@ class TMAPreprocessor:
         self.erode_px = erode_px
         self.fit_pixel_size_um = fit_pixel_size_um
         self.orientation = orientation
+        self.sat_thresh = sat_thresh
+        self.val_ratio = val_ratio
+        self.recover_faint = recover_faint
+        self.min_fill = min_fill
         self.cores = []
         self.grid_shape = (0, 0)
         self.matched_orientation = None
@@ -349,11 +441,17 @@ class TMAPreprocessor:
         ds = r.level_downsample(lv)
         img = r.read_level(lv, channel=0)
         px_um = r.pixel_size_um * ds
-        circles = fit_cores(img, px_um, self.core_diameter_um)
+        circles = fit_cores(img, px_um, self.core_diameter_um,
+                            sat_thresh=self.sat_thresh, val_ratio=self.val_ratio)
         rows, cols, n_rows, n_cols = infer_grid(circles, self.core_diameter_um / px_um)
         circles, rows, cols = merge_grid_duplicates(circles, rows, cols)
+        recovered = [False] * len(circles)
+        if self.recover_faint:
+            circles, rows, cols, recovered = recover_faint_cores(
+                img, circles, rows, cols, n_rows, n_cols, px_um, self.core_diameter_um,
+                sat_thresh=self.sat_thresh, val_ratio=self.val_ratio, min_fill=self.min_fill)
         self.cores = [Core(index=i + 1, cx=c[0] * ds, cy=c[1] * ds, radius=c[2] * ds, fill=c[3],
-                           row=int(rows[i]), col=int(cols[i]))
+                           row=int(rows[i]), col=int(cols[i]), recovered=bool(recovered[i]))
                       for i, c in enumerate(circles)]
         self.grid_shape = (n_rows, n_cols)
         self._fit_level, self._fit_image = lv, img
@@ -473,7 +571,7 @@ class TMAPreprocessor:
         scale = max(0.4, ov.shape[1] / 3000.0)
         for c in self.cores:
             colour = {"ok": (0, 180, 0), "partial": (0, 140, 255), "sparse": (0, 0, 255),
-                      "outside_map": (128, 128, 128)}[c.flag]
+                      "recovered": (200, 0, 200), "outside_map": (128, 128, 128)}[c.flag]
             centre = (int(c.cx / ds), int(c.cy / ds))
             cv2.circle(ov, centre, int(c.radius / ds), colour, max(1, int(2 * scale)))
             info = self.core_info(c)
@@ -510,12 +608,21 @@ def main(argv=None):
     p.add_argument("--erode", type=int, default=8, help="mask shrink in pixels")
     p.add_argument("--orientation", choices=ORIENTATIONS, default="auto")
     p.add_argument("--channels", nargs="*", default=None, help="channels to export (default: all)")
+    p.add_argument("--sat-thresh", type=int, default=15,
+                   help="tissue saturation threshold; lower finds paler cores (default 15)")
+    p.add_argument("--val-ratio", type=float, default=0.965,
+                   help="pixels darker than this fraction of the background are tissue (default 0.965)")
+    p.add_argument("--no-recover", action="store_true", help="disable the faint-core pass at empty grid cells")
+    p.add_argument("--min-fill", type=float, default=0.03,
+                   help="minimum tissue fraction for a faint core (default 0.03)")
     p.add_argument("--fit-only", action="store_true", help="write cores.csv and overlay.png only")
     a = p.parse_args(argv)
 
     pre = TMAPreprocessor(a.slide, array_number=a.array, slide_name=a.slide_name,
                           pixel_size_um=a.pixel_size, core_diameter_um=a.core_diameter,
-                          margin_um=a.margin, erode_px=a.erode, orientation=a.orientation)
+                          margin_um=a.margin, erode_px=a.erode, orientation=a.orientation,
+                          sat_thresh=a.sat_thresh, val_ratio=a.val_ratio,
+                          recover_faint=not a.no_recover, min_fill=a.min_fill)
     pre.fit()
     o = pre.map_to_array()
     print(f"{pre.slide_name}: {len(pre.cores)} cores on a {pre.grid_shape[0]}x{pre.grid_shape[1]} grid"

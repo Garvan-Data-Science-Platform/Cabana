@@ -806,6 +806,24 @@ class MainWindow(QMainWindow):
         self.tma_erode_spin.setStyleSheet(self.spinner_style)
         self.tma_erode_spin.setToolTip("Shrink of the circular mask so the core edge stays out of the analysis.")
         geo.addWidget(self.tma_erode_spin, 1, 3)
+
+        geo.addWidget(QLabel("Sensitivity:"), 2, 0)
+        self.tma_sat_spin = QSpinBox()
+        self.tma_sat_spin.setRange(2, 60)
+        self.tma_sat_spin.setValue(15)
+        self.tma_sat_spin.setStyleSheet(self.spinner_style)
+        self.tma_sat_spin.setToolTip(
+            "HSV saturation above which a pixel counts as tissue (default 15).\n"
+            "Lower it to catch paler cores; raise it if debris or shading is picked up.")
+        geo.addWidget(self.tma_sat_spin, 2, 1)
+
+        self.tma_recover_cb = QCheckBox("Recover faint")
+        self.tma_recover_cb.setChecked(True)
+        self.tma_recover_cb.setStyleSheet(self.checkbox_style)
+        self.tma_recover_cb.setToolTip(
+            "After the grid is known, test every empty grid position for pale tissue with a\n"
+            "more permissive threshold and add such cores (purple circles, flag 'recovered').")
+        geo.addWidget(self.tma_recover_cb, 2, 2, 1, 2)
         layout.addLayout(geo)
 
         # --- Channels ------------------------------------------------------
@@ -860,7 +878,8 @@ class MainWindow(QMainWindow):
         self.tma_status_label.setToolTip(
             "Fit summary: cores found, grid size, matched orientation and any orientations that\n"
             "fit equally well. Cores listed as 'check' are partially filled or sparse (orange/red\n"
-            "on the overlay); grey circles lie outside the printed map and are not exported.")
+            "on the overlay); purple circles were recovered at empty grid positions; grey circles\n"
+            "lie outside the printed map and are not exported.")
         layout.addWidget(self.tma_status_label)
 
         btn_layout = QHBoxLayout()
@@ -969,12 +988,14 @@ class MainWindow(QMainWindow):
             margin_um=float(self.tma_margin_spin.value()),
             erode_px=int(self.tma_erode_spin.value()),
             orientation=self.tma_orientation_combo.currentData(),
+            sat_thresh=int(self.tma_sat_spin.value()),
+            recover_faint=self.tma_recover_cb.isChecked(),
         )
 
     def _tma_set_busy(self, busy):
         for w in (self.tma_slide_btn, self.tma_output_btn, self.tma_array_combo,
                   self.tma_orientation_combo, self.tma_pixel_size_spin, self.tma_core_diameter_spin,
-                  self.tma_margin_spin, self.tma_erode_spin):
+                  self.tma_margin_spin, self.tma_erode_spin, self.tma_sat_spin, self.tma_recover_cb):
             w.setEnabled(not busy)
         self.tma_fit_btn.setEnabled(not busy and self.tma_slide is not None
                                     and (self.tma_reader is not None or self.tma_pre is not None))
@@ -1038,6 +1059,9 @@ class MainWindow(QMainWindow):
         flagged = [c.index for c in pre.cores if c.flag in ("partial", "sparse")]
         if flagged:
             msg += f"; check cores {', '.join(map(str, flagged[:12]))}{'…' if len(flagged) > 12 else ''}"
+        recovered = [c.index for c in pre.cores if c.recovered]
+        if recovered:
+            msg += f"; recovered at empty grid positions: {', '.join(map(str, recovered))}"
         self.tma_status_label.setText(msg)
         self.status_file_label.setText(f"  {os.path.basename(self.tma_slide)}")
         self.status_dims_label.setText(f"{reader.level_shape(0)[1]} x {reader.level_shape(0)[0]}  ")
@@ -2467,7 +2491,8 @@ class MainWindow(QMainWindow):
 
         # Spinboxes
         for spin in (self.batch_size_spinner, self.patch_size_spinner, self.tma_pixel_size_spin,
-                     self.tma_core_diameter_spin, self.tma_margin_spin, self.tma_erode_spin):
+                     self.tma_core_diameter_spin, self.tma_margin_spin, self.tma_erode_spin,
+                     self.tma_sat_spin):
             spin.setStyleSheet(self.spinner_style)
 
         # Combo boxes
@@ -2477,7 +2502,7 @@ class MainWindow(QMainWindow):
         # Checkboxes
         for cb in (self.white_bg_cb, self.toggle_img_cb, self.dark_line_cb,
                    self.extend_line_cb, self.overlay_fibres_cb, self.overlay_gaps_cb,
-                   self.stats_cb, self.scores_cb, *self.tma_channel_cbs.values()):
+                   self.stats_cb, self.scores_cb, self.tma_recover_cb, *self.tma_channel_cbs.values()):
             cb.setStyleSheet(self.checkbox_style)
 
         # Path edits

@@ -65,6 +65,68 @@ class TestFitCores:
         assert len(circles) == 4
 
 
+class TestRobustness:
+    def test_core_fused_with_edge_strip_is_found(self):
+        occ = np.ones((2, 3), dtype=bool)
+        img, centres = synthetic_slide(occ)
+        # thin coloured strip (a coverslip edge) along the bottom touching the bottom-left core
+        cx, cy = centres[(1, 0)]
+        y = cy + int(RADIUS_PX) - 3
+        img[y:y + 8, :] = (200, 200, 230)
+        from cabana.tma import infer_grid, merge_grid_duplicates, recover_faint_cores
+        circles = fit_cores(img, PX_UM, CORE_UM)
+        rows, cols, nr, nc = infer_grid(circles, CORE_UM / PX_UM)
+        circles, rows, cols = merge_grid_duplicates(circles, rows, cols)
+        circles, rows, cols, rec = recover_faint_cores(img, circles, rows, cols, max(nr, 2), max(nc, 3),
+                                                       PX_UM, CORE_UM)
+        assert len(circles) == 6
+        found = np.array([[c[0], c[1]] for c in circles])
+        for (x, y) in centres.values():
+            assert np.sqrt(((found - [x, y]) ** 2).sum(1)).min() < 0.25 * RADIUS_PX
+
+    def test_faint_core_recovered_at_grid_position(self):
+        occ = np.ones((2, 3), dtype=bool)
+        occ[0, 1] = False
+        img, centres = synthetic_slide(occ)
+        # a very pale core: barely below the background, low saturation
+        cx, cy = 2 * PITCH_PX, PITCH_PX
+        cv2.circle(img, (cx, cy), int(RADIUS_PX), (232, 228, 240), -1)
+        pre_circles = fit_cores(img, PX_UM, CORE_UM)
+        assert len(pre_circles) == 5                       # too pale for the main pass
+        from cabana.tma import infer_grid, recover_faint_cores
+        rows, cols, nr, nc = infer_grid(pre_circles, CORE_UM / PX_UM)
+        circles, rows, cols, rec = recover_faint_cores(img, pre_circles, rows, cols, nr, nc, PX_UM, CORE_UM)
+        assert len(circles) == 6 and sum(rec) == 1
+        mx, my, mr, fill = circles[-1]
+        assert abs(mx - cx) < 0.25 * RADIUS_PX and abs(my - cy) < 0.25 * RADIUS_PX
+        assert fill > 0.5
+
+    def test_truly_empty_cell_is_not_recovered(self):
+        occ = np.ones((2, 3), dtype=bool)
+        occ[0, 1] = False
+        img, _ = synthetic_slide(occ)
+        from cabana.tma import infer_grid, recover_faint_cores
+        circles = fit_cores(img, PX_UM, CORE_UM)
+        rows, cols, nr, nc = infer_grid(circles, CORE_UM / PX_UM)
+        circles, rows, cols, rec = recover_faint_cores(img, circles, rows, cols, nr, nc, PX_UM, CORE_UM)
+        assert len(circles) == 5 and not any(rec)
+
+    def test_preprocessor_flags_recovered(self, tmp_path):
+        occ = np.ones((2, 3), dtype=bool)
+        occ[1, 2] = False
+        img, _ = synthetic_slide(occ)
+        cv2.circle(img, (3 * PITCH_PX, 2 * PITCH_PX), int(RADIUS_PX), (232, 228, 240), -1)
+        path = str(tmp_path / "s.png")
+        cv2.imwrite(path, img)
+        pre = TMAPreprocessor(path, pixel_size_um=PX_UM, core_diameter_um=CORE_UM, fit_pixel_size_um=PX_UM)
+        pre.fit()
+        assert [c.flag for c in pre.cores].count("recovered") == 1
+        pre_off = TMAPreprocessor(path, pixel_size_um=PX_UM, core_diameter_um=CORE_UM,
+                                  fit_pixel_size_um=PX_UM, recover_faint=False)
+        pre_off.fit()
+        assert len(pre_off.cores) == 5
+
+
 class TestGrid:
     def test_lattice_with_gaps_and_jitter(self):
         occ = np.ones((4, 6), dtype=bool)

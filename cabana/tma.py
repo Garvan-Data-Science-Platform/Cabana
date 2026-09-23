@@ -117,8 +117,15 @@ def fit_cores(img_bgr, pixel_size_um, core_diameter_um=1250.0,
     components smaller than ``min_component_frac`` of the largest, then inside
     each component remove small detached debris blobs (< ``debris_frac`` of
     the main blob and not touching it) before taking the minimum enclosing
-    circle of the remaining tissue. Circles larger than 1.5 or smaller than
-    0.2 nominal cores are rejected (merged neighbours, debris).
+    circle of the remaining tissue.
+
+    Because an enclosing circle is set by its outermost points, debris beside a
+    core inflates it. Circles larger than 1.1 times the slide's median radius
+    are therefore rebuilt: starting from the largest tissue piece (split at
+    thin attachments when it is itself too large), neighbouring pieces are
+    added nearest first only while the circle stays within that bound, so
+    fragments of a broken core are kept and outlying debris is not. Circles
+    larger than 1.5 or smaller than 0.2 nominal cores are rejected.
     """
     raw = tissue_mask(img_bgr, sat_thresh=sat_thresh, val_ratio=val_ratio)
     core_px = core_diameter_um / pixel_size_um
@@ -135,9 +142,10 @@ def fit_cores(img_bgr, pixel_size_um, core_diameter_um=1250.0,
     keep = [k for k in keep if sizes[k - 1] >= min_area]
 
     small = _ellipse(0.08 * core_px)
+    split = _ellipse(0.12 * core_px)
     objects = ndi.find_objects(lbl)
     pad = int(0.15 * core_px) + 3
-    circles = []
+    comps = []          # (offset_x, offset_y, pieces[list of point arrays], footprint)
     for k in keep:
         sl = objects[k - 1]
         ys = slice(max(0, sl[0].start - pad), min(raw.shape[0], sl[0].stop + pad))
@@ -151,25 +159,71 @@ def fit_cores(img_bgr, pixel_size_um, core_diameter_um=1250.0,
         bsz = ndi.sum(blobs, blbl, range(1, bn + 1))
         main = int(np.argmax(bsz)) + 1
         near_main = cv2.dilate((blbl == main).astype(np.uint8), small)
-        good = [main]
+        pieces = []
         for b in range(1, bn + 1):
-            if b == main:
-                continue
-            if bsz[b - 1] >= debris_frac * bsz[main - 1] or ((blbl == b) & (near_main > 0)).any():
-                good.append(b)
-        core = comp_raw & np.isin(blbl, good)
-        cnts, _ = cv2.findContours(core.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-        if not cnts:
+            if b != main and not (bsz[b - 1] >= debris_frac * bsz[main - 1]
+                                  or ((blbl == b) & (near_main > 0)).any()):
+                continue    # small detached speck
+            piece = (comp_raw & (blbl == b)).astype(np.uint8)
+            cnts, _ = cv2.findContours(piece, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+            if cnts:
+                pieces.append((int(piece.sum()), np.vstack([c.reshape(-1, 2) for c in cnts]), piece))
+        if not pieces:
             continue
-        pts = np.vstack([c.reshape(-1, 2) for c in cnts])
-        (cx, cy), r = cv2.minEnclosingCircle(pts.astype(np.float32))
+        pieces.sort(key=lambda t: -t[0])
+        comps.append((xs.start, ys.start, pieces, ndi.binary_fill_holes(lbl_w == k)))
+
+    def enclosing(point_sets):
+        (cx, cy), r = cv2.minEnclosingCircle(np.vstack(point_sets).astype(np.float32))
+        return cx, cy, r
+
+    # first pass: circle around all kept pieces (original behaviour)
+    first = [enclosing([p[1] for p in pieces]) for _, _, pieces, _ in comps]
+    radii = [r for _, _, r in first if 0.2 * core_px / 2 <= r <= 1.5 * core_px / 2]
+    r_ref = float(np.median(radii)) if radii else core_px / 2
+    bound = 1.1 * r_ref
+
+    circles = []
+    for (ox, oy, pieces, footprint), (cx, cy, r) in zip(comps, first):
+        if r > bound:
+            # Debris is inflating the circle. If the largest piece alone is
+            # already too big, split thin attachments off it first.
+            cand = [p[1] for p in pieces]
+            if enclosing([pieces[0][1]])[2] > bound:
+                opened = cv2.morphologyEx(pieces[0][2], cv2.MORPH_OPEN, split)
+                sub_lbl, sub_n = ndi.label(opened)
+                subs = []
+                for j in range(1, sub_n + 1):
+                    cnts, _ = cv2.findContours((sub_lbl == j).astype(np.uint8), cv2.RETR_EXTERNAL,
+                                               cv2.CHAIN_APPROX_NONE)
+                    if cnts:
+                        subs.append((int((sub_lbl == j).sum()), np.vstack([c.reshape(-1, 2) for c in cnts])))
+                if subs:
+                    subs.sort(key=lambda t: -t[0])
+                    cand = [q[1] for q in subs] + [p[1] for p in pieces[1:]]
+            # greedy: start from the largest piece, add nearest pieces while
+            # the enclosing circle stays within the typical core size
+            chosen = [cand[0]]
+            cx, cy, r = enclosing(chosen)
+            rest = cand[1:]
+            changed = True
+            while changed and rest:
+                changed = False
+                rest.sort(key=lambda q: np.hypot(q[:, 0].mean() - cx, q[:, 1].mean() - cy))
+                for q in list(rest):
+                    ncx, ncy, nr = enclosing(chosen + [q])
+                    if nr <= bound:
+                        chosen.append(q)
+                        rest.remove(q)
+                        cx, cy, r = ncx, ncy, nr
+                        changed = True
+                        break
         if r > 1.5 * core_px / 2 or r < 0.2 * core_px / 2:
             continue   # merged neighbours or debris
-        footprint = ndi.binary_fill_holes(lbl_w == k)
-        yy, xx = np.ogrid[:comp_raw.shape[0], :comp_raw.shape[1]]
+        yy, xx = np.ogrid[:footprint.shape[0], :footprint.shape[1]]
         inside = (xx - cx) ** 2 + (yy - cy) ** 2 <= r ** 2
         fill = float(footprint[inside].sum() / max(1, inside.sum()))
-        circles.append((float(cx + xs.start), float(cy + ys.start), float(r), fill))
+        circles.append((float(cx + ox), float(cy + oy), float(r), fill))
     return circles
 
 
@@ -328,12 +382,20 @@ def infer_grid(circles, core_diameter_px=None):
     return rows, cols, int(rows.max()) + 1, int(cols.max()) + 1
 
 
-def merge_grid_duplicates(circles, rows, cols):
+def merge_grid_duplicates(circles, rows, cols, max_radius=None):
     """Merge circles that fell into the same grid cell (fragmented cores).
 
-    The merged circle is the minimum enclosing circle of the members' discs;
-    the fill grade is the area-weighted mean. Returns ``(circles, rows, cols)``.
+    Members are taken largest first; each further member is merged only if the
+    minimum enclosing circle of the merged discs stays within ``max_radius``
+    (when given). Members that would inflate the circle beyond it, typically
+    debris next to a core, are dropped. The fill grade is the area-weighted
+    mean of the merged members. Returns ``(circles, rows, cols)``.
     """
+    def disc_points(c):
+        cx, cy, rad, _ = c
+        ang = np.linspace(0, 2 * np.pi, 24, endpoint=False)
+        return np.stack([cx + rad * np.cos(ang), cy + rad * np.sin(ang)], axis=1)
+
     groups = {}
     for i, (r, c) in enumerate(zip(rows, cols)):
         groups.setdefault((int(r), int(c)), []).append(i)
@@ -342,15 +404,21 @@ def merge_grid_duplicates(circles, rows, cols):
         if len(idx) == 1:
             out_c.append(circles[idx[0]])
         else:
-            pts = []
-            for i in idx:
-                cx, cy, rad, _ = circles[i]
-                ang = np.linspace(0, 2 * np.pi, 24, endpoint=False)
-                pts.append(np.stack([cx + rad * np.cos(ang), cy + rad * np.sin(ang)], axis=1))
-            (mx, my), mr = cv2.minEnclosingCircle(np.vstack(pts).astype(np.float32))
-            areas = np.array([circles[i][2] ** 2 for i in idx])
-            fill = float(sum(circles[i][3] * a for i, a in zip(idx, areas)) / areas.sum())
-            out_c.append((float(mx), float(my), float(mr), fill))
+            idx = sorted(idx, key=lambda i: -circles[i][2])
+            members = [idx[0]]
+            for i in idx[1:]:
+                pts = np.vstack([disc_points(circles[j]) for j in members + [i]])
+                (_, _), mr = cv2.minEnclosingCircle(pts.astype(np.float32))
+                if max_radius is None or mr <= max_radius:
+                    members.append(i)
+            if len(members) == 1:
+                out_c.append(circles[members[0]])
+            else:
+                pts = np.vstack([disc_points(circles[j]) for j in members])
+                (mx, my), mr = cv2.minEnclosingCircle(pts.astype(np.float32))
+                areas = np.array([circles[j][2] ** 2 for j in members])
+                fill = float(sum(circles[j][3] * a for j, a in zip(members, areas)) / areas.sum())
+                out_c.append((float(mx), float(my), float(mr), fill))
         out_r.append(r)
         out_k.append(c)
     return out_c, np.array(out_r, int), np.array(out_k, int)
@@ -520,7 +588,13 @@ class TMAPreprocessor:
         circles = fit_cores(img, px_um, self.core_diameter_um,
                             sat_thresh=self.sat_thresh, val_ratio=self.val_ratio)
         rows, cols, n_rows, n_cols = infer_grid(circles, self.core_diameter_um / px_um)
-        circles, rows, cols = merge_grid_duplicates(circles, rows, cols)
+        # typical core radius on this slide, from cells holding a single circle
+        cell_counts = {}
+        for rr, cc in zip(rows, cols):
+            cell_counts[(int(rr), int(cc))] = cell_counts.get((int(rr), int(cc)), 0) + 1
+        single = [c[2] for c, rr, cc in zip(circles, rows, cols) if cell_counts[(int(rr), int(cc))] == 1]
+        r_typ = float(np.median(single)) if single else self.core_diameter_um / px_um / 2
+        circles, rows, cols = merge_grid_duplicates(circles, rows, cols, max_radius=1.1 * r_typ)
         recovered = [False] * len(circles)
         if self.recover_faint:
             circles, rows, cols, recovered = recover_faint_cores(

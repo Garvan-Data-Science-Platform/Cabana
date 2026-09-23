@@ -385,3 +385,50 @@ class TestFilters:
         assert len(ex) == 1 and ex[0]["reason"] == "stain" and ex[0]["flag"] == "excluded"
         assert float(ex[0]["stain_frac"]) < 0.02 and float(ex[0]["diameter_um"]) > 0
         assert len(os.listdir(tmp_path / "out" / "Images")) == 3
+
+
+class TestDebrisRobustness:
+    def test_debris_beside_core_does_not_inflate_circle(self):
+        occ = np.ones((2, 3), dtype=bool)
+        img, centres = synthetic_slide(occ)
+        cx, cy = centres[(0, 1)]
+        # sizeable debris blob just outside the core, bridged by the gap closing
+        cv2.circle(img, (cx + int(1.25 * RADIUS_PX), cy - int(0.6 * RADIUS_PX)), int(0.3 * RADIUS_PX),
+                   (190, 150, 230), -1)
+        circles = fit_cores(img, PX_UM, CORE_UM)
+        c = min(circles, key=lambda q: np.hypot(q[0] - cx, q[1] - cy))
+        assert c[2] < 1.12 * RADIUS_PX
+        assert np.hypot(c[0] - cx, c[1] - cy) < 0.1 * RADIUS_PX
+
+    def test_fused_debris_is_split_off(self):
+        occ = np.ones((2, 3), dtype=bool)
+        img, centres = synthetic_slide(occ)
+        cx, cy = centres[(1, 2)]
+        # debris attached to the core by a thin bridge
+        cv2.line(img, (cx + int(RADIUS_PX) - 2, cy), (cx + int(1.4 * RADIUS_PX), cy), (190, 150, 230), 3)
+        cv2.circle(img, (cx + int(1.6 * RADIUS_PX), cy), int(0.3 * RADIUS_PX), (190, 150, 230), -1)
+        circles = fit_cores(img, PX_UM, CORE_UM)
+        c = min(circles, key=lambda q: np.hypot(q[0] - cx, q[1] - cy))
+        assert c[2] < 1.12 * RADIUS_PX
+
+    def test_fragmented_core_keeps_all_fragments(self):
+        occ = np.ones((2, 3), dtype=bool)
+        img, centres = synthetic_slide(occ)
+        cx, cy = centres[(0, 0)]
+        # split one core into two halves separated by a gap
+        cv2.rectangle(img, (cx - 6, cy - int(RADIUS_PX) - 2), (cx + 6, cy + int(RADIUS_PX) + 2),
+                      (245, 245, 245), -1)
+        circles = fit_cores(img, PX_UM, CORE_UM)
+        c = min(circles, key=lambda q: np.hypot(q[0] - cx, q[1] - cy))
+        assert abs(c[2] - RADIUS_PX) < 0.08 * RADIUS_PX and np.hypot(c[0] - cx, c[1] - cy) < 5
+
+    def test_debris_circle_in_same_cell_is_not_merged(self):
+        # a small core plus a separate debris speck in the same grid cell
+        circles = [(400.0, 400.0, 100.0, 0.9), (560.0, 470.0, 26.0, 0.8)]
+        merged, r, c = merge_grid_duplicates(circles, np.array([0, 0]), np.array([0, 0]), max_radius=137.5)
+        assert len(merged) == 1 and merged[0][:3] == (400.0, 400.0, 100.0)
+
+    def test_fragments_in_same_cell_are_merged_within_bound(self):
+        circles = [(400.0, 400.0, 60.0, 0.9), (470.0, 400.0, 50.0, 0.8)]
+        merged, r, c = merge_grid_duplicates(circles, np.array([0, 0]), np.array([0, 0]), max_radius=137.5)
+        assert len(merged) == 1 and merged[0][2] > 60 and merged[0][2] <= 137.5

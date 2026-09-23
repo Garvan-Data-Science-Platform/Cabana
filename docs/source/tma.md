@@ -41,8 +41,16 @@ before exporting, and exporting can be repeated into a different folder.
    removed, and the minimum enclosing circle of what remains is the core.
    Circles larger than 1.5 or smaller than 0.2 nominal core diameters are
    rejected (fused neighbours, dust).
+   Because an enclosing circle is set by its outermost points, debris next
+   to a core would inflate it. Circles larger than 110 % of the slide's median
+   radius are therefore rebuilt from the largest tissue piece (split at thin
+   attachments if it is itself too large), adding neighbouring pieces nearest
+   first only while the circle stays within that size.
 4. **Grid.** Circle centres are snapped to a lattice whose pitch is the
-   median neighbour distance; fragments falling in one cell are merged.
+   median neighbour distance. Circles falling in one cell are merged largest
+   first, and a smaller one is only merged if the result stays within 110 % of
+   the typical core radius, so a debris speck in the same cell is dropped
+   rather than enlarging the core.
 5. **Recovery.** With *Recover faint* on, every empty grid position is tested
    with a permissive threshold (half the saturation, twice the brightness
    margin). If at least 3% of the expected disc is tissue, a core is added

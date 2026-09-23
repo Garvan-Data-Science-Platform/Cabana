@@ -314,12 +314,16 @@ class TMAPreprocessor:
         out of the analysis.
     fit_pixel_size_um : float
         Resolution at which circle fitting is performed.
+    reader : SlideReader, optional
+        An already opened slide; ``slide_path`` is then informational only.
     """
 
     def __init__(self, slide_path, array_number=None, slide_name=None, pixel_size_um=None,
                  core_diameter_um=1000.0, margin_um=50.0, erode_px=8, fit_pixel_size_um=5.0,
-                 orientation="auto"):
-        self.reader = open_slide(slide_path, pixel_size_um=pixel_size_um)
+                 orientation="auto", reader=None):
+        self.reader = reader if reader is not None else open_slide(slide_path, pixel_size_um=pixel_size_um)
+        if reader is not None and pixel_size_um:
+            self.reader.pixel_size_um = pixel_size_um
         if not self.reader.pixel_size_um:
             raise ValueError("Pixel size is unknown; pass pixel_size_um explicitly.")
         self.slide_path = slide_path

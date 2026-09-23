@@ -679,12 +679,15 @@ class SegmentationWorker(QThread):
 class TMAWorker(QThread):
     """Background worker for the TMA page.
 
-    ``mode='fit'`` opens the slide, fits the cores and matches the array map;
-    ``mode='export'`` writes the per-core images and masks. Progress is
-    reported in percent, with a short status text for the status bar.
+    ``mode='preview'`` opens the slide and returns a low-resolution image of
+    its first channel; ``mode='fit'`` fits the cores and matches the array
+    map (reusing ``options['reader']`` when given); ``mode='export'`` writes
+    the per-core images and masks. Progress is reported in percent, with a
+    short status text for the status bar.
     """
     progress_updated = pyqtSignal(int)
     status_updated = pyqtSignal(str)
+    preview_complete = pyqtSignal(object)  # dict(reader, image RGB, level)
     fit_complete = pyqtSignal(object)      # TMAPreprocessor
     export_complete = pyqtSignal(str)      # output folder
     export_cancelled = pyqtSignal()
@@ -706,8 +709,24 @@ class TMAWorker(QThread):
 
     def run(self):
         from .tma import TMAPreprocessor
+        from .wsi import open_slide
         try:
-            if self.mode == 'fit':
+            if self.mode == 'preview':
+                self.progress_updated.emit(10)
+                self.status_updated.emit("Opening slide…")
+                reader = open_slide(self.slide_path, pixel_size_um=self.options.get('pixel_size_um'))
+                # coarsest level that is still at least ~2000 px on its longer side
+                level = 0
+                for lv in range(reader.level_count):
+                    if max(reader.level_shape(lv)) >= 2000:
+                        level = lv
+                self.progress_updated.emit(40)
+                self.status_updated.emit("Reading preview…")
+                bgr = reader.read_level(level, channel=0)
+                self.progress_updated.emit(100)
+                self.preview_complete.emit({'reader': reader, 'image': bgr[:, :, ::-1].copy(),
+                                            'level': level})
+            elif self.mode == 'fit':
                 self.progress_updated.emit(5)
                 self.status_updated.emit("Opening slide…")
                 pre = TMAPreprocessor(self.slide_path, **self.options)

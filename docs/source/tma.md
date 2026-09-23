@@ -10,6 +10,8 @@ step lives on the **TMA** page of the GUI and in the `cabana-tma` command.
    Bio-Formats needed) from the `.vsi` file and its `_<name>_/stack*/` tile
    folders. Plain whole-slide TIFF/PNG exports are accepted too. Bright-field
    and polarised layers of a `.vsi` are exposed as the channels `BF` and `POL`.
+   As soon as a slide is chosen a low-resolution preview appears in the image
+   panel and the pixel size and available channels are filled in.
 2. **Fit cores**: tissue is thresholded on a low-resolution level, a circle is
    fitted to every core, the circles are snapped to the array grid, and the
    grid is matched to the printed ICGC/APGI array map (arrays 1 to 8 are

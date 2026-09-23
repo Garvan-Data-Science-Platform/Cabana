@@ -890,6 +890,7 @@ class MainWindow(QMainWindow):
         self.tma_slide = None
         self.tma_output = None
         self.tma_pre = None
+        self.tma_reader = None
         self.tma_worker = None
         self.tma_overlay = None
 
@@ -902,16 +903,54 @@ class MainWindow(QMainWindow):
         self.tma_slide = file_path
         self.tma_slide_path.setText(file_path)
         self.tma_slide_path.setToolTip(file_path)
+        if self.tma_pre is not None:
+            self.tma_pre.close()
         self.tma_pre = None
+        self.tma_reader = None
         self.tma_export_btn.setEnabled(False)
-        self.tma_fit_btn.setEnabled(True)
-        self.tma_status_label.setText("Slide selected. Choose the array map, then Fit Cores.")
+        self.tma_fit_btn.setEnabled(False)
         if not self.tma_output:
             default_out = join_path(os.path.dirname(file_path),
                                     sanitize_filename(os.path.splitext(os.path.basename(file_path))[0]) + "_cores")
             self.tma_output = default_out
             self.tma_output_path.setText(default_out)
             self.tma_output_path.setToolTip(default_out)
+        self._start_tma_preview()
+
+    def _start_tma_preview(self):
+        """Open the slide in the background and show a low-resolution preview."""
+        options = {}
+        if not self.tma_slide.lower().endswith(".vsi"):
+            options['pixel_size_um'] = float(self.tma_pixel_size_spin.value())
+        self._tma_set_busy(True)
+        self.tma_status_label.setText("Opening slide…")
+        self.tma_worker = TMAWorker('preview', slide_path=self.tma_slide, options=options)
+        self.tma_worker.progress_updated.connect(self.progress_bar.setValue)
+        self.tma_worker.status_updated.connect(self.tma_status_label.setText)
+        self.tma_worker.preview_complete.connect(self.handle_tma_preview_complete)
+        self.tma_worker.failed.connect(self.handle_tma_failed)
+        self.tma_worker.start()
+
+    def handle_tma_preview_complete(self, result):
+        reader = result['reader']
+        self.tma_reader = reader
+        self._tma_set_busy(False)
+        self.tma_fit_btn.setEnabled(True)
+        if reader.pixel_size_um:
+            self.tma_pixel_size_spin.setValue(float(reader.pixel_size_um))
+        for name, cb in self.tma_channel_cbs.items():
+            available = name in reader.channels
+            cb.setEnabled(available)
+            cb.setChecked(available)
+        self.tma_overlay = np.ascontiguousarray(result['image'])
+        self.image_panel.setImage(self.tma_overlay)
+        h0, w0 = reader.level_shape(0)
+        px = f"{reader.pixel_size_um:.4f} µm/px" if reader.pixel_size_um else "pixel size unknown"
+        self.tma_status_label.setText(
+            f"{os.path.basename(self.tma_slide)}: {w0} x {h0} px, {px}, channels {', '.join(reader.channels)}. "
+            f"Choose the array map, then Fit Cores.")
+        self.status_file_label.setText(f"  {os.path.basename(self.tma_slide)}")
+        self.status_dims_label.setText(f"{w0} x {h0}  ")
 
     def select_tma_output(self):
         start = self.tma_output or (os.path.dirname(self.tma_slide) if self.tma_slide else "")
@@ -937,7 +976,8 @@ class MainWindow(QMainWindow):
                   self.tma_orientation_combo, self.tma_pixel_size_spin, self.tma_core_diameter_spin,
                   self.tma_margin_spin, self.tma_erode_spin):
             w.setEnabled(not busy)
-        self.tma_fit_btn.setEnabled(not busy and self.tma_slide is not None)
+        self.tma_fit_btn.setEnabled(not busy and self.tma_slide is not None
+                                    and (self.tma_reader is not None or self.tma_pre is not None))
         self.tma_export_btn.setEnabled(not busy and self.tma_pre is not None)
         self.tma_cancel_btn.setVisible(busy)
         self.tma_cancel_btn.setEnabled(busy)
@@ -953,10 +993,13 @@ class MainWindow(QMainWindow):
         if self.tma_pre is not None:
             self.tma_pre.close()
             self.tma_pre = None
-        # a VSI carries its own calibration: let the reader override the spin box
         options = self._tma_options()
         if self.tma_slide.lower().endswith(".vsi"):
+            # a VSI carries its own calibration: let the reader's value stand
             options["pixel_size_um"] = None
+        # reuse the reader opened for the preview so the slide is read once
+        options["reader"] = self.tma_reader
+        self.tma_reader = None
         self._tma_set_busy(True)
         self.tma_fit_btn.setText("Fitting…")
         self.tma_status_label.setText("Fitting cores…")
@@ -969,6 +1012,7 @@ class MainWindow(QMainWindow):
 
     def handle_tma_fit_complete(self, pre):
         self.tma_pre = pre
+        self.tma_reader = pre.reader
         self.tma_fit_btn.setText("Fit Cores")
         self._tma_set_busy(False)
         reader = pre.reader

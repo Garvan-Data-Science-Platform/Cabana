@@ -78,9 +78,7 @@ class Core:
             return "excluded"
         if self.recovered:
             return "recovered"
-        if self.fill >= 0.7:
-            return "ok"
-        return "partial" if self.fill >= 0.4 else "sparse"
+        return "ok"
 
 
 # ---------------------------------------------------------------------------
@@ -466,8 +464,6 @@ class TMAPreprocessor:
     min_diameter_frac, max_diameter_frac : float
         QC: exclude cores whose fitted diameter is outside this range, as a
         fraction of ``core_diameter_um``.
-    min_tissue_fill : float
-        QC: exclude cores with less tissue coverage of the circle.
     min_stain_frac, stain_sat : float, int
         QC: exclude cores where less than ``min_stain_frac`` of the disc has
         HSV saturation above ``stain_sat``. Control cores are exempt.
@@ -482,7 +478,7 @@ class TMAPreprocessor:
                  core_diameter_um=1000.0, margin_um=50.0, erode_px=8, fit_pixel_size_um=5.0,
                  orientation="auto", reader=None, sat_thresh=15, val_ratio=0.965,
                  recover_faint=True, min_fill=0.03, max_grid_offset=0.35,
-                 min_diameter_frac=0.6, max_diameter_frac=1.4, min_tissue_fill=0.2,
+                 min_diameter_frac=0.8, max_diameter_frac=1.2,
                  min_stain_frac=0.02, stain_sat=40):
         self.reader = reader if reader is not None else open_slide(slide_path, pixel_size_um=pixel_size_um)
         if reader is not None and pixel_size_um:
@@ -504,7 +500,6 @@ class TMAPreprocessor:
         self.max_grid_offset = max_grid_offset
         self.min_diameter_frac = min_diameter_frac
         self.max_diameter_frac = max_diameter_frac
-        self.min_tissue_fill = min_tissue_fill
         self.min_stain_frac = min_stain_frac
         self.stain_sat = stain_sat
         self.cores = []
@@ -610,8 +605,6 @@ class TMAPreprocessor:
         for c in self.cores:
             info = self.core_info(c)
             reason = self._geometric_reason(c)
-            if not reason and c.fill < self.min_tissue_fill:
-                reason = "tissue"
             is_control = info is not None and info.is_control
             if not reason and not is_control and c.stain_frac < self.min_stain_frac:
                 reason = "stain"
@@ -731,8 +724,7 @@ class TMAPreprocessor:
         ov = self._fit_image.copy()
         scale = max(0.4, ov.shape[1] / 3000.0)
         for c in self.cores:
-            colour = {"ok": (0, 180, 0), "partial": (0, 140, 255), "sparse": (0, 0, 255),
-                      "recovered": (200, 0, 200), "outside_map": (128, 128, 128),
+            colour = {"ok": (0, 180, 0), "recovered": (200, 0, 200), "outside_map": (128, 128, 128),
                       "excluded": (90, 90, 90)}[c.flag]
             centre = (int(c.cx / ds), int(c.cy / ds))
             rad = int(c.radius / ds)
@@ -785,10 +777,8 @@ def main(argv=None):
                    help="minimum tissue fraction for a faint core (default 0.03)")
     p.add_argument("--max-grid-offset", type=float, default=0.35,
                    help="QC: max distance from the grid position, in pitches (default 0.35)")
-    p.add_argument("--diameter-range", type=float, nargs=2, default=(0.6, 1.4), metavar=("MIN", "MAX"),
-                   help="QC: allowed diameter as fractions of --core-diameter (default 0.6 1.4)")
-    p.add_argument("--min-tissue-fill", type=float, default=0.2,
-                   help="QC: minimum tissue coverage of the circle (default 0.2)")
+    p.add_argument("--diameter-range", type=float, nargs=2, default=(0.8, 1.2), metavar=("MIN", "MAX"),
+                   help="QC: allowed diameter as fractions of --core-diameter (default 0.8 1.2)")
     p.add_argument("--min-stain", type=float, default=0.02,
                    help="QC: minimum stained fraction; controls exempt (default 0.02)")
     p.add_argument("--stain-sat", type=int, default=40,
@@ -802,7 +792,7 @@ def main(argv=None):
                           sat_thresh=a.sat_thresh, val_ratio=a.val_ratio,
                           recover_faint=not a.no_recover, min_fill=a.min_fill,
                           max_grid_offset=a.max_grid_offset, min_diameter_frac=a.diameter_range[0],
-                          max_diameter_frac=a.diameter_range[1], min_tissue_fill=a.min_tissue_fill,
+                          max_diameter_frac=a.diameter_range[1],
                           min_stain_frac=a.min_stain, stain_sat=a.stain_sat)
     pre.fit()
     o = pre.map_to_array()

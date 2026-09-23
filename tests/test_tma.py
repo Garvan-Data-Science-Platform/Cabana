@@ -121,6 +121,7 @@ class TestRobustness:
         pre = TMAPreprocessor(path, pixel_size_um=PX_UM, core_diameter_um=CORE_UM, fit_pixel_size_um=PX_UM)
         pre.fit()
         assert [c.flag for c in pre.cores].count("recovered") == 1
+        assert set(c.flag for c in pre.cores) <= {"ok", "recovered"}
         pre_off = TMAPreprocessor(path, pixel_size_um=PX_UM, core_diameter_um=CORE_UM,
                                   fit_pixel_size_um=PX_UM, recover_faint=False)
         pre_off.fit()
@@ -360,15 +361,15 @@ class TestFilters:
         ids = {c.index: (c.map_row, c.map_col) for c in pre.cores}
         o = pre.matched_orientation
         for kw in (dict(max_diameter_frac=0.8), dict(min_diameter_frac=1.2),
-                   dict(max_grid_offset=0.01), dict(min_stain_frac=1.01), dict(min_tissue_fill=1.0)):
+                   dict(max_grid_offset=0.01), dict(min_stain_frac=1.01)):
             for k, v in kw.items():
                 setattr(pre, k, v)
             pre.map_to_array()
             assert pre.matched_orientation == o
             assert {c.index: (c.map_row, c.map_col) for c in pre.cores} == ids
             assert any(c.excluded for c in pre.cores)
-            pre.max_diameter_frac, pre.min_diameter_frac, pre.max_grid_offset = 1.4, 0.6, 0.35
-            pre.min_stain_frac, pre.min_tissue_fill = 0.02, 0.2
+            pre.max_diameter_frac, pre.min_diameter_frac, pre.max_grid_offset = 1.2, 0.8, 0.35
+            pre.min_stain_frac = 0.02
 
     def test_manifest_records_exclusions(self, tmp_path):
         occ = np.ones((2, 2), dtype=bool)

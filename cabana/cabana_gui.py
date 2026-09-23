@@ -844,31 +844,25 @@ class MainWindow(QMainWindow):
         self.tma_offset_spin = _spin(0.05, 1.0, 0.35, 0.05, " pitch",
                                      "Exclude cores whose centre is further than this from its grid position\n"
                                      "(fraction of the core spacing). Catches debris between cores.", decimals=2)
-        self.tma_dmin_spin = _spin(10, 100, 60, 5, " %",
-                                   "Exclude cores smaller than this percentage of Core Ø.")
-        self.tma_dmax_spin = _spin(100, 300, 140, 5, " %",
+        self.tma_dmin_spin = _spin(10, 100, 80, 5, " %",
+                                   "Exclude cores smaller than this percentage of Core Ø.\n"
+                                   "Set Core Ø to the real diameter first (see the median in the status line).")
+        self.tma_dmax_spin = _spin(100, 300, 120, 5, " %",
                                    "Exclude cores larger than this percentage of Core Ø.\n"
                                    "Set Core Ø to the real diameter first (see the median in the status line).")
-        self.tma_tissue_spin = _spin(0, 100, 20, 5, " %",
-                                     "Exclude cores whose circle is covered by less tissue than this.")
         self.tma_stain_spin = _spin(0, 100, 2, 1, " %",
-                                    "Exclude patient cores whose stained area is below this fraction of the circle.\n"
+                                    "Exclude patient cores whose stained area (saturation above 40) is below this\n"
+                                    "fraction of the circle; catches empty and unstained cores.\n"
                                     "Control cores (e.g. Brain) are exempt.")
-        self.tma_stain_sat_spin = _spin(5, 200, 40, 5, "",
-                                        "HSV saturation above which a pixel counts as stained (default 40).")
 
         flt.addWidget(QLabel("Grid Offset:"), 0, 0)
         flt.addWidget(self.tma_offset_spin, 0, 1)
-        flt.addWidget(QLabel("Min Tissue:"), 0, 2)
-        flt.addWidget(self.tma_tissue_spin, 0, 3)
+        flt.addWidget(QLabel("Min Stain:"), 0, 2)
+        flt.addWidget(self.tma_stain_spin, 0, 3)
         flt.addWidget(QLabel("Min Ø:"), 1, 0)
         flt.addWidget(self.tma_dmin_spin, 1, 1)
         flt.addWidget(QLabel("Max Ø:"), 1, 2)
         flt.addWidget(self.tma_dmax_spin, 1, 3)
-        flt.addWidget(QLabel("Min Stain:"), 2, 0)
-        flt.addWidget(self.tma_stain_spin, 2, 1)
-        flt.addWidget(QLabel("Stain Sat.:"), 2, 2)
-        flt.addWidget(self.tma_stain_sat_spin, 2, 3)
         layout.addLayout(flt)
 
         # --- Export ------------------------------------------------------
@@ -952,10 +946,10 @@ class MainWindow(QMainWindow):
         self.tma_status_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.tma_status_label.setStyleSheet(self.value_label_style)
         self.tma_status_label.setToolTip(
-            "Fit summary: cores found, grid size, matched orientation and any orientations that\n"
-            "fit equally well. Cores listed as 'check' are partially filled or sparse (orange/red\n"
-            "on the overlay); purple circles were recovered at empty grid positions; grey circles\n"
-            "lie outside the printed map and are not exported.")
+            "Fit summary: cores found and to export, grid size, matched orientation and any\n"
+            "orientations that fit equally well, exclusions per filter and median diameter.\n"
+            "Overlay: green = exported, purple = recovered at an empty grid position (exported),\n"
+            "grey with a cross = excluded by a filter, grey = outside the printed map.")
         layout.addWidget(self.tma_status_label)
 
         btn_layout = QHBoxLayout()
@@ -1074,9 +1068,7 @@ class MainWindow(QMainWindow):
             max_grid_offset=float(self.tma_offset_spin.value()),
             min_diameter_frac=self.tma_dmin_spin.value() / 100.0,
             max_diameter_frac=self.tma_dmax_spin.value() / 100.0,
-            min_tissue_fill=self.tma_tissue_spin.value() / 100.0,
             min_stain_frac=self.tma_stain_spin.value() / 100.0,
-            stain_sat=int(self.tma_stain_sat_spin.value()),
         )
 
     def _tma_filters_changed(self, *_):
@@ -1084,12 +1076,8 @@ class MainWindow(QMainWindow):
         pre = self.tma_pre
         if pre is None or (self.tma_worker is not None and self.tma_worker.isRunning()):
             return
-        vals = self._tma_filter_values()
-        stain_changed = vals['stain_sat'] != pre.stain_sat
-        for k, v in vals.items():
+        for k, v in self._tma_filter_values().items():
             setattr(pre, k, v)
-        if stain_changed:
-            pre.update_stain()
         pre.apply_filters()          # never touches the patient-ID assignment
         self._show_tma_result(preserve_view=True)
 
@@ -1097,8 +1085,7 @@ class MainWindow(QMainWindow):
         for w in (self.tma_slide_btn, self.tma_output_btn, self.tma_array_combo,
                   self.tma_orientation_combo, self.tma_pixel_size_spin, self.tma_core_diameter_spin,
                   self.tma_margin_spin, self.tma_erode_spin, self.tma_sat_spin, self.tma_recover_cb,
-                  self.tma_offset_spin, self.tma_dmin_spin, self.tma_dmax_spin, self.tma_tissue_spin,
-                  self.tma_stain_spin, self.tma_stain_sat_spin):
+                  self.tma_offset_spin, self.tma_dmin_spin, self.tma_dmax_spin, self.tma_stain_spin):
             w.setEnabled(not busy)
         self.tma_fit_btn.setEnabled(not busy and self.tma_slide is not None
                                     and (self.tma_reader is not None or self.tma_pre is not None))
@@ -1166,7 +1153,7 @@ class MainWindow(QMainWindow):
                         f" — confirm labels against the printed map)")
         summary = pre.exclusion_summary()
         if summary:
-            names = {"off_grid": "off-grid", "diameter": "diameter", "tissue": "low tissue", "stain": "low stain"}
+            names = {"off_grid": "off-grid", "diameter": "diameter", "stain": "low stain"}
             msg += "; excluded " + ", ".join(f"{v} {names.get(k, k)}" for k, v in sorted(summary.items()))
         if n_out:
             msg += f"; {n_out} outside the map"
@@ -1174,8 +1161,9 @@ class MainWindow(QMainWindow):
         if diams:
             med = float(np.median(diams))
             msg += f"; median Ø {med:.0f} µm"
-            if abs(med - pre.core_diameter_um) > 0.2 * pre.core_diameter_um:
-                msg += f" (Core Ø is {pre.core_diameter_um:.0f}: set it to ~{round(med, -1):.0f} and refit)"
+            if abs(med - pre.core_diameter_um) > 0.1 * pre.core_diameter_um:
+                msg += (f" — WARNING: Core Ø is {pre.core_diameter_um:.0f} µm, so the diameter filter "
+                        f"is misjudging cores; set Core Ø to ~{round(med, -1):.0f} and refit")
         lost = [p for p, (k, t) in pre.replicate_counts().items() if k == 0]
         if lost:
             msg += f"; no core left for patient{'s' if len(lost) > 1 else ''} {', '.join(lost)}"
@@ -2611,7 +2599,7 @@ class MainWindow(QMainWindow):
         for spin in (self.batch_size_spinner, self.patch_size_spinner, self.tma_pixel_size_spin,
                      self.tma_core_diameter_spin, self.tma_margin_spin, self.tma_erode_spin,
                      self.tma_sat_spin, self.tma_offset_spin, self.tma_dmin_spin, self.tma_dmax_spin,
-                     self.tma_tissue_spin, self.tma_stain_spin, self.tma_stain_sat_spin):
+                     self.tma_stain_spin):
             spin.setStyleSheet(self.spinner_style)
 
         # Combo boxes

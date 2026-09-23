@@ -15,10 +15,10 @@ step lives on the **TMA** page of the GUI and in the `cabana-tma` command.
 2. **Fit cores**: tissue is thresholded on a low-resolution level, a circle is
    fitted to every core, the circles are snapped to the array grid, and the
    grid is matched to the printed ICGC/APGI array map (arrays 1 to 8 are
-   bundled). A numbered overlay is shown; green circles are well filled,
-   orange are partial, red are sparse, purple were recovered at empty grid
-   positions, grey lie outside the printed map, and grey with a cross were
-   excluded by the quality filters; neither grey kind is exported.
+   bundled). A numbered overlay is shown: green circles will be exported,
+   purple were recovered at empty grid positions (also exported), grey with a
+   cross were excluded by the quality filters, and grey lie outside the printed
+   map; neither grey kind is exported.
 3. **Export cores**: for every core and selected channel a square crop is
    written to `Images/` and a circular mask (white inside the fitted circle,
    shrunk by *Mask Shrink*, black in the corners) to `Masks/`. A `cores.csv`
@@ -48,8 +48,8 @@ before exporting, and exporting can be repeated into a different folder.
    margin). If at least 3% of the expected disc is tissue, a core is added
    there with the median radius and flagged `recovered` (purple on the
    overlay). Positions with less tissue stay empty.
-6. **Fill grade.** Each circle is graded by the fraction covered by tissue:
-   green ≥ 70%, orange ≥ 40%, red below.
+6. **Fill.** The fraction of each circle covered by tissue is recorded in
+   `cores.csv` (`fill`) for reference.
 
 Tuning: lower *Sensitivity* (for example 8) when very pale cores are missed
 and debris is not a problem; raise it (25 to 30) when shading or dust on the
@@ -69,9 +69,8 @@ exported. Filters update instantly; no refit is needed.
 | Setting | Excludes a core when | Default |
 |---|---|---|
 | Grid Offset | its centre is further than this from its grid position, in core spacings | 0.35 |
-| Min Ø / Max Ø | its fitted diameter is outside this range, as % of Core Ø | 60 % / 140 % |
-| Min Tissue | less than this fraction of the circle is tissue | 20 % |
-| Min Stain | less than this fraction of the circle has saturation above *Stain Sat.* (control cores exempt) | 2 % at 40 |
+| Min Ø / Max Ø | its fitted diameter is outside this range, as % of Core Ø | 80 % / 120 % |
+| Min Stain | less than this fraction of the circle has HSV saturation above 40, i.e. the core is empty or unstained (control cores exempt) | 2 % |
 
 Filters never change patient IDs. The orientation match ignores only objects
 more than half a core spacing from any grid position, a fixed rule, and all
@@ -81,11 +80,13 @@ more than 20 %), and any patient left with no core.
 
 On the APGI slides the weakest genuine patient cores have 3 to 5 % stained
 area and the Brain and Muscle controls about 0 to 1 %, which is why the stain
-default is 2 %. Set Core Ø to the real diameter (about 1250 µm here) before
-relying on the diameter filter.
+default is 2 %. The diameter range is only meaningful when Core Ø is right: at the 1000 µm
+default every APGI core (about 1250 µm) falls outside 800 to 1200 µm. Set
+Core Ø to about 1250 for these slides; the status line warns when the median
+fitted diameter differs from Core Ø by more than 10 %.
 
-CLI: `--max-grid-offset`, `--diameter-range MIN MAX`, `--min-tissue-fill`,
-`--min-stain`, `--stain-sat`.
+CLI: `--max-grid-offset`, `--diameter-range MIN MAX`, `--min-stain`, and
+`--stain-sat` (the saturation threshold, 40, not exposed in the GUI).
 
 ## Output naming
 
@@ -98,7 +99,7 @@ CLI: `--max-grid-offset`, `--diameter-range MIN MAX`, `--min-tissue-fill`,
 `position` is the flat map position (rows A to L, columns 1 to 8) after the
 printed sector offsets are resolved. `cores.csv` records the map label,
 sector, patient ID, ICGC ID, tissue, circle centre and radius (level-0 pixels),
-fill grade, QC flag and the orientation used.
+tissue fill, QC metrics, flag, exclusion reason and the orientation used.
 
 ## Orientation
 

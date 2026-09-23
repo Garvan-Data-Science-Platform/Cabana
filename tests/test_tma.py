@@ -292,3 +292,95 @@ class TestPreprocessor:
         path, _ = self._write_slide(tmp_path, np.ones((1, 1), dtype=bool))
         with pytest.raises(ValueError):
             TMAPreprocessor(path)
+
+
+class TestFilters:
+    def _pre(self, tmp_path, img, array=None, **kw):
+        path = str(tmp_path / "s.png")
+        cv2.imwrite(path, img)
+        pre = TMAPreprocessor(path, array_number=array, slide_name="S", pixel_size_um=PX_UM,
+                              core_diameter_um=CORE_UM, fit_pixel_size_um=PX_UM, **kw)
+        pre.fit()
+        pre.map_to_array()
+        return pre
+
+    def test_filters_flag_each_reason(self, tmp_path):
+        occ = np.ones((3, 4), dtype=bool)
+        img, centres = synthetic_slide(occ)
+        # (0,0): grey, unstained but tissue-like disc (dark, low saturation)
+        cx, cy = centres[(0, 0)]
+        cv2.circle(img, (cx, cy), int(RADIUS_PX), (245, 245, 245), -1)
+        cv2.circle(img, (cx, cy), int(RADIUS_PX), (200, 200, 200), -1)
+        # (1,1): small core
+        cx, cy = centres[(1, 1)]
+        cv2.circle(img, (cx, cy), int(RADIUS_PX), (245, 245, 245), -1)
+        cv2.circle(img, (cx, cy), int(0.45 * RADIUS_PX), (190, 150, 230), -1)
+        # (2,3): shifted off its grid position by 0.4 pitch
+        cx, cy = centres[(2, 3)]
+        cv2.circle(img, (cx, cy), int(RADIUS_PX), (245, 245, 245), -1)
+        cv2.circle(img, (cx + int(0.4 * PITCH_PX), cy), int(RADIUS_PX * 0.9), (190, 150, 230), -1)
+        pre = self._pre(tmp_path, img)
+        reasons = {(c.row, c.col): c.reason for c in pre.cores}
+        assert reasons[(0, 0)] == "stain"
+        assert reasons[(1, 1)] == "diameter"
+        assert reasons[(2, 3)] == "off_grid"
+        assert sum(1 for r in reasons.values() if r) == 3
+        assert len(pre.exportable_cores()) == 9
+        assert pre.exclusion_summary() == {"stain": 1, "diameter": 1, "off_grid": 1}
+
+    def test_relaxing_filters_restores_cores_without_refit(self, tmp_path):
+        occ = np.ones((2, 3), dtype=bool)
+        img, centres = synthetic_slide(occ)
+        cx, cy = centres[(0, 0)]
+        cv2.circle(img, (cx, cy), int(RADIUS_PX), (200, 200, 200), -1)   # unstained
+        pre = self._pre(tmp_path, img)
+        assert pre.cores[0].reason == "stain"
+        pre.min_stain_frac = 0.0
+        pre.apply_filters()
+        assert not any(c.excluded for c in pre.cores)
+
+    def test_controls_exempt_from_stain(self, tmp_path):
+        from cabana.tma import _transform_grid
+        occ = occupancy_grid(1)
+        img, centres = synthetic_slide(occ)
+        # A1 is Liver (control), A2 a patient: make both unstained grey discs
+        for pos in [(0, 0), (0, 1)]:
+            cx, cy = centres[pos]
+            cv2.circle(img, (cx, cy), int(RADIUS_PX), (200, 200, 200), -1)
+        pre = self._pre(tmp_path, img, array=1, orientation="0")
+        by_pos = {(c.map_row, c.map_col): c for c in pre.cores}
+        assert not by_pos[(0, 0)].excluded                    # Liver control kept
+        assert by_pos[(0, 1)].reason == "stain"               # patient core excluded
+
+    def test_filter_values_never_change_patient_ids(self, tmp_path):
+        from cabana.tma import _transform_grid
+        occ = _transform_grid(occupancy_grid(1), "90").copy()
+        img, _ = synthetic_slide(occ, jitter=10)
+        pre = self._pre(tmp_path, img, array=1)
+        ids = {c.index: (c.map_row, c.map_col) for c in pre.cores}
+        o = pre.matched_orientation
+        for kw in (dict(max_diameter_frac=0.8), dict(min_diameter_frac=1.2),
+                   dict(max_grid_offset=0.01), dict(min_stain_frac=1.01), dict(min_tissue_fill=1.0)):
+            for k, v in kw.items():
+                setattr(pre, k, v)
+            pre.map_to_array()
+            assert pre.matched_orientation == o
+            assert {c.index: (c.map_row, c.map_col) for c in pre.cores} == ids
+            assert any(c.excluded for c in pre.cores)
+            pre.max_diameter_frac, pre.min_diameter_frac, pre.max_grid_offset = 1.4, 0.6, 0.35
+            pre.min_stain_frac, pre.min_tissue_fill = 0.02, 0.2
+
+    def test_manifest_records_exclusions(self, tmp_path):
+        occ = np.ones((2, 2), dtype=bool)
+        img, centres = synthetic_slide(occ)
+        cx, cy = centres[(1, 1)]
+        cv2.circle(img, (cx, cy), int(RADIUS_PX), (200, 200, 200), -1)
+        pre = self._pre(tmp_path, img)
+        pre.export(str(tmp_path / "out"))
+        with open(tmp_path / "out" / "cores.csv", newline="") as f:
+            rows = list(csv.DictReader(f))
+        assert len(rows) == 4
+        ex = [r for r in rows if r["excluded"] == "1"]
+        assert len(ex) == 1 and ex[0]["reason"] == "stain" and ex[0]["flag"] == "excluded"
+        assert float(ex[0]["stain_frac"]) < 0.02 and float(ex[0]["diameter_um"]) > 0
+        assert len(os.listdir(tmp_path / "out" / "Images")) == 3

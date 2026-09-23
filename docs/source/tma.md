@@ -17,7 +17,8 @@ step lives on the **TMA** page of the GUI and in the `cabana-tma` command.
    grid is matched to the printed ICGC/APGI array map (arrays 1 to 8 are
    bundled). A numbered overlay is shown; green circles are well filled,
    orange are partial, red are sparse, purple were recovered at empty grid
-   positions, grey lie outside the printed map and are not exported.
+   positions, grey lie outside the printed map, and grey with a cross were
+   excluded by the quality filters; neither grey kind is exported.
 3. **Export cores**: for every core and selected channel a square crop is
    written to `Images/` and a circular mask (white inside the fitted circle,
    shrunk by *Mask Shrink*, black in the corners) to `Masks/`. A `cores.csv`
@@ -56,6 +57,35 @@ glass is being fitted. *Core Ø* sets the scale of every morphological step
 and of the size gates, so set it to the real core diameter first. On the
 command line the same knobs are `--sat-thresh`, `--val-ratio`, `--min-fill`
 and `--no-recover`.
+
+## Quality filters
+
+After the cores are fitted and patient IDs assigned, each core is measured and
+checked against the **Filter** settings. Excluded cores stay in `cores.csv`
+(columns `excluded`, `reason`, plus the measured `grid_offset`, `diameter_um`,
+`fill`, `stain_frac`), are drawn grey with a cross on the overlay, and are not
+exported. Filters update instantly; no refit is needed.
+
+| Setting | Excludes a core when | Default |
+|---|---|---|
+| Grid Offset | its centre is further than this from its grid position, in core spacings | 0.35 |
+| Min Ø / Max Ø | its fitted diameter is outside this range, as % of Core Ø | 60 % / 140 % |
+| Min Tissue | less than this fraction of the circle is tissue | 20 % |
+| Min Stain | less than this fraction of the circle has saturation above *Stain Sat.* (control cores exempt) | 2 % at 40 |
+
+Filters never change patient IDs. The orientation match ignores only objects
+more than half a core spacing from any grid position, a fixed rule, and all
+filters run after IDs are assigned. The status line reports how many cores each
+filter removed, the median fitted diameter (with a hint when Core Ø differs by
+more than 20 %), and any patient left with no core.
+
+On the APGI slides the weakest genuine patient cores have 3 to 5 % stained
+area and the Brain and Muscle controls about 0 to 1 %, which is why the stain
+default is 2 %. Set Core Ø to the real diameter (about 1250 µm here) before
+relying on the diameter filter.
+
+CLI: `--max-grid-offset`, `--diameter-range MIN MAX`, `--min-tissue-fill`,
+`--min-stain`, `--stain-sat`.
 
 ## Output naming
 

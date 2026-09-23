@@ -812,6 +812,65 @@ class MainWindow(QMainWindow):
         geo.addWidget(self.tma_recover_cb, 1, 2, 1, 2)
         layout.addLayout(geo)
 
+        # --- Filter ------------------------------------------------------
+        # QC filters re-evaluate instantly on the fitted cores (no refit).
+        layout.addWidget(create_separator())
+        filter_title = QLabel("Filter")
+        filter_title.setStyleSheet(self.value_label_style + " font-weight: 600;")
+        filter_title.setToolTip(
+            "Quality filters applied to the fitted cores; changes update the overlay instantly.\n"
+            "Excluded cores are drawn grey with a cross, listed in cores.csv and not exported.\n"
+            "Filters run after patient IDs are assigned and never change them.")
+        layout.addWidget(filter_title)
+        flt = QGridLayout()
+        flt.setHorizontalSpacing(8)
+        flt.setVerticalSpacing(8)
+        flt.setColumnStretch(1, 1)
+        flt.setColumnStretch(3, 1)
+
+        def _spin(lo, hi, val, step, suffix, tip, decimals=None):
+            w = QDoubleSpinBox() if decimals is not None else QSpinBox()
+            if decimals is not None:
+                w.setDecimals(decimals)
+            w.setRange(lo, hi)
+            w.setSingleStep(step)
+            w.setValue(val)
+            w.setSuffix(suffix)
+            w.setStyleSheet(self.spinner_style)
+            w.setToolTip(tip)
+            w.valueChanged.connect(self._tma_filters_changed)
+            return w
+
+        self.tma_offset_spin = _spin(0.05, 1.0, 0.35, 0.05, " pitch",
+                                     "Exclude cores whose centre is further than this from its grid position\n"
+                                     "(fraction of the core spacing). Catches debris between cores.", decimals=2)
+        self.tma_dmin_spin = _spin(10, 100, 60, 5, " %",
+                                   "Exclude cores smaller than this percentage of Core Ø.")
+        self.tma_dmax_spin = _spin(100, 300, 140, 5, " %",
+                                   "Exclude cores larger than this percentage of Core Ø.\n"
+                                   "Set Core Ø to the real diameter first (see the median in the status line).")
+        self.tma_tissue_spin = _spin(0, 100, 20, 5, " %",
+                                     "Exclude cores whose circle is covered by less tissue than this.")
+        self.tma_stain_spin = _spin(0, 100, 2, 1, " %",
+                                    "Exclude patient cores whose stained area is below this fraction of the circle.\n"
+                                    "Control cores (e.g. Brain) are exempt.")
+        self.tma_stain_sat_spin = _spin(5, 200, 40, 5, "",
+                                        "HSV saturation above which a pixel counts as stained (default 40).")
+
+        flt.addWidget(QLabel("Grid Offset:"), 0, 0)
+        flt.addWidget(self.tma_offset_spin, 0, 1)
+        flt.addWidget(QLabel("Min Tissue:"), 0, 2)
+        flt.addWidget(self.tma_tissue_spin, 0, 3)
+        flt.addWidget(QLabel("Min Ø:"), 1, 0)
+        flt.addWidget(self.tma_dmin_spin, 1, 1)
+        flt.addWidget(QLabel("Max Ø:"), 1, 2)
+        flt.addWidget(self.tma_dmax_spin, 1, 3)
+        flt.addWidget(QLabel("Min Stain:"), 2, 0)
+        flt.addWidget(self.tma_stain_spin, 2, 1)
+        flt.addWidget(QLabel("Stain Sat.:"), 2, 2)
+        flt.addWidget(self.tma_stain_sat_spin, 2, 3)
+        layout.addLayout(flt)
+
         # --- Export ------------------------------------------------------
         # Settings below only affect Export Cores; changing them needs no refit.
         layout.addWidget(create_separator())
@@ -1007,12 +1066,39 @@ class MainWindow(QMainWindow):
             orientation=self.tma_orientation_combo.currentData(),
             sat_thresh=int(self.tma_sat_spin.value()),
             recover_faint=self.tma_recover_cb.isChecked(),
+            **self._tma_filter_values(),
         )
+
+    def _tma_filter_values(self):
+        return dict(
+            max_grid_offset=float(self.tma_offset_spin.value()),
+            min_diameter_frac=self.tma_dmin_spin.value() / 100.0,
+            max_diameter_frac=self.tma_dmax_spin.value() / 100.0,
+            min_tissue_fill=self.tma_tissue_spin.value() / 100.0,
+            min_stain_frac=self.tma_stain_spin.value() / 100.0,
+            stain_sat=int(self.tma_stain_sat_spin.value()),
+        )
+
+    def _tma_filters_changed(self, *_):
+        """Re-apply QC filters to the fitted cores and redraw, without refitting."""
+        pre = self.tma_pre
+        if pre is None or (self.tma_worker is not None and self.tma_worker.isRunning()):
+            return
+        vals = self._tma_filter_values()
+        stain_changed = vals['stain_sat'] != pre.stain_sat
+        for k, v in vals.items():
+            setattr(pre, k, v)
+        if stain_changed:
+            pre.update_stain()
+        pre.apply_filters()          # never touches the patient-ID assignment
+        self._show_tma_result(preserve_view=True)
 
     def _tma_set_busy(self, busy):
         for w in (self.tma_slide_btn, self.tma_output_btn, self.tma_array_combo,
                   self.tma_orientation_combo, self.tma_pixel_size_spin, self.tma_core_diameter_spin,
-                  self.tma_margin_spin, self.tma_erode_spin, self.tma_sat_spin, self.tma_recover_cb):
+                  self.tma_margin_spin, self.tma_erode_spin, self.tma_sat_spin, self.tma_recover_cb,
+                  self.tma_offset_spin, self.tma_dmin_spin, self.tma_dmax_spin, self.tma_tissue_spin,
+                  self.tma_stain_spin, self.tma_stain_sat_spin):
             w.setEnabled(not busy)
         self.tma_fit_btn.setEnabled(not busy and self.tma_slide is not None
                                     and (self.tma_reader is not None or self.tma_pre is not None))
@@ -1060,28 +1146,43 @@ class MainWindow(QMainWindow):
             available = name in reader.channels
             cb.setEnabled(available)
             cb.setChecked(available)
-        # show the numbered overlay in the image panel (BGR -> RGB)
+        self._show_tma_result(preserve_view=False)
+        self.status_file_label.setText(f"  {os.path.basename(self.tma_slide)}")
+        self.status_dims_label.setText(f"{reader.level_shape(0)[1]} x {reader.level_shape(0)[0]}  ")
+
+    def _show_tma_result(self, preserve_view=False):
+        """Draw the overlay and write the fit/filter summary to the status line."""
+        pre = self.tma_pre
         self.tma_overlay = np.ascontiguousarray(pre.draw_overlay()[:, :, ::-1])
-        self.image_panel.setImage(self.tma_overlay)
+        self.image_panel.setImage(self.tma_overlay, preserve_view=preserve_view)
         n_rows, n_cols = pre.grid_shape
         n_out = len([c for c in pre.cores if c.outside_map])
-        msg = f"{len(pre.cores)} cores on a {n_rows}x{n_cols} grid"
+        n_export = len(pre.exportable_cores())
+        msg = f"{len(pre.cores)} cores on a {n_rows}x{n_cols} grid, {n_export} to export"
         if pre.matched_orientation:
             msg += f"; orientation {pre.matched_orientation}"
             if len(getattr(pre, 'orientation_ties', [])) > 1:
                 msg += (f" (also fits: {', '.join(o for o in pre.orientation_ties if o != pre.matched_orientation)}"
                         f" — confirm labels against the printed map)")
+        summary = pre.exclusion_summary()
+        if summary:
+            names = {"off_grid": "off-grid", "diameter": "diameter", "tissue": "low tissue", "stain": "low stain"}
+            msg += "; excluded " + ", ".join(f"{v} {names.get(k, k)}" for k, v in sorted(summary.items()))
         if n_out:
-            msg += f"; {n_out} outside the map (not exported)"
-        flagged = [c.index for c in pre.cores if c.flag in ("partial", "sparse")]
-        if flagged:
-            msg += f"; check cores {', '.join(map(str, flagged[:12]))}{'…' if len(flagged) > 12 else ''}"
+            msg += f"; {n_out} outside the map"
+        diams = [c.diameter_um for c in pre.cores if not c.outside_map]
+        if diams:
+            med = float(np.median(diams))
+            msg += f"; median Ø {med:.0f} µm"
+            if abs(med - pre.core_diameter_um) > 0.2 * pre.core_diameter_um:
+                msg += f" (Core Ø is {pre.core_diameter_um:.0f}: set it to ~{round(med, -1):.0f} and refit)"
+        lost = [p for p, (k, t) in pre.replicate_counts().items() if k == 0]
+        if lost:
+            msg += f"; no core left for patient{'s' if len(lost) > 1 else ''} {', '.join(lost)}"
         recovered = [c.index for c in pre.cores if c.recovered]
         if recovered:
-            msg += f"; recovered at empty grid positions: {', '.join(map(str, recovered))}"
+            msg += f"; recovered: {', '.join(map(str, recovered))}"
         self.tma_status_label.setText(msg)
-        self.status_file_label.setText(f"  {os.path.basename(self.tma_slide)}")
-        self.status_dims_label.setText(f"{reader.level_shape(0)[1]} x {reader.level_shape(0)[0]}  ")
 
     def run_tma_export(self):
         if self.tma_pre is None:
@@ -1117,7 +1218,7 @@ class MainWindow(QMainWindow):
     def handle_tma_export_complete(self, out_dir):
         self.tma_export_btn.setText("Export Cores")
         self._tma_set_busy(False)
-        n = len(self.tma_pre.exportable_cores()) if self.tma_pre else 0
+        n = len(self.tma_pre.exportable_cores()) if self.tma_pre else 0  # excludes filtered cores
         self.tma_status_label.setText(f"Exported {n} cores to {out_dir}")
         msg = QMessageBox(self)
         msg.setWindowTitle("TMA Export Complete")
@@ -2509,7 +2610,8 @@ class MainWindow(QMainWindow):
         # Spinboxes
         for spin in (self.batch_size_spinner, self.patch_size_spinner, self.tma_pixel_size_spin,
                      self.tma_core_diameter_spin, self.tma_margin_spin, self.tma_erode_spin,
-                     self.tma_sat_spin):
+                     self.tma_sat_spin, self.tma_offset_spin, self.tma_dmin_spin, self.tma_dmax_spin,
+                     self.tma_tissue_spin, self.tma_stain_spin, self.tma_stain_sat_spin):
             spin.setStyleSheet(self.spinner_style)
 
         # Combo boxes

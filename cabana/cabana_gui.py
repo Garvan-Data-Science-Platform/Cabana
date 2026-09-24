@@ -357,24 +357,24 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(6, 10, 6, 6)
         layout.setSpacing(10)
 
-        intro = QLabel("Open an image to tune parameters on it, open a TMA slide to cut it into "
-                       "cores, or import a saved parameter file. Analysis pages are also under the "
+        intro = QLabel("Open a TMA slide to cut it into cores, open an image to tune parameters "
+                       "on it, or import a saved parameter file. Analysis pages are also under the "
                        "Analysis menu (Ctrl/Cmd+1 to 5).")
         intro.setWordWrap(True)
         intro.setStyleSheet(self.value_label_style)
         layout.addWidget(intro)
 
-        self.start_open_btn = QPushButton("Open Image…")
-        self.start_open_btn.setStyleSheet(self.primary_btn_style)
-        self.start_open_btn.setToolTip("Load a single image; the Segmentation page opens once it is loaded.")
-        self.start_open_btn.clicked.connect(self.load_image)
-        layout.addWidget(self.start_open_btn)
-
         self.start_slide_btn = QPushButton("Open TMA Slide…")
-        self.start_slide_btn.setStyleSheet(self.btn_style)
+        self.start_slide_btn.setStyleSheet(self.primary_btn_style)
         self.start_slide_btn.setToolTip("Choose a whole-slide TMA scan and switch to the TMA page.")
         self.start_slide_btn.clicked.connect(self._open_tma_slide_from_menu)
         layout.addWidget(self.start_slide_btn)
+
+        self.start_open_btn = QPushButton("Open Image…")
+        self.start_open_btn.setStyleSheet(self.btn_style)
+        self.start_open_btn.setToolTip("Load a single image; the Segmentation page opens once it is loaded.")
+        self.start_open_btn.clicked.connect(self.load_image)
+        layout.addWidget(self.start_open_btn)
 
         self.start_params_btn = QPushButton("Import Parameters…")
         self.start_params_btn.setStyleSheet(self.btn_style)
@@ -2601,7 +2601,7 @@ class MainWindow(QMainWindow):
         self.page_title.setStyleSheet(self.page_title_style)
 
         # Buttons
-        for btn in (self.start_slide_btn, self.start_params_btn,
+        for btn in (self.start_open_btn, self.start_params_btn,
                     self.param_btn, self.input_btn, self.output_btn, self.cancel_batch_btn,
                      self.mask_btn, self.mask_clear_btn, self.tma_slide_btn, self.tma_output_btn,
                      self.tma_cancel_btn):
@@ -2609,7 +2609,7 @@ class MainWindow(QMainWindow):
 
         # Primary buttons
         for btn in (self.segment_btn, self.detect_btn, self.analyze_btn, self.process_batch_btn,
-                    self.tma_fit_btn, self.tma_export_btn, self.start_open_btn):
+                    self.tma_fit_btn, self.tma_export_btn, self.start_slide_btn):
             btn.setStyleSheet(self.primary_btn_style)
 
         # Page stack

@@ -20,8 +20,10 @@ step lives on the **TMA** page of the GUI and in the `cabana-tma` command.
    cross were excluded by the quality filters, and grey lie outside the printed
    map; neither grey kind is exported.
 3. **Export cores**: for every core and selected channel a square crop is
-   written to `Images/` and a circular mask (white inside the fitted circle,
-   shrunk by *Mask Shrink*, black in the corners) to `Masks/`. A `cores.csv`
+   written to `<channel>/Images/` and a circular mask (white inside the fitted
+   circle, shrunk by *Mask Shrink*, black in the corners) to `<channel>/Masks/`,
+   so bright-field and polarised cores end up in separate `BF/` and `POL/`
+   folders. A `cores.csv`
    manifest and `overlay.png` are written alongside.
 
 The three stages run independently: fitting can be repeated with new settings
@@ -122,8 +124,11 @@ orientation explicitly and fit again.
 
 ## Using the export in Cabana
 
-`Images/` is the input folder and `Masks/` the ROI-mask folder of **Batch
-Run** (the GUI offers both after an export). With a mask, the corners of each
+Each channel folder is a self-contained batch input: `BF/Images/` is the
+input folder and `BF/Masks/` the ROI-mask folder of **Batch Run**, and
+likewise for `POL/` (the GUI offers "Use BF in Batch Run" and "Use POL in
+Batch Run" after an export). Run the channels separately: bright-field with
+Dark Line on, polarised with Dark Line off. With a mask, the corners of each
 crop are excluded from segmentation, fibre detection, HDM, fibre-area and gap
 metrics, and the percentage metrics are relative to the circle area. The
 masks are honoured whether segmentation is enabled or not.

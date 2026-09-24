@@ -578,7 +578,7 @@ class MainWindow(QMainWindow):
         self.input_folder_path.setReadOnly(True)
         self.input_folder_path.setStyleSheet(self.path_edit_style)
         self.input_folder_path.setToolTip("Folder of images to analyse (TIFF/PNG/JPEG). Pixel size is read from the\n"
-                                          "image metadata; the Images/ folder of a TMA export works directly.")
+                                          "image metadata; the <channel>/Images folder of a TMA export works directly.")
         input_layout.addWidget(self.input_folder_path, 1)
 
         self.input_btn = QPushButton("Select")
@@ -926,11 +926,12 @@ class MainWindow(QMainWindow):
         out_layout.addWidget(out_label)
         self.tma_output_path = QLineEdit("")
         self.tma_output_path.setReadOnly(True)
-        self.tma_output_path.setPlaceholderText("Images/, Masks/, cores.csv, overlay.png")
+        self.tma_output_path.setPlaceholderText("BF/, POL/, cores.csv, overlay.png")
         self.tma_output_path.setStyleSheet(self.path_edit_style)
         self.tma_output_path.setToolTip(
-            "Destination for Images/ (core crops), Masks/ (circle masks with the same names),\n"
-            "cores.csv (manifest with patient IDs) and overlay.png. Defaults to <slide>_cores.")
+            "Destination: one folder per channel (BF/, POL/), each with Images/ (core crops) and\n"
+            "Masks/ (circle masks with the same names), plus cores.csv (manifest with patient IDs)\n"
+            "and overlay.png. Defaults to <slide>_cores.")
         out_layout.addWidget(self.tma_output_path, 1)
         self.tma_output_btn = QPushButton("Select")
         self.tma_output_btn.setStyleSheet(self.btn_style)
@@ -1211,19 +1212,21 @@ class MainWindow(QMainWindow):
         msg = QMessageBox(self)
         msg.setWindowTitle("TMA Export Complete")
         msg.setText("Core images and masks were written.")
-        msg.setInformativeText(f"{out_dir}\n\nImages/ and Masks/ can be used directly as the input\n"
-                               f"and ROI-mask folders of Batch Run.")
+        channels = [c for c in ("BF", "POL") if os.path.isdir(join_path(out_dir, c))]
+        msg.setInformativeText(f"{out_dir}\n\nEach channel folder ({', '.join(channels)}) holds Images/ and\n"
+                               f"Masks/, usable directly as the input and ROI-mask folders of\n"
+                               f"Batch Run. Analyse BF with Dark Line on and POL with it off.")
         msg.setStyleSheet(self.msgbox_style)
-        batch_btn = msg.addButton("Use in Batch Run", QMessageBox.ActionRole)
+        batch_btns = {msg.addButton(f"Use {c} in Batch Run", QMessageBox.ActionRole): c for c in channels}
         open_btn = msg.addButton("Open Folder", QMessageBox.ActionRole)
         msg.addButton(QMessageBox.Ok)
         self._fit_dialog_buttons(msg)
-
         msg.exec_()
-        if msg.clickedButton() == open_btn:
+        clicked = msg.clickedButton()
+        if clicked == open_btn:
             QDesktopServices.openUrl(QUrl.fromLocalFile(out_dir))
-        elif msg.clickedButton() == batch_btn:
-            self.use_tma_export_in_batch(out_dir)
+        elif clicked in batch_btns:
+            self.use_tma_export_in_batch(out_dir, batch_btns[clicked])
 
     @staticmethod
     def _fit_dialog_buttons(box):
@@ -1236,10 +1239,10 @@ class MainWindow(QMainWindow):
             need = btn.fontMetrics().horizontalAdvance(btn.text().replace("&", "")) + 40
             btn.setMinimumWidth(max(btn.minimumWidth(), need))
 
-    def use_tma_export_in_batch(self, out_dir):
-        """Point the Batch Run page at a TMA export and switch to it."""
-        images = join_path(out_dir, 'Images')
-        masks = join_path(out_dir, 'Masks')
+    def use_tma_export_in_batch(self, out_dir, channel="BF"):
+        """Point the Batch Run page at one channel of a TMA export and switch to it."""
+        images = join_path(out_dir, channel, 'Images')
+        masks = join_path(out_dir, channel, 'Masks')
         self.input_folder = images
         self.input_folder_path.setText(images)
         self.input_folder_path.setToolTip(images)

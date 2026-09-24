@@ -61,7 +61,7 @@ Once all parameters in 'Segmentation', 'Detection' and 'Gap Analysis' have been 
 
 ## Batch Processing
 
-The **ROI Masks** field is optional. Point it at a folder of binary masks named like the input images (white = analyse, black = ignore), such as the `Masks/` folder written by the TMA page, to restrict every measurement to the masked region. Leave it empty to rely on segmentation alone.
+The **ROI Masks** field is optional. Point it at a folder of binary masks named like the input images (white = analyse, black = ignore), such as the `BF/Masks/` or `POL/Masks/` folder written by the TMA page, to restrict every measurement to the masked region. Leave it empty to rely on segmentation alone.
 
 Under the '**Batch Processing**' tab, the user can specify the parameter file, input folder containing the images to be quantified, and the output folder for storing the results. It is recommended to open the Parameters.yml file to review and adjust the settings as needed---for example, disabling segmentation/gap analysis or adjusting specific parameters (refer to the parameter details in next section). Cabana will process the images in the input folder in batches (default batch size is 5). If an issue causes the program to terminate, the user can resume processing from the last batch after addressing the problem.
 

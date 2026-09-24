@@ -20,10 +20,11 @@ step lives on the **TMA** page of the GUI and in the `cabana-tma` command.
    cross were excluded by the quality filters, and grey lie outside the printed
    map; neither grey kind is exported.
 3. **Export cores**: for every core and selected channel a square crop is
-   written to `<channel>/Images/` and a circular mask (white inside the fitted
-   circle, shrunk by *Mask Shrink*, black in the corners) to `<channel>/Masks/`,
-   so bright-field and polarised cores end up in separate `BF/` and `POL/`
-   folders. A `cores.csv`
+   written to `<channel>/<group>/Images/` and a circular mask (white inside the
+   fitted circle, shrunk by *Mask Shrink*, black in the corners) to
+   `<channel>/<group>/Masks/`. Channels are `BF` and `POL`; groups are
+   `Patients`, `Controls` (Liver, Brain, … from the map) and `Unmapped` (cores
+   without a map entry, e.g. when no array map is chosen). A `cores.csv`
    manifest and `overlay.png` are written alongside.
 
 The three stages run independently: fitting can be repeated with new settings
@@ -124,10 +125,14 @@ orientation explicitly and fit again.
 
 ## Using the export in Cabana
 
-Each channel folder is a self-contained batch input: `BF/Images/` is the
-input folder and `BF/Masks/` the ROI-mask folder of **Batch Run**, and
-likewise for `POL/` (the GUI offers "Use BF in Batch Run" and "Use POL in
-Batch Run" after an export). Run the channels separately: bright-field with
+Each group folder is a self-contained batch input: `BF/Patients/Images/` is
+the input folder and `BF/Patients/Masks/` the ROI-mask folder of **Batch
+Run**, and likewise for `Controls/` and for `POL/` (the GUI's "Use BF in Batch
+Run" and "Use POL in Batch Run" point at the Patients folders). Keep the
+controls for checking staining consistency between slides; exporting several
+slides into one output folder collects every slide's controls in
+`<channel>/Controls/`. Controls are exempt from the stain filter but not from
+the grid-offset and diameter filters. Run the channels separately: bright-field with
 Dark Line on, polarised with Dark Line off. With a mask, the corners of each
 crop are excluded from segmentation, fibre detection, HDM, fibre-area and gap
 metrics, and the percentage metrics are relative to the circle area. The

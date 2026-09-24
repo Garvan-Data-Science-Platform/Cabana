@@ -4,10 +4,11 @@ Fits a circle to every core on a whole-slide scan, snaps the circles to the
 array grid, matches the grid to the printed ICGC/APGI array map, and exports
 one image and one binary mask per core and channel:
 
-    <out>/BF/Images/TMA1_A3_8010718_1734_BF.png
-    <out>/BF/Masks/TMA1_A3_8010718_1734_BF.png
-    <out>/POL/Images/TMA1_A3_8010718_1734_POL.png
-    <out>/POL/Masks/TMA1_A3_8010718_1734_POL.png
+    <out>/BF/Patients/Images/TMA1_A3_8010718_1734_BF.png
+    <out>/BF/Patients/Masks/TMA1_A3_8010718_1734_BF.png
+    <out>/BF/Controls/Images/TMA1_A1_Liver_BF.png
+    <out>/POL/Patients/Images/TMA1_A3_8010718_1734_POL.png
+    ...
     <out>/cores.csv
     <out>/overlay.png
 
@@ -728,20 +729,17 @@ class TMAPreprocessor:
     def export(self, out_dir, channels=None, progress=None, cancel=None):
         """Write per-core images and masks, ``cores.csv`` and ``overlay.png``.
 
-        Each channel gets a self-contained folder ``<out>/<channel>/Images``
-        and ``<out>/<channel>/Masks`` (see :meth:`channel_dirs`), usable
-        directly as the input and ROI-mask folders of a batch run.
+        Cores are written to ``<out>/<channel>/<group>/Images`` and
+        ``.../Masks`` (see :meth:`channel_dirs`), where ``group`` is
+        ``Patients``, ``Controls`` or ``Unmapped`` (no map entry, e.g. when no
+        array is selected). Each such folder pair is a self-contained batch
+        input.
         ``progress(done, total, message)`` is called after each file;
         ``cancel()`` returning True stops the export early.
         """
         r = self.reader
         channels = list(channels or r.channels)
-        dirs = {}
-        for ch in channels:
-            img_dir, mask_dir = self.channel_dirs(out_dir, ch)
-            os.makedirs(img_dir, exist_ok=True)
-            os.makedirs(mask_dir, exist_ok=True)
-            dirs[ch] = (img_dir, mask_dir)
+        made = set()
         margin_px = self.margin_um / r.pixel_size_um
         cores = self.exportable_cores()
         total = len(cores) * len(channels)
@@ -757,7 +755,11 @@ class TMAPreprocessor:
                 if cancel is not None and cancel():
                     return False
                 stem = self.core_stem(core, ch)
-                img_dir, mask_dir = dirs[ch]
+                img_dir, mask_dir = self.channel_dirs(out_dir, ch, self.core_group(core))
+                if img_dir not in made:
+                    os.makedirs(img_dir, exist_ok=True)
+                    os.makedirs(mask_dir, exist_ok=True)
+                    made.add(img_dir)
                 crop = r.read_region(x0, y0, side, side, channel=ch, level=0)
                 write_png_with_resolution(os.path.join(img_dir, stem + ".png"), crop, r.pixel_size_um)
                 cv2.imwrite(os.path.join(mask_dir, stem + ".png"), mask)
@@ -768,17 +770,26 @@ class TMAPreprocessor:
         cv2.imwrite(os.path.join(out_dir, "overlay.png"), self.draw_overlay())
         return True
 
+    GROUPS = ("Patients", "Controls", "Unmapped")
+
+    def core_group(self, core):
+        """``Patients``, ``Controls`` or ``Unmapped`` for export foldering."""
+        info = self.core_info(core)
+        if info is None or info.empty:
+            return "Unmapped"
+        return "Controls" if info.is_control else "Patients"
+
     @staticmethod
-    def channel_dirs(out_dir, channel):
-        """``(images_dir, masks_dir)`` for one channel of an export."""
-        base = os.path.join(out_dir, str(channel))
+    def channel_dirs(out_dir, channel, group="Patients"):
+        """``(images_dir, masks_dir)`` for one channel and core group of an export."""
+        base = os.path.join(out_dir, str(channel), str(group))
         return os.path.join(base, "Images"), os.path.join(base, "Masks")
 
     def write_manifest(self, path, channel=None):
         fields = ["stem", "slide", "array", "scan_row", "scan_col", "map_position", "map_label",
                   "sector", "patient_id", "icgc_id", "tissue", "note", "cx", "cy", "radius_px",
                   "fill", "grid_offset", "diameter_um", "stain_frac", "flag", "excluded",
-                  "reason", "orientation"]
+                  "reason", "group", "orientation"]
         amap = self.array_map()
         with open(path, "w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=fields)
@@ -801,6 +812,7 @@ class TMAPreprocessor:
                     "fill": round(c.fill, 3), "grid_offset": round(c.grid_offset, 3),
                     "diameter_um": round(c.diameter_um, 1), "stain_frac": round(c.stain_frac, 3),
                     "flag": c.flag, "excluded": int(c.excluded), "reason": c.reason,
+                    "group": self.core_group(c),
                     "orientation": self.matched_orientation or "",
                 })
 
@@ -847,7 +859,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(prog="cabana-tma",
                                 description="Fit TMA cores and export per-core images and masks.")
     p.add_argument("slide", help=".vsi slide or whole-slide TIFF/PNG")
-    p.add_argument("out_dir", help="output folder (<channel>/Images, <channel>/Masks, cores.csv, overlay.png)")
+    p.add_argument("out_dir", help="output folder (<channel>/<Patients|Controls|Unmapped>/{Images,Masks}, cores.csv, overlay.png)")
     p.add_argument("--array", type=int, default=None, help="ICGC array number for patient-ID lookup")
     p.add_argument("--slide-name", default=None, help="filename prefix (default: slide name)")
     p.add_argument("--pixel-size", type=float, default=None, help="µm per pixel if not in metadata")

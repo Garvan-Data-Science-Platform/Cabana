@@ -6,7 +6,7 @@ The user can set the parameters in this section to enable (setting to `true`) or
 
 For instance, if the background is clean, segmentation may not be needed and therefore can be disabled.
 
-`ROI Masks` (optional, default empty) is a folder of binary masks, one `<image name>.png` per input image, that restricts all measurements to the white region. The `<channel>/Masks/` folder written by [TMA preprocessing](tma.md) is the usual source. When empty, only the segmentation mask defines the analysis region.
+`ROI Masks` (optional, default empty) is a folder of binary masks, one `<image name>.png` per input image, that restricts all measurements to the white region. The `<channel>/<group>/Masks/` folder written by [TMA preprocessing](tma.md) is the usual source. When empty, only the segmentation mask defines the analysis region.
 
 ## Segmentation Parameters
 

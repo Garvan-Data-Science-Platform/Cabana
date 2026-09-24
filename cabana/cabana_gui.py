@@ -578,7 +578,7 @@ class MainWindow(QMainWindow):
         self.input_folder_path.setReadOnly(True)
         self.input_folder_path.setStyleSheet(self.path_edit_style)
         self.input_folder_path.setToolTip("Folder of images to analyse (TIFF/PNG/JPEG). Pixel size is read from the\n"
-                                          "image metadata; the <channel>/Images folder of a TMA export works directly.")
+                                          "image metadata; a TMA export's <channel>/Patients/Images folder works directly.")
         input_layout.addWidget(self.input_folder_path, 1)
 
         self.input_btn = QPushButton("Select")
@@ -926,12 +926,13 @@ class MainWindow(QMainWindow):
         out_layout.addWidget(out_label)
         self.tma_output_path = QLineEdit("")
         self.tma_output_path.setReadOnly(True)
-        self.tma_output_path.setPlaceholderText("BF/, POL/, cores.csv, overlay.png")
+        self.tma_output_path.setPlaceholderText("BF/, POL/ (Patients, Controls), cores.csv, overlay.png")
         self.tma_output_path.setStyleSheet(self.path_edit_style)
         self.tma_output_path.setToolTip(
-            "Destination: one folder per channel (BF/, POL/), each with Images/ (core crops) and\n"
-            "Masks/ (circle masks with the same names), plus cores.csv (manifest with patient IDs)\n"
-            "and overlay.png. Defaults to <slide>_cores.")
+            "Destination: one folder per channel (BF/, POL/), split into Patients/ and Controls/\n"
+            "(Unmapped/ when no array map is used), each with Images/ (core crops) and Masks/\n"
+            "(circle masks with the same names); plus cores.csv (manifest with patient IDs) and\n"
+            "overlay.png at the top. Defaults to <slide>_cores.")
         out_layout.addWidget(self.tma_output_path, 1)
         self.tma_output_btn = QPushButton("Select")
         self.tma_output_btn.setStyleSheet(self.btn_style)
@@ -1213,9 +1214,10 @@ class MainWindow(QMainWindow):
         msg.setWindowTitle("TMA Export Complete")
         msg.setText("Core images and masks were written.")
         channels = [c for c in ("BF", "POL") if os.path.isdir(join_path(out_dir, c))]
-        msg.setInformativeText(f"{out_dir}\n\nEach channel folder ({', '.join(channels)}) holds Images/ and\n"
-                               f"Masks/, usable directly as the input and ROI-mask folders of\n"
-                               f"Batch Run. Analyse BF with Dark Line on and POL with it off.")
+        msg.setInformativeText(f"{out_dir}\n\nEach channel ({', '.join(channels)}) has Patients/ and Controls/ folders,\n"
+                               f"each holding Images/ and Masks/ usable directly as the input and\n"
+                               f"ROI-mask folders of Batch Run. Analyse BF with Dark Line on and\n"
+                               f"POL with it off.")
         msg.setStyleSheet(self.msgbox_style)
         batch_btns = {msg.addButton(f"Use {c} in Batch Run", QMessageBox.ActionRole): c for c in channels}
         open_btn = msg.addButton("Open Folder", QMessageBox.ActionRole)
@@ -1240,9 +1242,12 @@ class MainWindow(QMainWindow):
             btn.setMinimumWidth(max(btn.minimumWidth(), need))
 
     def use_tma_export_in_batch(self, out_dir, channel="BF"):
-        """Point the Batch Run page at one channel of a TMA export and switch to it."""
-        images = join_path(out_dir, channel, 'Images')
-        masks = join_path(out_dir, channel, 'Masks')
+        """Point the Batch Run page at the patient cores of one channel of a TMA
+        export (or the unmapped cores when no array map was used) and switch to it."""
+        group = next((g for g in ("Patients", "Unmapped")
+                      if os.path.isdir(join_path(out_dir, channel, g, 'Images'))), "Patients")
+        images = join_path(out_dir, channel, group, 'Images')
+        masks = join_path(out_dir, channel, group, 'Masks')
         self.input_folder = images
         self.input_folder_path.setText(images)
         self.input_folder_path.setToolTip(images)

@@ -230,16 +230,24 @@ class TestPreprocessor:
         assert len(pre.cores) == occ.sum()
         assert pre.matched_orientation is not None
         assert sorted(p.name for p in out.iterdir()) == ["BF", "cores.csv", "overlay.png"]
-        imgs = sorted(os.listdir(out / "BF" / "Images"))
-        masks = sorted(os.listdir(out / "BF" / "Masks"))
-        assert imgs == masks and len(imgs) == occ.sum()
+        assert sorted(p.name for p in (out / "BF").iterdir()) == ["Controls", "Patients"]
+        ctrl = sorted(os.listdir(out / "BF" / "Controls" / "Images"))
+        pats = sorted(os.listdir(out / "BF" / "Patients" / "Images"))
+        assert ctrl == sorted(os.listdir(out / "BF" / "Controls" / "Masks"))
+        assert pats == sorted(os.listdir(out / "BF" / "Patients" / "Masks"))
+        assert ctrl and all(any(t in n for t in ("_Liver_", "_Muscle_", "_Brain_", "_Placenta_",
+                                                 "_Salivary-gland_", "_Lung_")) for n in ctrl)
+        assert all(n.split("_")[2].isdigit() for n in pats)          # patient IDs only
+        imgs = sorted(pats + ctrl)
+        masks = imgs
+        assert len(imgs) == occ.sum()
         assert all(n.startswith("TMA1_") and n.endswith("_BF.png") for n in imgs)
         assert len(set(imgs)) == len(imgs)                     # unique names
         assert any("_Liver_" in n or "_Muscle_" in n or "_Brain_" in n for n in imgs)
         assert progress[-1] == (len(imgs), len(imgs))
         # mask is a centred disc with black corners; image is square and same size
-        m = cv2.imread(str(out / "BF" / "Masks" / masks[0]), 0)
-        im = cv2.imread(str(out / "BF" / "Images" / imgs[0]))
+        m = cv2.imread(str(out / "BF" / "Patients" / "Masks" / pats[0]), 0)
+        im = cv2.imread(str(out / "BF" / "Patients" / "Images" / pats[0]))
         assert m.shape == im.shape[:2] and m.shape[0] == m.shape[1]
         assert m[0, 0] == 0 and m[m.shape[0] // 2, m.shape[1] // 2] == 255
         expected_r = RADIUS_PX - 2
@@ -248,10 +256,11 @@ class TestPreprocessor:
             rows = list(csv.DictReader(f))
         assert len(rows) == occ.sum()
         assert all(r["patient_id"] or r["tissue"] for r in rows)
+        assert {r["group"] for r in rows} == {"Patients", "Controls"}
         assert (out / "overlay.png").exists()
         # exported images carry the pixel size so Cabana recovers µm/pixel
         from cabana.io import split2batches
-        _, res = split2batches([str(out / "BF" / "Images" / imgs[0])])
+        _, res = split2batches([str(out / "BF" / "Patients" / "Images" / pats[0])])
         assert res[0] == pytest.approx(PX_UM, abs=0.01)
         pre.close()
 
@@ -261,7 +270,7 @@ class TestPreprocessor:
         pre = TMAPreprocessor(path, array_number=None, pixel_size_um=PX_UM,
                               core_diameter_um=CORE_UM, fit_pixel_size_um=PX_UM)
         pre.run(str(tmp_path / "out"))
-        names = sorted(os.listdir(tmp_path / "out" / "BF" / "Images"))
+        names = sorted(os.listdir(tmp_path / "out" / "BF" / "Unmapped" / "Images"))
         assert names == sorted(f"slideX_r{r}c{c}_unknown_BF.png" for r in (1, 2) for c in (1, 2, 3))
 
     def test_debris_outside_map_is_not_exported(self, tmp_path):
@@ -385,7 +394,7 @@ class TestFilters:
         ex = [r for r in rows if r["excluded"] == "1"]
         assert len(ex) == 1 and ex[0]["reason"] == "stain" and ex[0]["flag"] == "excluded"
         assert float(ex[0]["stain_frac"]) < 0.02 and float(ex[0]["diameter_um"]) > 0
-        assert len(os.listdir(tmp_path / "out" / "BF" / "Images")) == 3
+        assert len(os.listdir(tmp_path / "out" / "BF" / "Unmapped" / "Images")) == 3
 
 
 class TestDebrisRobustness:
@@ -452,9 +461,9 @@ class TestChannelFolders:
         out = tmp_path / "out"
         assert pre.export(str(out))
         for ch in ("BF", "POL"):
-            imgs = sorted(os.listdir(out / ch / "Images"))
-            masks = sorted(os.listdir(out / ch / "Masks"))
+            imgs = sorted(os.listdir(out / ch / "Unmapped" / "Images"))
+            masks = sorted(os.listdir(out / ch / "Unmapped" / "Masks"))
             assert len(imgs) == 4 and imgs == masks
             assert all(n.endswith(f"_{ch}.png") for n in imgs)
-        assert TMAPreprocessor.channel_dirs(str(out), "POL") == (str(out / "POL" / "Images"),
-                                                                 str(out / "POL" / "Masks"))
+        assert TMAPreprocessor.channel_dirs(str(out), "POL", "Controls") == (
+            str(out / "POL" / "Controls" / "Images"), str(out / "POL" / "Controls" / "Masks"))

@@ -20,6 +20,7 @@ the core. ``Images`` and ``Masks`` are drop-in inputs for ``BatchCabana``
 
 import csv
 import os
+import sys
 from dataclasses import dataclass, asdict
 
 import cv2
@@ -49,6 +50,13 @@ def write_png_with_resolution(path, bgr, pixel_size_um):
 # patient-ID assignment never depends on user-tunable QC filter values.
 MAP_MAX_GRID_OFFSET = 0.5
 
+# When occupancy alone leaves several orientations tied, appearance breaks the
+# tie: the Brain control must be (nearly) unstained, or a patient's replicate
+# cores must resemble each other. The winner must beat the runner-up by this
+# relative margin, otherwise the orientation is reported as unresolved.
+MIN_TIEBREAK_MARGIN = 0.10
+BRAIN_MAX_STAIN = 0.05
+
 # The eight rigid transforms that map the printed array onto the scan.
 ORIENTATIONS = ("auto", "0", "90", "180", "270", "0+flip", "90+flip", "180+flip", "270+flip")
 
@@ -70,6 +78,7 @@ class Core:
     grid_offset: float = 0.0    # distance to the lattice-predicted centre, in grid pitches
     diameter_um: float = 0.0    # fitted diameter
     stain_frac: float = 0.0     # fraction of the disc above the stain saturation threshold
+    features: tuple = ()        # appearance vector used for replicate similarity
     excluded: bool = False      # rejected by the QC filters (see TMAPreprocessor.apply_filters)
     reason: str = ""            # why it was excluded, e.g. "off_grid", "diameter", "stain"
 
@@ -578,6 +587,8 @@ class TMAPreprocessor:
         self.matched_orientation = None
         self.match_score = None
         self.orientation_ties = []
+        self.orientation_method = None      # "occupancy", "manual", "brain", "replicates" or "unresolved"
+        self.orientation_margin = None      # relative lead of the winner over the runner-up
         self._fit_level = None
         self._fit_image = None
 
@@ -632,8 +643,22 @@ class TMAPreprocessor:
         if self._fit_image is None:
             return
         ds = self.reader.level_downsample(self._fit_level)
+        hsv = cv2.cvtColor(self._fit_image, cv2.COLOR_BGR2HSV)
+        h, w = hsv.shape[:2]
         for c in self.cores:
-            c.stain_frac = stain_fraction(self._sat, c.cx / ds, c.cy / ds, c.radius / ds, self.stain_sat)
+            cx, cy, r = c.cx / ds, c.cy / ds, c.radius / ds
+            c.stain_frac = stain_fraction(self._sat, cx, cy, r, self.stain_sat)
+            y0, y1 = max(0, int(cy - r)), min(h, int(cy + r) + 1)
+            x0, x1 = max(0, int(cx - r)), min(w, int(cx + r) + 1)
+            yy, xx = np.ogrid[y0:y1, x0:x1]
+            disc = (xx - cx) ** 2 + (yy - cy) ** 2 <= r * r
+            sat = hsv[y0:y1, x0:x1, 1][disc]
+            val = hsv[y0:y1, x0:x1, 2][disc]
+            tissue = sat > self.sat_thresh
+            c.features = (c.stain_frac,
+                          float(sat[tissue].mean() / 255) if tissue.any() else 0.0,
+                          float(1 - val[tissue].mean() / 255) if tissue.any() else 0.0,
+                          c.fill)
 
     def _geometric_reason(self, c):
         if c.grid_offset > self.max_grid_offset:
@@ -662,8 +687,16 @@ class TMAPreprocessor:
             if c.grid_offset <= MAP_MAX_GRID_OFFSET:
                 observed[c.row, c.col] = True
         o, lookup, score, ties = match_orientation(observed, self.array_number, self.orientation)
-        self.matched_orientation, self.match_score = o, score
         self.orientation_ties = ties
+        self.match_score = score
+        if self.orientation != "auto":
+            self.orientation_method, self.orientation_margin = "manual", None
+        elif len(ties) <= 1:
+            self.orientation_method, self.orientation_margin = "occupancy", None
+        else:
+            o, lookup, method, margin = self._break_tie(observed, ties)
+            self.orientation_method, self.orientation_margin = method, margin
+        self.matched_orientation = o
         amap = self.array_map()
         for c in self.cores:
             c.map_row, c.map_col = (int(v) for v in lookup[c.row, c.col])
@@ -672,6 +705,62 @@ class TMAPreprocessor:
             c.outside_map = info is None or info.empty
         self.apply_filters()
         return o
+
+    @property
+    def orientation_resolved(self):
+        """False when Auto could not choose between tied orientations."""
+        return self.orientation_method not in (None, "unresolved")
+
+    def _lookup_for(self, observed, orientation):
+        return match_orientation(observed, self.array_number, orientation)[1]
+
+    def _brain_stain(self, lookup, amap):
+        vals = [c.stain_frac for c in self.cores
+                if lookup[c.row, c.col][0] >= 0
+                and amap[tuple(int(v) for v in lookup[c.row, c.col])].tissue == "Brain"]
+        return float(np.mean(vals)) if vals else None
+
+    def _replicate_spread(self, lookup, amap):
+        """Mean within-patient variance of the appearance features."""
+        groups = {}
+        for c in self.cores:
+            r, k = (int(v) for v in lookup[c.row, c.col])
+            if r < 0 or not c.features:
+                continue
+            info = amap[(r, k)]
+            if info.patient_id:
+                groups.setdefault(info.patient_id, []).append(c.features)
+        spreads = [np.var(np.array(g), axis=0).sum() for g in groups.values() if len(g) >= 2]
+        return float(np.mean(spreads)) if spreads else None
+
+    def _break_tie(self, observed, ties):
+        """Choose among occupancy-tied orientations by appearance.
+
+        Returns ``(orientation, lookup, method, margin)``. ``method`` is
+        ``"brain"`` when the array has a Brain control and exactly one tied
+        orientation puts an unstained core there, ``"replicates"`` when the
+        within-patient similarity of the replicate cores separates the
+        candidates by at least :data:`MIN_TIEBREAK_MARGIN`, else
+        ``"unresolved"`` (the first tie is returned provisionally).
+        """
+        amap = self.array_map()
+        lookups = {o: self._lookup_for(observed, o) for o in ties}
+        brain = {o: self._brain_stain(lookups[o], amap) for o in ties}
+        if all(v is not None for v in brain.values()):
+            ranked = sorted(ties, key=lambda o: brain[o])
+            best, second = brain[ranked[0]], brain[ranked[1]]
+            if best <= BRAIN_MAX_STAIN and second > 2 * max(best, 0.01):
+                margin = (second - best) / max(second, 1e-6)
+                return ranked[0], lookups[ranked[0]], "brain", margin
+        spread = {o: self._replicate_spread(lookups[o], amap) for o in ties}
+        if all(v is not None for v in spread.values()):
+            ranked = sorted(ties, key=lambda o: spread[o])
+            best, second = spread[ranked[0]], spread[ranked[1]]
+            margin = (second - best) / max(best, 1e-9)
+            if margin >= MIN_TIEBREAK_MARGIN:
+                return ranked[0], lookups[ranked[0]], "replicates", margin
+            return ranked[0], lookups[ranked[0]], "unresolved", margin
+        return ties[0], lookups[ties[0]], "unresolved", None
 
     def apply_filters(self):
         """Set ``excluded``/``reason`` on every core from the QC parameters.
@@ -737,6 +826,11 @@ class TMAPreprocessor:
         ``progress(done, total, message)`` is called after each file;
         ``cancel()`` returning True stops the export early.
         """
+        if self.array_number is not None and not self.orientation_resolved:
+            raise RuntimeError(
+                "Orientation is unresolved: candidates "
+                f"{', '.join(self.orientation_ties)} fit equally well. Confirm against the "
+                "printed map and set the orientation explicitly before exporting.")
         r = self.reader
         channels = list(channels or r.channels)
         made = set()
@@ -789,7 +883,7 @@ class TMAPreprocessor:
         fields = ["stem", "slide", "array", "scan_row", "scan_col", "map_position", "map_label",
                   "sector", "patient_id", "icgc_id", "tissue", "note", "cx", "cy", "radius_px",
                   "fill", "grid_offset", "diameter_um", "stain_frac", "flag", "excluded",
-                  "reason", "group", "orientation"]
+                  "reason", "group", "orientation", "orientation_method"]
         amap = self.array_map()
         with open(path, "w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=fields)
@@ -814,6 +908,7 @@ class TMAPreprocessor:
                     "flag": c.flag, "excluded": int(c.excluded), "reason": c.reason,
                     "group": self.core_group(c),
                     "orientation": self.matched_orientation or "",
+                    "orientation_method": self.orientation_method or "",
                 })
 
     def draw_overlay(self):
@@ -898,15 +993,22 @@ def main(argv=None):
     o = pre.map_to_array()
     print(f"{pre.slide_name}: {len(pre.cores)} cores on a {pre.grid_shape[0]}x{pre.grid_shape[1]} grid"
           + (f", orientation {o} (score {pre.match_score:.1f})" if o else ""))
+    if o and pre.orientation_method not in ("manual", "occupancy"):
+        m = f" (margin {pre.orientation_margin:.0%})" if pre.orientation_margin is not None else ""
+        print(f"  orientation chosen by {pre.orientation_method}{m}")
+    if o and not pre.orientation_resolved:
+        print(f"  ERROR: orientations {pre.orientation_ties} fit equally well and appearance cannot "
+              f"separate them; confirm against the printed map and pass --orientation.", file=sys.stderr)
+        if not a.fit_only:
+            return 2
     summ = pre.exclusion_summary()
     if summ:
         print("  excluded: " + ", ".join(f"{v} {k}" for k, v in sorted(summ.items())))
     lost = [p for p, (k, t) in pre.replicate_counts().items() if k == 0]
     if lost:
         print(f"  patients with no remaining core: {', '.join(lost)}")
-    if len(pre.orientation_ties) > 1:
-        print(f"  WARNING: orientations {pre.orientation_ties} fit equally well; "
-              f"confirm against the printed map or pass --orientation.")
+    if len(pre.orientation_ties) > 1 and pre.orientation_resolved and pre.orientation_method != "manual":
+        print(f"  note: {pre.orientation_ties} tied on occupancy; verify a control core on the overlay.")
     os.makedirs(a.out_dir, exist_ok=True)
     if a.fit_only:
         pre.write_manifest(os.path.join(a.out_dir, "cores.csv"), (a.channels or pre.reader.channels)[0])
@@ -920,4 +1022,4 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main() or 0)

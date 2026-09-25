@@ -82,3 +82,34 @@ class TestNaming:
         info = CoreInfo(1, 1, "B3", "B", 3, "8012191", "2113", "", "", False)
         assert info.row_index == 1 and info.col_index == 2 and info.position == "B3"
         assert not info.is_control and info.identity() == "8012191_2113"
+
+
+class TestMapConsistency:
+    """Every (patient, ICGC sample) pair appears exactly three times per array,
+    one core per sector on arrays 3 to 8 (arrays 1 and 2 shuffle patients
+    between sectors). Two exceptions are printed in the PDF and verified
+    against its page images: Array 6 patient 8070344 has two samples (3368
+    and 3541), each in triplicate; Array 7 sample 8062699/3290 appears twice
+    because a Kidney control occupies its sector-3 slot."""
+
+    EXCEPTIONS = {(7, "8062699", "3290"): 2}
+
+    @pytest.mark.parametrize("array", range(1, 9))
+    def test_each_sample_in_triplicate(self, array):
+        from collections import Counter
+        cells = [c for c in load_array_map(array).values() if not c.empty and c.patient_id]
+        counts = Counter((c.patient_id, c.icgc_id) for c in cells)
+        for (pid, icgc), n in counts.items():
+            assert n == self.EXCEPTIONS.get((array, pid, icgc), 3), (array, pid, icgc, n)
+
+    @pytest.mark.parametrize("array", range(3, 9))
+    def test_one_core_per_sector_on_later_arrays(self, array):
+        from collections import Counter
+        cells = [c for c in load_array_map(array).values() if not c.empty and c.patient_id]
+        per_sector = Counter((c.patient_id, c.icgc_id, c.sector) for c in cells)
+        assert max(per_sector.values()) == 1
+
+    def test_control_counts(self):
+        for array in range(1, 9):
+            controls = [c for c in load_array_map(array).values() if c.is_control]
+            assert 3 <= len(controls) <= 9, (array, len(controls))

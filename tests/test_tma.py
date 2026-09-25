@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from cabana.tma import (TMAPreprocessor, fit_cores, infer_grid, match_orientation,
                         merge_grid_duplicates)
-from cabana.tma_maps import occupancy_grid
+from cabana.tma_maps import occupancy_grid, load_array_map
 
 PX_UM = 4.0            # synthetic slide resolution
 CORE_UM = 1000.0
@@ -220,9 +220,10 @@ class TestPreprocessor:
         occ[3, 5] = False
         path, centres = self._write_slide(tmp_path, occ)
         out = tmp_path / "out"
+        # identical synthetic cores cannot break the occupancy tie, so fix the orientation
         pre = TMAPreprocessor(path, array_number=1, slide_name="TMA1", pixel_size_um=PX_UM,
                               core_diameter_um=CORE_UM, margin_um=40, erode_px=2,
-                              fit_pixel_size_um=PX_UM)
+                              fit_pixel_size_um=PX_UM, orientation="90")
         progress = []
         ok = pre.run(str(out), progress=lambda d, t, s: progress.append((d, t)))
         assert ok
@@ -467,3 +468,67 @@ class TestChannelFolders:
             assert all(n.endswith(f"_{ch}.png") for n in imgs)
         assert TMAPreprocessor.channel_dirs(str(out), "POL", "Controls") == (
             str(out / "POL" / "Controls" / "Images"), str(out / "POL" / "Controls" / "Masks"))
+
+
+class TestTieBreaking:
+    """Orientation ties on fully populated arrays are broken by appearance."""
+
+    def _slide_with_patient_signatures(self, array, orientation, brain_pale=True, seed=0):
+        """Synthetic slide of ``array`` laid out under ``orientation`` where every
+        patient's three cores share a distinctive colour and the Brain control
+        (if any) is nearly unstained."""
+        from cabana.tma import _transform_grid
+        amap = load_array_map(array)
+        idx = np.stack(np.meshgrid(np.arange(12), np.arange(8), indexing="ij"), -1)
+        placed = _transform_grid(idx, orientation)
+        occ = _transform_grid(occupancy_grid(array), orientation)
+        img, centres = synthetic_slide(occ)
+        rng = np.random.default_rng(seed)
+        colours = {}
+        for (r, c), (cx, cy) in centres.items():
+            info = amap[tuple(int(v) for v in placed[r, c])]
+            if info.is_control:
+                colour = (236, 232, 240) if (info.tissue == "Brain" and brain_pale) else (200, 170, 235)
+            else:
+                if info.patient_id not in colours:
+                    colours[info.patient_id] = tuple(int(v) for v in rng.integers(60, 230, 3))
+                colour = colours[info.patient_id]
+            cv2.circle(img, (cx, cy), int(RADIUS_PX), colour, -1)
+        return img
+
+    def _pre(self, tmp_path, img, array):
+        path = str(tmp_path / "s.png")
+        cv2.imwrite(path, img)
+        pre = TMAPreprocessor(path, array_number=array, slide_name="S", pixel_size_um=PX_UM,
+                              core_diameter_um=CORE_UM, fit_pixel_size_um=PX_UM, min_stain_frac=0.0)
+        pre.fit()
+        pre.map_to_array()
+        return pre
+
+    @pytest.mark.parametrize("orientation", ["90", "270", "90+flip"])
+    def test_brain_breaks_tie(self, tmp_path, orientation):
+        pre = self._pre(tmp_path, self._slide_with_patient_signatures(4, orientation), 4)
+        assert len(pre.orientation_ties) > 1
+        assert pre.matched_orientation == orientation
+        assert pre.orientation_method == "brain" and pre.orientation_resolved
+
+    @pytest.mark.parametrize("orientation", ["90", "270"])
+    def test_replicates_break_tie_without_brain(self, tmp_path, orientation):
+        pre = self._pre(tmp_path, self._slide_with_patient_signatures(7, orientation), 7)   # no Brain on array 7
+        assert len(pre.orientation_ties) > 1
+        assert pre.matched_orientation == orientation
+        assert pre.orientation_method == "replicates"
+        assert pre.orientation_margin >= 0.10
+
+    def test_unresolved_blocks_export(self, tmp_path):
+        # all cores identical: neither Brain nor replicates can separate the ties
+        occ = occupancy_grid(7)
+        img, _ = synthetic_slide(occ)
+        pre = self._pre(tmp_path, img, 7)
+        assert not pre.orientation_resolved and pre.orientation_method == "unresolved"
+        with pytest.raises(RuntimeError):
+            pre.export(str(tmp_path / "out"))
+        pre.orientation = "90"
+        pre.map_to_array()
+        assert pre.orientation_method == "manual" and pre.orientation_resolved
+        assert pre.export(str(tmp_path / "out"))

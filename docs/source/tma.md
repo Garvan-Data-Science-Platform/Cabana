@@ -118,10 +118,25 @@ tissue fill, QC metrics, flag, exclusion reason and the orientation used.
 The scan is typically rotated relative to the printed map. *Auto* compares the
 pattern of missing cores with the map for all eight rotations and mirror
 images. A fully populated array cannot distinguish a rotation from its mirror
-image; when several orientations fit equally well the status line lists them.
-Check a few control cores on the overlay against the map (for example the
-collagen-free Brain core) and, if the labels are mirrored, choose the
-orientation explicitly and fit again.
+image, so when several orientations tie Cabana breaks the tie by appearance:
+
+1. **Brain control.** Brain tissue is nearly collagen-free, so the core at
+   the map's Brain position must be almost unstained (under 5 % stained area,
+   and clearly paler than under the other candidates). Arrays 1 to 5 have a
+   Brain core.
+2. **Replicate similarity.** Each patient's three cores come from one tumour
+   and should look alike (stained fraction, saturation, darkness, fill).
+   Under a wrong orientation the "triplets" are unrelated patients. The
+   orientation with the most self-similar triplets wins if it leads the
+   runner-up by at least 10 %.
+
+The status line and `cores.csv` (`orientation_method`) say which rule decided
+and by what margin. If neither rule separates the candidates the orientation
+is **unresolved**: the overlay still shows provisional labels, but Export is
+disabled until you confirm a control core against the printed map and set the
+orientation explicitly (the CLI exits with an error unless `--orientation` is
+given). Orientation genuinely differs between slides of this set, so never
+assume one value for a batch.
 
 ## Using the export in Cabana
 

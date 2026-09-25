@@ -1091,7 +1091,8 @@ class MainWindow(QMainWindow):
             w.setEnabled(not busy)
         self.tma_fit_btn.setEnabled(not busy and self.tma_slide is not None
                                     and (self.tma_reader is not None or self.tma_pre is not None))
-        self.tma_export_btn.setEnabled(not busy and self.tma_pre is not None)
+        self.tma_export_btn.setEnabled(not busy and self.tma_pre is not None
+                                       and (self.tma_pre.array_number is None or self.tma_pre.orientation_resolved))
         self.tma_cancel_btn.setVisible(busy)
         self.tma_cancel_btn.setEnabled(busy)
         self.tma_cancel_btn.setText("Cancel")
@@ -1149,10 +1150,19 @@ class MainWindow(QMainWindow):
         n_export = len(pre.exportable_cores())
         msg = f"{len(pre.cores)} cores on a {n_rows}x{n_cols} grid, {n_export} to export"
         if pre.matched_orientation:
-            msg += f"; orientation {pre.matched_orientation}"
-            if len(getattr(pre, 'orientation_ties', [])) > 1:
-                msg += (f" (also fits: {', '.join(o for o in pre.orientation_ties if o != pre.matched_orientation)}"
-                        f" — confirm labels against the printed map)")
+            others = [o for o in pre.orientation_ties if o != pre.matched_orientation]
+            how = {"brain": "chosen by the Brain control", "replicates": "chosen by replicate similarity",
+                   "manual": "set manually", "occupancy": "from missing-core pattern"}.get(pre.orientation_method, "")
+            if pre.orientation_margin is not None and pre.orientation_method in ("brain", "replicates"):
+                how += f", margin {pre.orientation_margin:.0%}"
+            msg += f"; orientation {pre.matched_orientation}" + (f" ({how})" if how else "")
+            if not pre.orientation_resolved:
+                msg += (f" — UNRESOLVED: {', '.join(pre.orientation_ties)} fit equally well and appearance "
+                        f"cannot separate them; confirm a control core against the printed map and set "
+                        f"Orientation explicitly. Export is disabled until then.")
+            elif others and pre.orientation_method != "manual":
+                msg += f" (also tied on occupancy: {', '.join(others)}; verify a control core)"
+        self.tma_export_btn.setEnabled(pre.array_number is None or pre.orientation_resolved)
         summary = pre.exclusion_summary()
         if summary:
             names = {"off_grid": "off-grid", "diameter": "diameter", "stain": "low stain"}

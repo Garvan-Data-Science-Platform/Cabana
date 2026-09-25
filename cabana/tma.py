@@ -721,7 +721,16 @@ class TMAPreprocessor:
         return float(np.mean(vals)) if vals else None
 
     def _replicate_spread(self, lookup, amap):
-        """Mean within-patient variance of the appearance features."""
+        """Mean within-patient variance of the appearance features.
+
+        Features are z-scored across the slide's cores first so that no single
+        feature dominates; on the APGI slides this widens the separation
+        between the true orientation and its mirror image considerably.
+        """
+        feats = np.array([c.features for c in self.cores if c.features], dtype=float)
+        if len(feats) < 3:
+            return None
+        mu, sd = feats.mean(axis=0), feats.std(axis=0) + 1e-9
         groups = {}
         for c in self.cores:
             r, k = (int(v) for v in lookup[c.row, c.col])
@@ -729,7 +738,7 @@ class TMAPreprocessor:
                 continue
             info = amap[(r, k)]
             if info.patient_id:
-                groups.setdefault(info.patient_id, []).append(c.features)
+                groups.setdefault(info.patient_id, []).append((np.array(c.features) - mu) / sd)
         spreads = [np.var(np.array(g), axis=0).sum() for g in groups.values() if len(g) >= 2]
         return float(np.mean(spreads)) if spreads else None
 

@@ -6,6 +6,8 @@
 2. **Memory (RAM):** Minimum 16 GB, with 32 GB preferred
 3. **Graphics Processing Unit (GPU):** NVIDIA GeForce GTX/RTX series GPU with at least 10 GB VRAM
 
+The segmentation network runs on the NVIDIA GPU when CUDA is available. On Apple silicon Macs it runs on the Apple GPU through PyTorch's MPS backend automatically (about 3 to 4 times faster than the CPU), falling back to the CPU if an operation is unsupported. Set the environment variable `CABANA_DEVICE` to `cpu`, `cuda` or `mps` to override the choice.
+
 ## Installation Instructions
 
 1. Install miniconda. The default installation location is `C:\\ProgramData\\miniconda3` on Windows. Verify the installation by running `conda env list` in the command line. If the installation was successful, you should be able to see a `base` env and the path to the env.

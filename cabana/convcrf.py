@@ -323,10 +323,8 @@ class MessagePassingCol():
                 raise NotImplementedError
 
     def _get_norm(self, gaus):
-        norm_tensor = torch.ones([1, 1, self.npixels[0], self.npixels[1]])
+        norm_tensor = torch.ones([1, 1, self.npixels[0], self.npixels[1]], device=gaus.device)
         normalization_feats = torch.autograd.Variable(norm_tensor)
-        if self.use_gpu:
-            normalization_feats = normalization_feats.cuda()
 
         norm_out = self._compute_gaussian(normalization_feats, gaussian=gaus)
         return 1 / torch.sqrt(norm_out + 1e-20)

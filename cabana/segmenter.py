@@ -17,6 +17,7 @@ Example usage:
 """
 
 import os
+import sys
 import cv2
 import imutils
 from . import convcrf
@@ -107,7 +108,35 @@ def _feather_weights(h, w, margin):
     return (np.clip(ramp_y, 0, 1)[:, None] * np.clip(ramp_x, 0, 1)[None, :]).astype(np.float32)
 
 
+def select_device():
+    """Torch device for the segmentation network: CUDA when available, else
+    Apple's Metal backend (MPS) on macOS, else CPU. Set ``CABANA_DEVICE=cpu``
+    (or ``cuda``/``mps``) to override."""
+    forced = os.environ.get("CABANA_DEVICE", "").strip().lower()
+    if forced:
+        return torch.device(forced)
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    mps = getattr(torch.backends, "mps", None)
+    if sys.platform == "darwin" and mps is not None and mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
 def segment_color_distance(img_bgr, args, iter_callback=None, cnn_size=512):
+    """See :func:`_segment_color_distance`. Falls back to the CPU when the
+    accelerator rejects an operation (e.g. a kernel missing on MPS)."""
+    device = select_device()
+    try:
+        return _segment_color_distance(img_bgr, args, iter_callback, cnn_size, device)
+    except (RuntimeError, NotImplementedError) as e:
+        if device.type == "cpu":
+            raise
+        Log.logger.warning(f"Segmentation on {device} failed ({e}); retrying on CPU.")
+        return _segment_color_distance(img_bgr, args, iter_callback, cnn_size, torch.device("cpu"))
+
+
+def _segment_color_distance(img_bgr, args, iter_callback, cnn_size, device):
     """Train the self-supervised CNN + CRF on one image and return the relative
     colour-distance map to the hue of interest.
 
@@ -134,11 +163,10 @@ def segment_color_distance(img_bgr, args, iter_callback=None, cnn_size=512):
     config = convcrf.default_conf
     config['filter_size'] = args.sz_filter
     gausscrf = convcrf.GaussCRF(conf=config, shape=img_size, nclasses=args.num_channels,
-                                use_gpu=torch.cuda.is_available())
+                                use_gpu=(device.type == "cuda"))
     model = BackBone([LightConv3x3], [2], [args.num_channels // 2, args.num_channels])
-    if torch.cuda.is_available():
-        data, img_var = data.cuda(), img_var.cuda()
-        gausscrf, model = gausscrf.cuda(), model.cuda()
+    data, img_var = data.to(device), img_var.to(device)
+    gausscrf, model = gausscrf.to(device), model.to(device)
     data = Variable(data)
     img_var = Variable(img_var)
 

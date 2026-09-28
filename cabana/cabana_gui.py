@@ -1968,7 +1968,6 @@ class MainWindow(QMainWindow):
                     "Segmentation": True,
                     "Quantification": True,
                     "Gap Analysis": True,
-                    "ROI Masks": "",
                 },
                 "Segmentation": {
                     "Number of Labels": 32,

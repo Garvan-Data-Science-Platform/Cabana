@@ -30,7 +30,7 @@ class Cabana:
         self.output_folder = out_folder
         self.ignore_large = ignore_large
         # Optional folder of external ROI masks (e.g. TMA core circles), one
-        # ``<image stem>.png`` per image. Falls back to Configs: ROI Masks.
+        # ``<image stem>.png`` per image.
         self.ext_mask_dir = mask_dir
         self.roi_mask_path = None
 
@@ -124,8 +124,6 @@ class Cabana:
         setattr(self.seg_args, 'min_size', int(self.args['Segmentation']["Min Size"]))
         setattr(self.seg_args, 'patch_size', int(self.args['Segmentation'].get("Patch Size", 0) or 0))
         setattr(self.seg_args, 'white_background', self.args['Detection']["Dark Line"])
-        if not self.ext_mask_dir:
-            self.ext_mask_dir = self.args.get('Configs', {}).get('ROI Masks') or None
 
     def prepare_image(self):
         """Prepare the input image for analysis"""

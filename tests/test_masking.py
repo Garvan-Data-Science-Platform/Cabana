@@ -24,10 +24,10 @@ SIZE = 240
 RADIUS = 90
 
 
-def _params(tmp_path, segmentation, roi_masks="", patch_size=0):
+def _params(tmp_path, segmentation, patch_size=0):
     params = {
         "Configs": {"Segmentation": segmentation, "Quantification": True,
-                    "Gap Analysis": True, "ROI Masks": roi_masks},
+                    "Gap Analysis": True},
         "Segmentation": {"Number of Labels": 8, "Max Iterations": 2, "Normalized Hue Value": 0.96,
                          "Color Threshold": 0.2, "Min Size": 4, "Max Size": 2048,
                          "Patch Size": patch_size},
@@ -126,14 +126,6 @@ class TestCabanaMasking:
         # largest gap is bigger than the circle
         gaps = pd.read_csv(out / "Masks" / "GapAnalysis" / "IndividualGaps_core1.csv")
         assert gaps["Area (µm²)"].max() > np.pi * RADIUS ** 2 * 1.05
-
-    def test_mask_dir_from_parameter_file(self, tmp_path):
-        img_dir, mask_dir = _write_inputs(tmp_path, with_mask=True)
-        out = tmp_path / "out"
-        c = Cabana(_params(tmp_path, False, roi_masks=mask_dir), os.path.join(img_dir, "core1.png"), str(out))
-        assert c.run() is not False
-        assert c.ext_mask_dir == mask_dir
-        assert _fibre_metrics(c.stats)["Area (WIDTH)"] == 0
 
     def test_hdm_percentage_relative_to_mask(self, tmp_path):
         """A dark blob inside the circle: % HDM Area = blob / circle area, not blob / image."""

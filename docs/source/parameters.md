@@ -6,8 +6,6 @@ The user can set the parameters in this section to enable (setting to `true`) or
 
 For instance, if the background is clean, segmentation may not be needed and therefore can be disabled.
 
-`ROI Masks` (optional, default empty) is a folder of binary masks, one `<image name>.png` per input image, that restricts all measurements to the white region. The `<channel>/<group>/Masks/` folder written by [TMA preprocessing](tma.md) is the usual source. When empty, only the segmentation mask defines the analysis region.
-
 ## Segmentation Parameters
 
 This component of Cabana aims to extract collagen fibre areas determined by Picrosirius Red staining or SHG in an image from cluttered background based on colour and other low-level features. It relies on a self-supervised semantic segmentation model based on convolutional neural networks to group semantically similar neighbouring pixels. The mean colour of the pixels in the same segment will be compared with a user-specified threshold to determine whether the segment is the region of interest (ROI).

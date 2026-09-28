@@ -44,7 +44,7 @@ class BatchCabana:
                  mask_dir=None):
         self.param_file = param_file
         # Optional folder of external ROI masks (e.g. TMA core circles), one
-        # ``<image stem>.png`` per input image. Falls back to Configs: ROI Masks.
+        # ``<image stem>.png`` per input image.
         self.ext_mask_dir = mask_dir
 
         self.args = None  # args for Cabana program
@@ -113,8 +113,6 @@ class BatchCabana:
         setattr(self.seg_args, 'min_size', int(self.args['Segmentation']["Min Size"]))
         setattr(self.seg_args, 'patch_size', int(self.args['Segmentation'].get("Patch Size", 0) or 0))
         setattr(self.seg_args, 'white_background', self.args['Detection']["Dark Line"])
-        if not self.ext_mask_dir:
-            self.ext_mask_dir = self.args.get('Configs', {}).get('ROI Masks') or None
 
     def remove_large_images(self):
         from .stages import prepare_roi_mask
@@ -1101,9 +1099,8 @@ class BatchProcessor():
             Whether to generate collagen risk scores, by default False
         mask_dir : str, optional
             Folder of external ROI masks (one ``<image stem>.png`` per input
-            image, e.g. TMA core circles). When omitted, ``Configs: ROI Masks``
-            in the parameter file is used; when that is empty too, only the
-            segmentation mask defines the analysis region.
+            image, e.g. TMA core circles). When omitted, only the segmentation
+            mask defines the analysis region.
         """
         self.mask_dir = mask_dir
         self.batch_size = batch_size
@@ -1283,6 +1280,7 @@ class BatchProcessor():
 
             Log.logger.info(f'Processing batch {batch_idx + 1}/{end_batch_idx} '
                             f'of {len(path_batches[batch_idx])} images '
+                        "roi_mask_dir": self.mask_dir or "",
                             f'with resolution {res_batches[batch_idx]}um/pixel.')
             self.batch_num = batch_idx
 

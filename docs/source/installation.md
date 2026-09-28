@@ -14,7 +14,7 @@ The segmentation network runs on the NVIDIA GPU when CUDA is available. On Apple
 
 2. Create a conda env named `cabana` (you can change it to any name you want) by running `conda create -n cabana python=3.12` in the command line. If the env is created correctly, activate the created conda env by running `conda activate cabana`.
 
-3. Install Cabana by running `pip install -U cabana`. If the installation is successful, you can start Cabana GUI by running `python -m cabana`. Alternatively, you can import Cabana in your code for more customized analysis (see examples in <a href="_static/tutorial.ipynb" target="_blank" rel="noopener">tutorial.ipynb</a>).
+3. Install Cabana by running `pip install -U cabana`. If the installation is successful, you can start Cabana GUI by running `python -m cabana`. The same install provides the `cabana-tma` command (also `python -m cabana tma`) for [TMA preprocessing](tma.md) without the GUI. Alternatively, you can import Cabana in your code for more customized analysis (see examples in <a href="_static/tutorial.ipynb" target="_blank" rel="noopener">tutorial.ipynb</a>).
 
 If you want to create a shortcut on Desktop, follow the steps below:
 

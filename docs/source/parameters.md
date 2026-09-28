@@ -26,7 +26,7 @@ The following image segmentation parameters for ROI extraction can be adjusted:
 
 4. **Colour Threshold**
 
-   Colour threshold used to determine ROI. Only segments with a mean colour greater than this threshold will be extracted as ROI. The default value is 0.25.
+   Colour threshold used to determine ROI. Only segments with a mean colour greater than this threshold will be extracted as ROI. The default value is 0.2.
 
 5. **Min Size**
 

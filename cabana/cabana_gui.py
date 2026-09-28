@@ -1447,6 +1447,7 @@ class MainWindow(QMainWindow):
         self.progress_label.setVisible(True)
         self.batch_worker.batch_complete.connect(self.handle_batch_complete)
         self.batch_worker.batch_cancelled.connect(self.handle_batch_cancelled)
+        self.batch_worker.batch_failed.connect(self.handle_batch_failed)
 
         # Start the worker thread
         self.batch_worker.start()
@@ -1478,6 +1479,29 @@ class MainWindow(QMainWindow):
         msg.setWindowTitle("Batch Processing Complete")
         msg.setText("Batch processing finished successfully.")
         msg.setInformativeText(f"Results saved to:\n{output_folder}")
+        msg.setStyleSheet(self.msgbox_style)
+        open_btn = msg.addButton("Open Folder", QMessageBox.ActionRole)
+        msg.addButton(QMessageBox.Ok)
+        self._fit_dialog_buttons(msg)
+
+        msg.exec_()
+        if msg.clickedButton() == open_btn:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(output_folder))
+
+    def handle_batch_failed(self, message):
+        self.hide_progress_bar()
+        self._restore_batch_buttons()
+
+        output_folder = getattr(self, 'output_folder', '')
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Batch Processing Failed")
+        msg.setIcon(QMessageBox.Warning)
+        msg.setText("Batch processing stopped with an error.")
+        msg.setInformativeText(
+            f"{message}\n\n"
+            f"Completed batches and the checkpoint are kept in:\n{output_folder}\n\n"
+            "Fix the cause (for example free disk space) and run again with the same "
+            "output folder to resume.")
         msg.setStyleSheet(self.msgbox_style)
         open_btn = msg.addButton("Open Folder", QMessageBox.ActionRole)
         msg.addButton(QMessageBox.Ok)

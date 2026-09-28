@@ -73,7 +73,7 @@ Cabana generates an output folder containing the following subfolders:
 
 i. **Batches**
 
-   Stores the results of each analysis batch. Cabana processes images in batches to allow the use of a check-point in case the analysis run crashes and needs to be restarted (see below under 'errors'). The results of all batches are combined into the folders below. Note: Batches folder can be safely deleted when all images have been processed to save storage space.
+   Stores the results of each analysis batch. Cabana processes images in batches to allow the use of a check-point in case the analysis run crashes and needs to be restarted (see below under 'errors'). The results of all batches are combined into the folders below, after which the Batches folder and the checkpoint are removed automatically. They are only left in place when a run fails (the GUI reports the error and keeps everything) or is cancelled, so that it can be resumed by running again with the same output folder; once such a run has been completed or abandoned they can be deleted to save storage space.
 
 ii. **Bins**
 

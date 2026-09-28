@@ -4,6 +4,7 @@ import argparse
 import numpy as np
 import tifffile as tiff
 import imageio.v3 as iio
+from .log import Log
 from .detector import FibreDetector
 from .segmenter import generate_rois, segment_image
 from skimage.feature import peak_local_max
@@ -502,6 +503,7 @@ class BatchProcessingWorker(QThread):
                  batch_num=0, resume=False, ignore_large=False,
                  generate_stats=False, generate_scores=False, mask_dir=None):
     status_updated = pyqtSignal(str)
+    batch_failed = pyqtSignal(str)
         super().__init__()
         self.mask_dir = mask_dir
         self.param_file = param_file
@@ -529,7 +531,13 @@ class BatchProcessingWorker(QThread):
         batch_processor.progress_callback = self.update_progress
         batch_processor.cancel_check = lambda: self._cancel_requested
 
-        was_cancelled = batch_processor.run()
+        try:
+            was_cancelled = batch_processor.run()
+        except Exception as exc:   # an exception escaping QThread.run aborts the process
+            import traceback
+            Log.logger.error("Batch processing failed:\n" + traceback.format_exc())
+            self.batch_failed.emit(f"{type(exc).__name__}: {exc}")
+            return
         if was_cancelled:
             self.batch_cancelled.emit()
         else:

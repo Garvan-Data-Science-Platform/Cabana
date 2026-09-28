@@ -1280,6 +1280,7 @@ class BatchProcessor():
                     "execution_info": {
                         "user": username,
                         "datetime": timestamp,
+                        "roi_mask_dir": self.mask_dir or "",
                         "version": version_info["version"],
                         "git_info": {
                             "commit": version_info.get("git_hash", "unknown"),
@@ -1329,7 +1330,6 @@ class BatchProcessor():
 
             Log.logger.info(f'Processing batch {batch_idx + 1}/{end_batch_idx} '
                             f'of {len(path_batches[batch_idx])} images '
-                        "roi_mask_dir": self.mask_dir or "",
                             f'with resolution {res_batches[batch_idx]}um/pixel.')
             self.batch_num = batch_idx
 
@@ -1370,6 +1370,26 @@ class BatchProcessor():
             self.update_progress(process_span_start
                                  + (images_done / total_images) * process_span)
 
+    @staticmethod
+    def _move_into(src, dst):
+        """Move ``src`` (file or directory) into/onto ``dst``, merging directories.
+
+        Batch results are moved rather than copied: on one file system a move is
+        a rename, so consolidating never needs a second copy of the results on
+        disk (the Batches folder is deleted afterwards anyway).
+        """
+        if os.path.isdir(src):
+            if not os.path.isdir(dst):
+                shutil.move(src, dst)
+                return
+            for entry in os.listdir(src):
+                BatchProcessor._move_into(join_path(src, entry), join_path(dst, entry))
+            os.rmdir(src)
+        else:
+            if os.path.exists(dst):
+                os.remove(dst)
+            shutil.move(src, dst)
+
     def post_process(self):
         """
         Consolidate batch results after processing is complete.
@@ -1401,6 +1421,8 @@ class BatchProcessor():
         post_span_end = 99
         post_span = post_span_end - post_span_start
         self.update_progress(post_span_start)
+        if self.status_callback:
+            self.status_callback("Combining batch results")
 
         # Calculate the total number of steps for tracking progress
         total_steps = 9  # 1 for folders creation + 5 for file operations + 3 for final operations
@@ -1414,49 +1436,45 @@ class BatchProcessor():
         current_step += 1
         self.update_progress(post_span_start + (current_step / total_steps) * post_span)
 
-        # Step 2: Copy images from batches to consolidated folders
+        # Step 2: Move images from batches to consolidated folders
         for batch_idx in range(self.batch_num + 1):
             batch_folder = join_path(self.output_folder, 'Batches', "batch_" + str(batch_idx))
             for sub_folder in sub_folders:
                 src_folder = join_path(batch_folder, sub_folder)
                 dst_folder = join_path(self.output_folder, sub_folder)
                 img_paths = glob(join_path(src_folder, '*.tif')) \
-        if self.status_callback:
-            self.status_callback("Combining batch results")
                             + glob(join_path(src_folder, '*.png')) \
                             + glob(join_path(src_folder, '*.jpg'))
                 img_paths.sort()
                 for img_path in img_paths:
-                    shutil.copy(img_path, dst_folder)
+                    self._move_into(img_path, join_path(dst_folder, os.path.basename(img_path)))
         current_step += 1
         self.update_progress(post_span_start + (current_step / total_steps) * post_span)
 
-        # Step 3: Copy gap analysis results
+        # Step 3: Move gap analysis results. The per-batch summary CSVs stay
+        # behind: step 8 merges them across batches.
         for batch_idx in range(self.batch_num + 1):
             batch_folder = join_path(self.output_folder, 'Batches', "batch_" + str(batch_idx))
             src_folder = join_path(batch_folder, 'Masks', 'GapAnalysis')
             dst_folder = join_path(self.output_folder, 'Masks', 'GapAnalysis')
-            img_paths = glob(join_path(src_folder, '*.png')) + glob(join_path(src_folder, '*.csv'))
+            img_paths = glob(join_path(src_folder, '*.png')) + [
+                p for p in glob(join_path(src_folder, '*.csv')) if not p.endswith('Summary.csv')]
             img_paths.sort()
             for img_path in img_paths:
-                shutil.copy(img_path, dst_folder)
+                self._move_into(img_path, join_path(dst_folder, os.path.basename(img_path)))
         current_step += 1
         self.update_progress(post_span_start + (current_step / total_steps) * post_span)
 
-        # Step 4: Copy subdirectories from Exports and Colors
+        # Step 4: Move subdirectories from Exports and Colors
         for batch_idx in range(self.batch_num + 1):
             batch_folder = join_path(self.output_folder, 'Batches', "batch_" + str(batch_idx))
-            # Copy Exports subdirectories
-            exports_folders = [f.name for f in os.scandir(join_path(batch_folder, "Exports")) if f.is_dir()]
-            for folder in exports_folders:
-                shutil.copytree(join_path(batch_folder, "Exports", folder),
-                                join_path(self.output_folder, "Exports", folder), dirs_exist_ok=True)
-
-            # Copy Colors subdirectories
-            colors_folders = [f.name for f in os.scandir(join_path(batch_folder, "Colors")) if f.is_dir()]
-            for folder in colors_folders:
-                shutil.copytree(join_path(batch_folder, "Colors", folder),
-                                join_path(self.output_folder, "Colors", folder), dirs_exist_ok=True)
+            for parent in ("Exports", "Colors"):
+                src_parent = join_path(batch_folder, parent)
+                if not os.path.isdir(src_parent):
+                    continue
+                for folder in [f.name for f in os.scandir(src_parent) if f.is_dir()]:
+                    self._move_into(join_path(src_parent, folder),
+                                    join_path(self.output_folder, parent, folder))
         current_step += 1
         self.update_progress(post_span_start + (current_step / total_steps) * post_span)
 

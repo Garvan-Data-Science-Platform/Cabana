@@ -424,3 +424,43 @@ def test_process_resume_advances_progress_immediately(tmp_path, monkeypatch):
     assert any(v >= 30 for v in seen[:6]), f"resume did not advance bar early: {seen[:6]}"
     # Final endpoint is still 85.
     assert seen[-1] == 85
+
+
+def test_post_process_moves_results_and_merges_summaries(tmp_path):
+    """Consolidation must not duplicate results on disk, must merge every
+    batch's summary CSVs, and must remove the Batches folder afterwards."""
+    import pandas as pd
+    out = tmp_path / "out"
+    for b in range(2):
+        bf = out / "Batches" / f"batch_{b}"
+        for sub in ("ROIs", "Bins", "Masks", "HDM", "Exports", "Fibres", "Eligible", "Colors"):
+            (bf / sub).mkdir(parents=True)
+            (bf / sub / f"img{b}.png").write_bytes(b"png")
+        (bf / "Masks" / "GapAnalysis").mkdir()
+        (bf / "Masks" / "GapAnalysis" / f"gaps{b}.png").write_bytes(b"png")
+        (bf / "Masks" / "GapAnalysis" / f"IndividualGaps_img{b}_roi.csv").write_text("a\n1\n")
+        pd.DataFrame({"Image": [f"img{b}"], "Mean": [b]}).to_csv(
+            bf / "Masks" / "GapAnalysis" / "GapAnalysisSummary.csv", index=False)
+        pd.DataFrame({"Image": [f"img{b}"], "Mean": [b]}).to_csv(
+            bf / "Masks" / "GapAnalysis" / "IntraGapAnalysisSummary.csv", index=False)
+        (bf / "Exports" / f"img{b}_roi").mkdir()
+        (bf / "Exports" / f"img{b}_roi" / "Curve_Map_10.tif").write_bytes(b"tif")
+        (bf / "Colors" / f"img{b}_roi").mkdir()
+        (bf / "Colors" / f"img{b}_roi" / "all_gaps.png").write_bytes(b"png")
+        (bf / "Eligible" / "IgnoredImages.txt").write_text("")
+        pd.DataFrame({"Image": [f"img{b}"], "Value": [b]}).to_csv(bf / "QuantificationResults.csv", index=False)
+    bp = _make_processor(None)
+    bp.output_folder = str(out)
+    bp.batch_num = 1
+    bp.generate_stats = bp.generate_scores = False
+    bp.status_callback = None
+    bp.post_process()
+    assert not (out / "Batches").exists()
+    assert sorted(p.name for p in (out / "ROIs").iterdir()) == ["img0.png", "img1.png"]
+    assert (out / "Exports" / "img0_roi" / "Curve_Map_10.tif").exists()
+    assert (out / "Exports" / "img1_roi" / "Curve_Map_10.tif").exists()
+    assert (out / "Colors" / "img1_roi" / "all_gaps.png").exists()
+    assert (out / "Masks" / "GapAnalysis" / "IndividualGaps_img0_roi.csv").exists()
+    for name in ("GapAnalysisSummary.csv", "IntraGapAnalysisSummary.csv"):
+        assert len(pd.read_csv(out / "Masks" / "GapAnalysis" / name)) == 2
+    assert len(pd.read_csv(out / "QuantificationResults.csv")) == 2

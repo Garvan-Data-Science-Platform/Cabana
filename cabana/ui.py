@@ -366,6 +366,11 @@ def generate_checkbox_style():
             background-color: {color_to_stylesheet(COLORS['background'])};
             border-color: {color_to_stylesheet(COLORS['border_subtle'])};
         }}
+        QCheckBox::indicator:checked:disabled {{
+            background-color: {color_to_stylesheet(COLORS['text_muted'])};
+            border-color: {color_to_stylesheet(COLORS['text_muted'])};
+            image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%23{COLORS['text'].red():02x}{COLORS['text'].green():02x}{COLORS['text'].blue():02x}' d='M1,5 L3.5,7.5 L9,2'/%3E%3C/svg%3E");
+        }}
     """
 
 
@@ -496,14 +501,14 @@ class PercentageProgressBar(QProgressBar):
 
 class BatchProcessingWorker(QThread):
     progress_updated = pyqtSignal(int)
+    status_updated = pyqtSignal(str)
     batch_complete = pyqtSignal()
+    batch_failed = pyqtSignal(str)
     batch_cancelled = pyqtSignal()
 
     def __init__(self, param_file, input_folder, output_folder, batch_size=5,
                  batch_num=0, resume=False, ignore_large=False,
                  generate_stats=False, generate_scores=False, mask_dir=None):
-    status_updated = pyqtSignal(str)
-    batch_failed = pyqtSignal(str)
         super().__init__()
         self.mask_dir = mask_dir
         self.param_file = param_file
@@ -529,6 +534,7 @@ class BatchProcessingWorker(QThread):
                                          mask_dir=self.mask_dir)
 
         batch_processor.progress_callback = self.update_progress
+        batch_processor.status_callback = self.status_updated.emit
         batch_processor.cancel_check = lambda: self._cancel_requested
 
         try:
@@ -542,7 +548,6 @@ class BatchProcessingWorker(QThread):
             self.batch_cancelled.emit()
         else:
             self.progress_updated.emit(100)
-        batch_processor.status_callback = self.status_updated.emit
             self.batch_complete.emit()
 
     def update_progress(self, value):

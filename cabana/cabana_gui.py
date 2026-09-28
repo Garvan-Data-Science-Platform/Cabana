@@ -31,7 +31,7 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         # Set window properties
-        self.setWindowTitle("Cabana-GUI")
+        self.setWindowTitle(f"Cabana v{__version__}")
         self.setMinimumSize(800, 600)
 
         # Make window full screen when starting

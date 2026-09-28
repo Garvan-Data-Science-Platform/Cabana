@@ -7,24 +7,34 @@ from .cabana_gui import MainWindow
 
 
 def _set_macos_dock_name(name):
-    """Set the macOS dock label via CFBundleName using the Objective-C runtime."""
+    """Set the macOS application name (menu bar and Dock) by writing
+    ``CFBundleName`` into the main bundle's info dictionaries before the
+    application is created. Without a bundled ``Info.plist`` macOS would
+    otherwise show the executable name, e.g. ``python3``."""
     try:
         from ctypes import cdll, util, c_void_p, c_char_p
         objc = cdll.LoadLibrary(util.find_library('objc'))
         objc.objc_getClass.restype = c_void_p
+        objc.objc_getClass.argtypes = [c_char_p]
         objc.sel_registerName.restype = c_void_p
+        objc.sel_registerName.argtypes = [c_char_p]
+        msg = objc.objc_msgSend
+        msg.restype = c_void_p
 
         def send(obj, sel, *args):
-            objc.objc_msgSend.restype = c_void_p
-            objc.objc_msgSend.argtypes = [c_void_p, c_void_p] + [type(a) for a in args]
-            return objc.objc_msgSend(obj, objc.sel_registerName(sel), *args)
+            # Every argument is an object pointer or a C string.
+            msg.argtypes = [c_void_p, c_void_p] + [
+                c_char_p if isinstance(a, bytes) else c_void_p for a in args]
+            return msg(obj, objc.sel_registerName(sel), *args)
 
+        ns_string = objc.objc_getClass(b'NSString')
+        key = send(ns_string, b'stringWithUTF8String:', b'CFBundleName')
+        val = send(ns_string, b'stringWithUTF8String:', name.encode())
         bundle = send(objc.objc_getClass(b'NSBundle'), b'mainBundle')
-        info = send(bundle, b'infoDictionary')
-        ns = objc.objc_getClass(b'NSString')
-        key = send(ns, b'stringWithUTF8String:', c_char_p(b'CFBundleName'))
-        val = send(ns, b'stringWithUTF8String:', c_char_p(name.encode()))
-        send(info, b'setObject:forKey:', val, key)
+        for selector in (b'infoDictionary', b'localizedInfoDictionary'):
+            info = send(bundle, selector)
+            if info:
+                send(info, b'setObject:forKey:', val, key)
     except Exception:
         pass
 
@@ -45,10 +55,10 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName("Cabana")
-
-    window = MainWindow()
     icon_path = Path(__file__).parent / "cabana-logo.ico"
     app.setWindowIcon(QIcon(str(icon_path)))
+
+    window = MainWindow()
     window.show()
     sys.exit(app.exec_())
 

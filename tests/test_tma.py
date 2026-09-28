@@ -65,6 +65,60 @@ class TestFitCores:
         assert len(circles) == 4
 
 
+class TestTissueMask:
+    """Scanner artefacts must not be mistaken for tissue or bias the background."""
+
+    @staticmethod
+    def _scanned_block(h, w, bg=243, seed=0):
+        rng = np.random.default_rng(seed)
+        block = np.full((h, w, 3), bg, dtype=np.uint8)
+        return np.clip(block.astype(int) + rng.integers(-2, 3, (h, w, 1)), 0, 255).astype(np.uint8)
+
+    def test_core_inside_partly_scanned_columns(self):
+        # Columns 0..600 are mostly unscanned (white 255) with a small scanned
+        # block holding one core; an off-white noisy stripe runs through the
+        # white area, as VS200 scans show.
+        from cabana.tma import tissue_mask
+        img = np.full((2000, 1400, 3), 255, dtype=np.uint8)
+        img[:, 700:] = self._scanned_block(2000, 700)
+        img[1500:1900, 100:500] = self._scanned_block(400, 400, seed=1)
+        cv2.circle(img, (300, 1700), int(RADIUS_PX), (190, 150, 230), -1)
+        rng = np.random.default_rng(2)
+        img[:1500, 280:286] = rng.integers(253, 256, (1500, 6, 1))
+        mask = tissue_mask(img)
+        assert mask[1500:1900, 100:500].mean() > 0.3          # the core is there
+        bg_block = mask[1500:1900, 100:500].copy()
+        yy, xx = np.ogrid[1500:1900, 100:500]
+        outside = (xx - 300) ** 2 + (yy - 1700) ** 2 > (RADIUS_PX + 6) ** 2
+        assert bg_block[outside].mean() < 0.01                  # scanned background is clean
+        assert mask[:1500, 270:300].mean() < 0.01               # the stripe is not tissue
+        assert mask[:, 700:].mean() < 0.01
+        circles = fit_cores(img, PX_UM, CORE_UM)
+        assert len(circles) == 1 and abs(circles[0][2] - RADIUS_PX) < 0.1 * RADIUS_PX
+
+    def test_flat_padding_strip_is_not_tissue(self):
+        # A bright slide (background 254) with the constant grey padding the
+        # scanner writes below the acquired frame.
+        from cabana.tma import tissue_mask
+        img = self._scanned_block(1200, 1600, bg=253)
+        cv2.circle(img, (800, 600), int(RADIUS_PX), (190, 150, 230), -1)
+        img[1184:, :] = 238
+        mask = tissue_mask(img)
+        assert mask[1184:, :].sum() == 0
+        assert len(fit_cores(img, PX_UM, CORE_UM)) == 1
+
+    def test_flat_synthetic_background_is_still_background(self):
+        # Flat backgrounds at the slide's own level are legitimate (synthetic
+        # slides, very clean scans) and must keep working as before.
+        from cabana.tma import tissue_mask
+        img, _ = synthetic_slide(np.ones((1, 2), dtype=bool))
+        mask = tissue_mask(img)
+        assert 0.1 < mask.mean() < 0.4
+        cv2.circle(img, (PITCH_PX, PITCH_PX), int(RADIUS_PX), (232, 228, 240), -1)   # pale core
+        pale = tissue_mask(img, sat_thresh=7.5, val_ratio=0.93)
+        assert pale[PITCH_PX, PITCH_PX] == 1
+
+
 class TestRobustness:
     def test_core_fused_with_edge_strip_is_found(self):
         occ = np.ones((2, 3), dtype=bool)

@@ -34,8 +34,14 @@ before exporting, and exporting can be repeated into a different folder.
 
 1. **Tissue mask.** On a level of about 4 µm/px, a pixel is tissue when its
    HSV saturation exceeds *Sensitivity* (default 15) or it is darker than
-   96.5% of the median brightness of its image column (the per-column
-   reference cancels scanner banding).
+   96.5% of the background brightness of its image column (the per-column
+   reference cancels scanner banding). The column background is measured only
+   from pixels close to the slide's overall background level, so that tissue,
+   the white fill of unscanned areas and the faint off-white stripes scanners
+   leave there cannot bias it; this matters for partly scanned slides, where a
+   column may be mostly unscanned. Flat, unsaturated bright regions away from
+   that level (white fill, the grey padding written beyond the scanned frame)
+   carry no data and are never counted as tissue.
 2. **Clean-up.** Gaps of up to 30% of a core diameter are closed so a core
    becomes one blob; an opening of 10% of a core diameter then cuts off thin
    structures such as coverslip edges, scratches and streaks.
@@ -86,8 +92,8 @@ exported. Filters update instantly; no refit is needed.
 Filters never change patient IDs. The orientation match ignores only objects
 more than half a core spacing from any grid position, a fixed rule, and all
 filters run after IDs are assigned. The status line reports how many cores each
-filter removed, the median fitted diameter (with a hint when Core Ø differs by
-more than 20 %), and any patient left with no core.
+filter removed, the median fitted diameter (with a warning when Core Ø differs
+by more than 10 %), and any patient left with no core.
 
 On the APGI slides the weakest genuine patient cores have 3 to 5 % stained
 area and the Brain and Muscle controls about 0 to 1 %, which is why the stain
@@ -111,7 +117,9 @@ CLI: `--max-grid-offset`, `--diameter-range MIN MAX`, `--min-stain`, and
 `position` is the flat map position (rows A to L, columns 1 to 8) after the
 printed sector offsets are resolved. `cores.csv` records the map label,
 sector, patient ID, ICGC ID, tissue, circle centre and radius (level-0 pixels),
-tissue fill, QC metrics, flag, exclusion reason and the orientation used.
+tissue fill, QC metrics, flag, exclusion reason, export group (`Patients`,
+`Controls` or `Unmapped`), and the orientation used together with the rule
+that decided it (`orientation_method`).
 
 ## Orientation
 
@@ -125,10 +133,11 @@ image, so when several orientations tie Cabana breaks the tie by appearance:
    and clearly paler than under the other candidates). Arrays 1 to 5 have a
    Brain core.
 2. **Replicate similarity.** Each patient's three cores come from one tumour
-   and should look alike (stained fraction, saturation, darkness, fill).
-   Under a wrong orientation the "triplets" are unrelated patients. The
-   orientation with the most self-similar triplets wins if it leads the
-   runner-up by at least 10 %.
+   and should look alike (stained fraction, saturation, darkness, fill; each
+   feature is z-scored across the slide so none dominates). Under a wrong
+   orientation the "triplets" are unrelated patients. The orientation with
+   the most self-similar triplets wins if it leads the runner-up by at
+   least 10 %.
 
 The status line and `cores.csv` (`orientation_method`) say which rule decided
 and by what margin. If neither rule separates the candidates the orientation

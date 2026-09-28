@@ -97,17 +97,39 @@ class Core:
 # Circle fitting
 # ---------------------------------------------------------------------------
 
+BG_WINDOW = 8   # brightness band around the slide background level, in HSV value units
+
+
 def tissue_mask(img_bgr, sat_thresh=15, val_ratio=0.965):
     """Foreground mask from HSV saturation and a per-column background level.
 
     The per-column background compensates for the vertical banding that slide
-    scanners produce in the illumination.
+    scanners produce in the illumination. It is estimated only from pixels
+    close to the slide's overall background level (the most common brightness
+    among unsaturated, non-white pixels), so that tissue, the white fill of
+    unscanned regions and the faint off-white stripes scanners leave there
+    cannot bias it. Flat (texture-free) bright regions whose brightness is far
+    from that level carry no data, such as unscanned white fill and the
+    constant grey padding written beyond the acquired frame, and are never
+    counted as tissue.
     """
     hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
     sat = hsv[:, :, 1].astype(np.float32)
-    val = hsv[:, :, 2].astype(np.float32)
-    col_bg = np.median(val, axis=0, keepdims=True)
-    return ((sat > sat_thresh) | (val < val_ratio * col_bg)).astype(np.uint8)
+    val_u8 = hsv[:, :, 2]
+    val = val_u8.astype(np.float32)
+    unsaturated = (sat <= sat_thresh) & (val_u8 < 255)
+    hist = np.bincount(val_u8[unsaturated], minlength=256)[:255]
+    bg_level = float(np.argmax(hist)) if hist.any() else 255.0
+    local_range = cv2.morphologyEx(val_u8, cv2.MORPH_GRADIENT, np.ones((5, 5), np.uint8))
+    nodata = unsaturated & (local_range == 0) & (val >= 230) & (np.abs(val - bg_level) > BG_WINDOW)
+    # grow by the gradient kernel so the edge of a no-data region is not kept
+    nodata = cv2.dilate(nodata.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+    near_bg = unsaturated & (np.abs(val - bg_level) <= BG_WINDOW)
+    col_bg = np.ma.median(np.ma.masked_array(val, mask=~near_bg), axis=0).filled(bg_level)
+    enough = near_bg.sum(axis=0) >= 0.02 * val.shape[0]
+    col_bg = np.where(enough, col_bg, bg_level)[None, :]
+    tissue = (sat > sat_thresh) | (val < val_ratio * col_bg)
+    return (tissue & ~nodata).astype(np.uint8)
 
 
 def _ellipse(diameter_px):

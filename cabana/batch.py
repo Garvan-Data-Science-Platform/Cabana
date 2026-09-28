@@ -38,11 +38,18 @@ from .utils import (
 )
 
 
+# Progress cost of one CNN training run (whole image or one patch) relative
+# to an ordinary per-image stage such as detection or gap analysis.
+SEG_TICKS_PER_PATCH = 4
+
+
 class BatchCabana:
     def __init__(self, param_file, input_folder, out_folder,
                  batch_size=5, batch_idx=0, ignore_large=True, progress_callback=None,
-                 mask_dir=None):
+                 mask_dir=None, status_callback=None):
         self.param_file = param_file
+        # Optional callable(str) told which image and stage are being processed.
+        self.status_callback = status_callback
         # Optional folder of external ROI masks (e.g. TMA core circles), one
         # ``<image stem>.png`` per input image.
         self.ext_mask_dir = mask_dir
@@ -88,6 +95,31 @@ class BatchCabana:
         create_folder(self.bin_dir)
         setattr(self.seg_args, 'roi_dir', self.roi_dir)
         setattr(self.seg_args, 'bin_dir', self.bin_dir)
+
+    def _status(self, msg):
+        cb = getattr(self, 'status_callback', None)
+        if cb:
+            cb(msg)
+
+    def _seg_weight(self, img_path):
+        """Progress ticks for segmenting one image: the CNN is trained once per
+        patch, and one training run costs about :data:`SEG_TICKS_PER_PATCH`
+        ordinary per-image stages."""
+        seg_args = getattr(self, 'seg_args', None)
+        patch = int(getattr(seg_args, 'patch_size', 0) or 0)
+        n_patches = 1
+        if patch > 0:
+            try:
+                from PIL import Image
+                from .segmenter import tile_windows
+                with Image.open(img_path) as im:
+                    w, h = im.size
+                if max(h, w) > patch:
+                    overlap = int(round(patch * float(getattr(seg_args, 'patch_overlap', 0.125) or 0)))
+                    n_patches = len(tile_windows(h, patch, overlap)) * len(tile_windows(w, patch, overlap))
+            except Exception:
+                n_patches = 1
+        return SEG_TICKS_PER_PATCH * n_patches
 
     def _tick(self, n=1):
         """Advance progress by ``n`` per-image ticks and notify the callback."""
@@ -211,26 +243,29 @@ class BatchCabana:
             for i, img_path in enumerate(img_paths):
                 setattr(self.seg_args, 'input', img_path)
                 setattr(self.seg_args, 'roi_mask_path', self._roi_mask_path(img_path))
+                self._status(f"Segmenting {os.path.basename(img_path)} ({i + 1}/{len(img_paths)})")
                 # Sub-image progress: emit a fractional position inside the
-                # current image's tick window so the bar advances during the
-                # CNN max_iter loop (the slowest stage). The permanent
-                # per-image bump happens once via _tick() below.
+                # current image's tick window (weighted by its patch count, see
+                # _seg_weight) so the bar advances during the CNN max_iter loop,
+                # the slowest stage. The permanent bump happens via _tick() below.
                 base_done = self._progress_done
+                weight = self._seg_weight(img_path)
 
-                def _seg_iter_cb(it, max_iter, _base=base_done):
+                def _seg_iter_cb(it, max_iter, _base=base_done, _w=weight):
                     if not self.progress_callback or self._progress_total <= 0:
                         return
                     frac_in_image = min(1.0, (it + 1) / max(1, max_iter))
-                    done = _base + frac_in_image
+                    done = _base + _w * frac_in_image
                     self.progress_callback(min(1.0, done / self._progress_total))
 
                 segment_single_image(self.seg_args, iter_callback=_seg_iter_cb)
-                self._tick()
+                self._tick(weight)
 
         else:
             Log.logger.info("No segmentation is applied prior to image analysis.")
             for i, img_path in enumerate(img_paths):
                 setattr(self.seg_args, 'input', img_path)
+                self._status(f"Preparing {os.path.basename(img_path)} ({i + 1}/{len(img_paths)})")
                 img = cv2.imread(self.seg_args.input)
                 img_name = os.path.splitext(os.path.basename(self.seg_args.input))[0]
                 # The external ROI mask (if any) is the analysis region even
@@ -259,6 +294,7 @@ class BatchCabana:
         for img_path in tqdm(img_paths, bar_format=read_bar_format):
             ori_img_name = os.path.basename(img_path)
             name_wo_ext = os.path.splitext(ori_img_name)[0]
+            self._status(f"Detecting fibres: {ori_img_name}")
             detect_one_image(det, img_path,
                              mask_dir=self.mask_dir,
                              export_subdir=join_path(self.export_dir, name_wo_ext),
@@ -275,6 +311,7 @@ class BatchCabana:
         rows = []
         for img_path in tqdm(img_paths, bar_format=read_bar_format):
             ori_img_name = os.path.basename(img_path)
+            self._status(f"Analysing orientation: {ori_img_name}")
             name_wo_ext = os.path.splitext(ori_img_name)[0]   # e.g. 'foo_roi'
             stem = name_wo_ext[:-4]                            # strip '_roi' -> 'foo'
             metrics, _ = analyze_one_orientation(
@@ -306,6 +343,7 @@ class BatchCabana:
         for img_path in tqdm(img_paths, bar_format=read_bar_format):
             skel_analyzer.reset()
             ori_img_name = os.path.basename(img_path)
+            self._status(f"Quantifying skeleton: {ori_img_name}")
             stem = os.path.splitext(ori_img_name)[0]
             metrics, _, _, _ = quantify_one_skeleton(
                 skel_analyzer, mask_path=img_path,
@@ -324,6 +362,7 @@ class BatchCabana:
         n_elig = len(glob(join_path(self.eligible_dir, '*.png')))
         Log.logger.info(f"Quantifying High Density Matrix (HDM) areas for "
                         f"{n_elig} images.")
+        self._status(f"Quantifying HDM areas ({n_elig} images)")
         self.df_stats = run_hdm(self.args, self.eligible_dir, self.hdm_dir, ext=".png",
                                 mask_dir=self.roimask_dir)
         # HDM loops internally; emit a coarse tick batch covering the whole stage.
@@ -343,6 +382,7 @@ class BatchCabana:
         img_paths.sort()
         for img_path in img_paths:
             img_name = os.path.basename(img_path)
+            self._status(f"Drawing fibres: {img_name}")
             mask_path = join_path(self.mask_dir, os.path.splitext(img_name)[0] + '_roi.png')
             img = cv2.imread(img_path)
             mask = cv2.imread(mask_path)
@@ -359,6 +399,7 @@ class BatchCabana:
             Log.logger.info('Calculating fibre areas for {} images.'.format(len(img_paths)))
             for img_path in img_paths:
                 base = os.path.basename(img_path)
+                self._status(f"Measuring fibre areas: {base}")
                 stem = base[:-9]                  # strip '_mask.png'
                 roi_name = stem + '_roi.png'
                 roi_stem = roi_name[:-4]
@@ -395,6 +436,7 @@ class BatchCabana:
             means_radius, stds_radius, pct5_radius, medians_radius, pct95_radius = [], [], [], [], []
             for img_path in img_paths:
                 img_name = os.path.basename(img_path)
+                self._status(f"Gap analysis: {img_name}")
                 min_gap_radius = min_gap_diameter / 2
                 min_dist = int(np.max([1, min_gap_radius]))
                 img = cv2.imread(img_path, 0)
@@ -510,6 +552,7 @@ class BatchCabana:
         Log.logger.info('Performing intra gap analysis for {} images'.format(len(img_paths)))
         for img_path in img_paths:
             base_name = os.path.basename(img_path)[:-9]
+            self._status(f"Intra-fibre gap analysis: {base_name}")
             csv_file_path = join_path(gap_result_dir, 'IndividualGaps_' + base_name + '_roi.csv')
             if not os.path.exists(csv_file_path):
                 self._tick()
@@ -905,6 +948,7 @@ class BatchCabana:
         Log.logger.info(f'Generating color maps for {len(ori_img_paths)} images.')
         for ori_img_path in tqdm(ori_img_paths, bar_format=read_bar_format):
             ori_img_name = os.path.basename(ori_img_path)
+            self._status(f"Colour maps: {ori_img_name}")
             name_wo_ext = ori_img_name[:ori_img_name.rindex('.')] + "_roi"
 
             # Create a sub-folder for better readability
@@ -1028,8 +1072,12 @@ class BatchCabana:
         ticks = 0
         if n_eligible == 0:
             return 1
-        # generate_rois iterates all input images of this batch
-        ticks += n_input
+        # generate_rois iterates all input images of this batch; with
+        # segmentation on, each image is weighted by its CNN cost (patches).
+        if self.args["Configs"].get("Segmentation") and getattr(self, 'input_folder', None):
+            ticks += sum(self._seg_weight(p) for p in get_img_paths(self.input_folder))
+        else:
+            ticks += n_input
         if self.args["Configs"]["Quantification"]:
             ticks += n_eligible          # quantify_hdm (coarse)
             ticks += n_eligible          # detect_fibres
@@ -1113,6 +1161,7 @@ class BatchProcessor():
         self.input_folder = input_folder
         self.output_folder = output_folder
         self.progress_callback = None  # Add a callback for progress updates
+        self.status_callback = None    # Optional callable(str): current batch/stage/image
         self.cancel_check = None       # Optional callable: returns True to request cancel
         self._last_progress = 0  # Monotonicity guard for update_progress
 
@@ -1297,10 +1346,15 @@ class BatchProcessor():
                 self.update_progress(process_span_start + global_frac * process_span)
 
             # Process batch with BatchCabana
+            def on_batch_status(msg, _b=batch_idx + 1, _n=end_batch_idx):
+                if self.status_callback:
+                    self.status_callback(f"Batch {_b}/{_n}: {msg}")
+
             batch_cabana = BatchCabana(self.param_file, self.input_folder,
                                   batch_folder, self.batch_size, batch_idx, self.ignore_large,
                                   progress_callback=on_batch_progress,
-                                  mask_dir=getattr(self, 'mask_dir', None))
+                                  mask_dir=getattr(self, 'mask_dir', None),
+                                  status_callback=on_batch_status)
             batch_cabana.run()
 
             # Update checkpoint file with completed batch
@@ -1367,6 +1421,8 @@ class BatchProcessor():
                 src_folder = join_path(batch_folder, sub_folder)
                 dst_folder = join_path(self.output_folder, sub_folder)
                 img_paths = glob(join_path(src_folder, '*.tif')) \
+        if self.status_callback:
+            self.status_callback("Combining batch results")
                             + glob(join_path(src_folder, '*.png')) \
                             + glob(join_path(src_folder, '*.jpg'))
                 img_paths.sort()

@@ -122,6 +122,13 @@ class MainWindow(QMainWindow):
         # Add a spacer to push content to the top
         self.dock_inner_layout.addStretch()
 
+        # Progress status (which batch / stage / image), shown during Batch Run
+        self.progress_label = QLabel("")
+        self.progress_label.setWordWrap(True)
+        self.progress_label.setStyleSheet(self.value_label_style)
+        self.progress_label.setVisible(False)
+        self.dock_inner_layout.addWidget(self.progress_label)
+
         # Add progress bar
         self.progress_bar = PercentageProgressBar()
         self.progress_bar.setRange(0, 100)
@@ -316,13 +323,6 @@ class MainWindow(QMainWindow):
         issue_action.triggered.connect(
             lambda: QDesktopServices.openUrl(QUrl("https://github.com/lxfhfut/Cabana/issues")))
         about_menu.addAction(issue_action)
-
-        # Aliases used by existing enable/disable logic
-        self.load_btn = self.load_action
-        self.reload_btn = self.reload_action
-        self.load_params_btn = self.import_params_action
-        self.export_btn = self.export_params_action
-
         about_menu.addSeparator()
         version_action = QAction("&Version", self)
         version_action.setMenuRole(QAction.NoRole)
@@ -332,6 +332,13 @@ class MainWindow(QMainWindow):
         license_action.setMenuRole(QAction.NoRole)
         license_action.triggered.connect(self._show_license_dialog)
         about_menu.addAction(license_action)
+
+        # Aliases used by existing enable/disable logic
+        self.load_btn = self.load_action
+        self.reload_btn = self.reload_action
+        self.load_params_btn = self.import_params_action
+        self.export_btn = self.export_params_action
+
     def show_page(self, index):
         """Show side-panel page ``index`` (0 = Start) and sync the Analysis menu."""
         self.pages.setCurrentIndex(index)
@@ -1435,6 +1442,9 @@ class MainWindow(QMainWindow):
 
         # Connect signals
         self.batch_worker.progress_updated.connect(lambda value: self.progress_bar.setValue(value))
+        self.batch_worker.status_updated.connect(self.progress_label.setText)
+        self.progress_label.setText("Starting batch processing…")
+        self.progress_label.setVisible(True)
         self.batch_worker.batch_complete.connect(self.handle_batch_complete)
         self.batch_worker.batch_cancelled.connect(self.handle_batch_cancelled)
 
@@ -2339,6 +2349,8 @@ class MainWindow(QMainWindow):
 
     def hide_progress_bar(self):
         self.progress_bar.setVisible(False)
+        self.progress_label.setVisible(False)
+        self.progress_label.setText("")
 
     def run_detection(self):
         if self.ori_img is None and self.seg_img is None:
@@ -2594,6 +2606,41 @@ class MainWindow(QMainWindow):
         )
         dlg.exec_()
 
+    @staticmethod
+    def _license_text() -> str:
+        """Return the MIT license text: the repository LICENSE when running from
+        source, else the copy bundled in the installed package metadata."""
+        repo_license = Path(__file__).resolve().parent.parent / "LICENSE"
+        if repo_license.is_file():
+            return repo_license.read_text(encoding="utf-8")
+        try:
+            from importlib.metadata import distribution
+            dist = distribution("cabana")
+            for name in ("LICENSE", "licenses/LICENSE"):
+                text = dist.read_text(name)
+                if text:
+                    return text
+        except Exception:
+            pass
+        return ("Cabana is released under the MIT License.\n\n"
+                "https://github.com/lxfhfut/Cabana/blob/main/LICENSE")
+
+    def _show_license_dialog(self) -> None:
+        """Show the license text in a read-only dialog."""
+        text_color = color_to_stylesheet(COLORS['text'])
+        bg_color = color_to_stylesheet(COLORS['surface'])
+        dlg = QMessageBox(self)
+        dlg.setWindowTitle("License")
+        dlg.setIcon(QMessageBox.NoIcon)
+        dlg.setTextFormat(Qt.PlainText)
+        dlg.setText(self._license_text())
+        dlg.setStyleSheet(
+            f"QMessageBox {{ background-color: {bg_color}; }}"
+            f"QLabel {{ color: {text_color}; font-family: monospace; }}"
+            f"QPushButton {{ min-width: 60px; }}"
+        )
+        dlg.exec_()
+
     def _on_theme_changed(self, theme_name: str) -> None:
         """Handle theme selection from combo box."""
         if theme_name == self._current_theme:
@@ -2630,41 +2677,6 @@ class MainWindow(QMainWindow):
         self.progress_bar.setStyleSheet(self.progressbar_style)
 
         # Spinboxes
-    @staticmethod
-    def _license_text() -> str:
-        """Return the MIT license text: the repository LICENSE when running from
-        source, else the copy bundled in the installed package metadata."""
-        repo_license = Path(__file__).resolve().parent.parent / "LICENSE"
-        if repo_license.is_file():
-            return repo_license.read_text(encoding="utf-8")
-        try:
-            from importlib.metadata import distribution
-            dist = distribution("cabana")
-            for name in ("LICENSE", "licenses/LICENSE"):
-                text = dist.read_text(name)
-                if text:
-                    return text
-        except Exception:
-            pass
-        return ("Cabana is released under the MIT License.\n\n"
-                "https://github.com/lxfhfut/Cabana/blob/main/LICENSE")
-
-    def _show_license_dialog(self) -> None:
-        """Show the license text in a read-only dialog."""
-        text_color = color_to_stylesheet(COLORS['text'])
-        bg_color = color_to_stylesheet(COLORS['surface'])
-        dlg = QMessageBox(self)
-        dlg.setWindowTitle("License")
-        dlg.setIcon(QMessageBox.NoIcon)
-        dlg.setTextFormat(Qt.PlainText)
-        dlg.setText(self._license_text())
-        dlg.setStyleSheet(
-            f"QMessageBox {{ background-color: {bg_color}; }}"
-            f"QLabel {{ color: {text_color}; font-family: monospace; }}"
-            f"QPushButton {{ min-width: 60px; }}"
-        )
-        dlg.exec_()
-
         for spin in (self.batch_size_spinner, self.patch_size_spinner, self.tma_pixel_size_spin,
                      self.tma_core_diameter_spin, self.tma_margin_spin, self.tma_erode_spin,
                      self.tma_sat_spin, self.tma_offset_spin, self.tma_dmin_spin, self.tma_dmax_spin,
@@ -2686,6 +2698,7 @@ class MainWindow(QMainWindow):
                      self.mask_folder_path, self.tma_slide_path, self.tma_output_path):
             edit.setStyleSheet(self.path_edit_style)
         self.tma_status_label.setStyleSheet(self.value_label_style)
+        self.progress_label.setStyleSheet(self.value_label_style)
 
         # Value labels (slider readouts)
         for label in (self.color_thresh_value, self.num_labels_value, self.max_iters_value,

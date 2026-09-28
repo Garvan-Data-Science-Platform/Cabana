@@ -167,6 +167,50 @@ def test_estimate_progress_total_no_gap_analysis():
     assert total == 40
 
 
+def test_estimate_progress_total_weights_segmentation_by_patches(tmp_path):
+    import numpy as np, cv2, types
+    from cabana.batch import SEG_TICKS_PER_PATCH
+    bc = _make_batch_cabana(None)
+    bc.args = {"Configs": {"Segmentation": True, "Quantification": False, "Gap Analysis": False}}
+    cv2.imwrite(str(tmp_path / "small.png"), np.zeros((300, 300, 3), np.uint8))
+    cv2.imwrite(str(tmp_path / "big.png"), np.zeros((2000, 1200, 3), np.uint8))
+    bc.input_folder = str(tmp_path)
+    # patch-wise segmentation off: one CNN run per image
+    bc.seg_args = types.SimpleNamespace(patch_size=0)
+    assert bc._estimate_progress_total(n_eligible=2, n_input=2) == 2 * SEG_TICKS_PER_PATCH
+    # 1024-px patches with 1/8 overlap: the small image fits in one patch, the
+    # big one needs 3 x 2 windows
+    bc.seg_args = types.SimpleNamespace(patch_size=1024, patch_overlap=0.125)
+    assert bc._seg_weight(str(tmp_path / "small.png")) == SEG_TICKS_PER_PATCH
+    assert bc._seg_weight(str(tmp_path / "big.png")) == 6 * SEG_TICKS_PER_PATCH
+    assert bc._estimate_progress_total(n_eligible=2, n_input=2) == 7 * SEG_TICKS_PER_PATCH
+
+
+def test_status_callback_receives_batch_prefix(tmp_path, monkeypatch):
+    import numpy as np, cv2
+    input_dir = tmp_path / "in"; input_dir.mkdir()
+    for i in range(2):
+        cv2.imwrite(str(input_dir / f"img_{i}.png"), np.ones((4, 4, 3), np.uint8) * 200)
+    out_dir = tmp_path / "out"; out_dir.mkdir()
+    param_file = tmp_path / "params.yml"
+    proj_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    shutil.copy(os.path.join(proj_root, "cabana", "default_params.yml"), str(param_file))
+    import cabana.batch as batch_mod
+
+    class _Chatty(_FakeBatchCabana):
+        def run(self):
+            self.status_callback("Segmenting img_0.png (1/2)")
+            super().run()
+
+    monkeypatch.setattr(batch_mod, "BatchCabana", _Chatty)
+    bp = BatchProcessor(str(param_file), str(input_dir), str(out_dir),
+                        batch_size=2, batch_num=0, resume=False, ignore_large=True)
+    messages = []
+    bp.status_callback = messages.append
+    bp.process()
+    assert messages[0] == "Batch 1/1: Segmenting img_0.png (1/2)"
+
+
 def test_estimate_progress_total_no_eligible_returns_one():
     bc = _make_batch_cabana(None)
     bc.args = {"Configs": {"Quantification": True, "Gap Analysis": True}}
@@ -184,8 +228,10 @@ class _FakeBatchCabana:
     instances = []
 
     def __init__(self, param_file, input_folder, batch_folder, batch_size,
-                 batch_idx, ignore_large, progress_callback=None, mask_dir=None):
+                 batch_idx, ignore_large, progress_callback=None, mask_dir=None,
+                 status_callback=None):
         self.batch_idx = batch_idx
+        self.status_callback = status_callback
         self.progress_callback = progress_callback
         type(self).instances.append(self)
 

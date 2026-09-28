@@ -501,6 +501,7 @@ class BatchProcessingWorker(QThread):
     def __init__(self, param_file, input_folder, output_folder, batch_size=5,
                  batch_num=0, resume=False, ignore_large=False,
                  generate_stats=False, generate_scores=False, mask_dir=None):
+    status_updated = pyqtSignal(str)
         super().__init__()
         self.mask_dir = mask_dir
         self.param_file = param_file
@@ -533,6 +534,7 @@ class BatchProcessingWorker(QThread):
             self.batch_cancelled.emit()
         else:
             self.progress_updated.emit(100)
+        batch_processor.status_callback = self.status_updated.emit
             self.batch_complete.emit()
 
     def update_progress(self, value):

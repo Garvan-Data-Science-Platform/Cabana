@@ -290,15 +290,15 @@ class TestPreprocessor:
         pats = sorted(os.listdir(out / "BF" / "Patients" / "Images"))
         assert ctrl == sorted(os.listdir(out / "BF" / "Controls" / "Masks"))
         assert pats == sorted(os.listdir(out / "BF" / "Patients" / "Masks"))
-        assert ctrl and all(any(t in n for t in ("_Liver_", "_Muscle_", "_Brain_", "_Placenta_",
-                                                 "_Salivary-gland_", "_Lung_")) for n in ctrl)
-        assert all(n.split("_")[2].isdigit() for n in pats)          # patient IDs only
+        assert ctrl and all(n.split(".vsi")[0] in ("Liver", "Muscle", "Brain", "Placenta",
+                                                    "Salivary-gland", "Lung") for n in ctrl)
+        assert all(n.split(".vsi")[0].isdigit() for n in pats)          # patient IDs only
         imgs = sorted(pats + ctrl)
         masks = imgs
         assert len(imgs) == occ.sum()
-        assert all(n.startswith("TMA1_") and n.endswith("_BF.png") for n in imgs)
+        assert all(" - TMA1_BF_" in n and n.endswith(".png") for n in imgs)
         assert len(set(imgs)) == len(imgs)                     # unique names
-        assert any("_Liver_" in n or "_Muscle_" in n or "_Brain_" in n for n in imgs)
+        assert any(n.startswith(("Liver.vsi", "Muscle.vsi", "Brain.vsi")) for n in imgs)
         assert progress[-1] == (len(imgs), len(imgs))
         # mask is a centred disc with black corners; image is square and same size
         m = cv2.imread(str(out / "BF" / "Patients" / "Masks" / pats[0]), 0)
@@ -326,7 +326,8 @@ class TestPreprocessor:
                               core_diameter_um=CORE_UM, fit_pixel_size_um=PX_UM)
         pre.run(str(tmp_path / "out"))
         names = sorted(os.listdir(tmp_path / "out" / "BF" / "Unmapped" / "Images"))
-        assert names == sorted(f"slideX_r{r}c{c}_unknown_BF.png" for r in (1, 2) for c in (1, 2, 3))
+        assert names == sorted(f"slideX-r{r}c{c}.vsi - slideX_BF_r{r}c{c}Annotation (Unmapped)_1.png"
+                               for r in (1, 2) for c in (1, 2, 3))
 
     def test_debris_outside_map_is_not_exported(self, tmp_path):
         from cabana.tma import _transform_grid
@@ -519,7 +520,7 @@ class TestChannelFolders:
             imgs = sorted(os.listdir(out / ch / "Unmapped" / "Images"))
             masks = sorted(os.listdir(out / ch / "Unmapped" / "Masks"))
             assert len(imgs) == 4 and imgs == masks
-            assert all(n.endswith(f"_{ch}.png") for n in imgs)
+            assert all(f"_{ch}_" in n for n in imgs)
         assert TMAPreprocessor.channel_dirs(str(out), "POL", "Controls") == (
             str(out / "POL" / "Controls" / "Images"), str(out / "POL" / "Controls" / "Masks"))
 

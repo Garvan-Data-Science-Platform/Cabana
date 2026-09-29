@@ -4,10 +4,10 @@ Fits a circle to every core on a whole-slide scan, snaps the circles to the
 array grid, matches the grid to the printed ICGC/APGI array map, and exports
 one image and one binary mask per core and channel:
 
-    <out>/BF/Patients/Images/TMA1_A3_8010718_1734_BF.png
-    <out>/BF/Patients/Masks/TMA1_A3_8010718_1734_BF.png
-    <out>/BF/Controls/Images/TMA1_A1_Liver_BF.png
-    <out>/POL/Patients/Images/TMA1_A3_8010718_1734_POL.png
+    <out>/BF/Patients/Images/8010718.vsi - TMA1_BF_A3Annotation (Tumour)_1.png
+    <out>/BF/Patients/Masks/8010718.vsi - TMA1_BF_A3Annotation (Tumour)_1.png
+    <out>/BF/Controls/Images/Liver.vsi - TMA1_BF_A1Annotation (Liver)_1.png
+    <out>/POL/Patients/Images/8010718.vsi - TMA1_POL_A3Annotation (Tumour)_1.png
     ...
     <out>/cores.csv
     <out>/overlay.png
@@ -840,10 +840,16 @@ class TMAPreprocessor:
         return self.array_map().get((core.map_row, core.map_col))
 
     def core_stem(self, core, channel=None):
+        """Filename stem of ``core`` (see :func:`tma_maps.core_stem`); the
+        replicate number counts the slide's cores of the same patient or
+        control tissue in row-major order, filters notwithstanding."""
         info = self.core_info(core)
-        if info is not None:
-            return core_stem(self.slide_name, core.map_row, core.map_col, info, channel)
-        return core_stem(self.slide_name, core.row, core.col, None, channel)
+        if info is None:
+            return core_stem(self.slide_name, core.row, core.col, None, channel)
+        same = [c for c in self.cores
+                if (i := self.core_info(c)) is not None and i.identity() == info.identity()]
+        replicate = 1 + sorted(same, key=lambda c: (c.row, c.col)).index(core)
+        return core_stem(self.slide_name, core.map_row, core.map_col, info, channel, replicate)
 
     # -- stage 3: export ----------------------------------------------------
     def export(self, out_dir, channels=None, progress=None, cancel=None):

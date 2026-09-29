@@ -334,3 +334,30 @@ class TestCsvDecimalFormatting:
         generate_mean_std_sem(self._make_df(), output_path=out)
         df_back = pd.read_csv(out)
         assert df_back['Patient'].iloc[0] == 'K1'
+
+
+class TestTMACoreNames:
+    """Stems written by the TMA export follow the slide-export pattern."""
+
+    def test_patient_core(self):
+        r = parse_image_name("8010718.vsi - TMA1_BF_A3Annotation (Tumour)_2_roi.png")
+        assert (r["patient_id"], r["image_type"], r["tissue_type"], r["roi_number"]) == ("8010718", "BF", "Tumour", "2")
+
+    def test_sanitised_by_batch_pipeline(self):
+        r = parse_image_name("8010718.vsi_-_TMA1_POL_A3Annotation_(PNET)_1_roi.png")
+        assert (r["patient_id"], r["image_type"], r["tissue_type"]) == ("8010718", "POL", "PNET")
+
+    def test_control_and_unmapped(self):
+        assert parse_image_name("Liver.vsi - TMA1_BF_A1Annotation (Liver)_1_roi.png")["patient_id"] == "Liver"
+        assert parse_image_name("TMA1-r2c5.vsi - TMA1_BF_r2c5Annotation (Unmapped)_1_roi.png")["patient_id"] == "TMA1-r2c5"
+
+    def test_replicates_aggregate_per_patient(self):
+        import pandas as pd
+        df = pd.DataFrame({
+            "Image": [f"8010718.vsi - TMA1_BF_{p}Annotation (Tumour)_{i}_roi.png" for i, p in enumerate(("A3", "E3", "I3"), 1)]
+                     + ["8010720.vsi - TMA1_BF_A4Annotation (Tumour)_1_roi.png"],
+            "Total Length (µm)": [10.0, 12.0, 14.0, 5.0],
+        })
+        agg = generate_mean_std_sem(df)
+        assert sorted(agg["Patient"]) == ["8010718", "8010720"]
+        assert agg.set_index("Patient").loc["8010718", "Total Length (µm) MEAN"] == 12.0

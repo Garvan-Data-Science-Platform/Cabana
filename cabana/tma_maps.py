@@ -113,17 +113,36 @@ def occupancy_grid(array_number):
     return grid
 
 
-def core_stem(slide, row_index, col_index, info=None, channel=None):
+PATIENT_CLASS = "Tumour"    # annotation class written for patient cores without a map note
+
+
+def core_stem(slide, row_index, col_index, info=None, channel=None, replicate=1):
     """Build the output filename stem for one core.
 
-    ``TMA1_A3_8010718_1734_BF`` for patient cores, ``TMA1_A1_Liver_BF`` for
-    controls and ``TMA1_r2c5_unknown_BF`` when no map entry is available.
+    The stem follows the naming of the QuPath slide exports Cabana was built
+    around, ``<patient>.vsi - <description>Annotation (<class>)_<n>``, so the
+    per-patient statistics (:func:`cabana.scores.parse_image_name`) read the
+    patient ID from the prefix, the channel from ``_BF_``/``_POL_``, the class
+    from the last bracket and the replicate number from the trailing ``_<n>``:
+
+        8010718.vsi - TMA1_BF_A3Annotation (Tumour)_1      patient core
+        Liver.vsi - TMA1_BF_A1Annotation (Liver)_1          control core
+        TMA1-r2c5.vsi - TMA1_BF_r2c5Annotation (Unmapped)_1 no map entry
+
+    ``replicate`` numbers the cores of one patient (or control tissue) on the
+    slide. The class is the map note (e.g. PNET) when present, else
+    :data:`PATIENT_CLASS`.
     """
     slide = sanitize_token(str(slide))
+    ch = f"{sanitize_token(channel)}_" if channel else ""
     if info is None or info.empty:
-        stem = f"{slide}_r{row_index + 1}c{col_index + 1}_unknown"
+        position = f"r{row_index + 1}c{col_index + 1}"
+        subject, klass = f"{slide}-{position}", "Unmapped"
+    elif info.patient_id:
+        position = info.position
+        subject = sanitize_token(info.patient_id)
+        klass = sanitize_token(info.note) if info.note else PATIENT_CLASS
     else:
-        stem = f"{slide}_{info.position}_{info.identity()}"
-    if channel:
-        stem += f"_{sanitize_token(channel)}"
-    return stem
+        position = info.position
+        subject = klass = sanitize_token(info.tissue)
+    return f"{subject}.vsi - {slide}_{ch}{position}Annotation ({klass})_{replicate}"

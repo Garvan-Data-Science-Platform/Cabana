@@ -64,19 +64,20 @@ class TestNaming:
 
     def test_patient_core_stem(self):
         info = load_array_map(1)[(0, 3)]
-        assert core_stem("TMA1", 0, 3, info, "BF") == "TMA1_A4_8010718_1734_BF"
+        assert core_stem("TMA1", 0, 3, info, "BF") == "8010718.vsi - TMA1_BF_A4Annotation (Tumour)_1"
+        assert core_stem("TMA1", 0, 3, info, "POL", replicate=3) == "8010718.vsi - TMA1_POL_A4Annotation (Tumour)_3"
 
     def test_control_core_stem(self):
         info = load_array_map(1)[(0, 0)]
-        assert core_stem("TMA1", 0, 0, info, "POL") == "TMA1_A1_Liver_POL"
+        assert core_stem("TMA1", 0, 0, info, "POL") == "Liver.vsi - TMA1_POL_A1Annotation (Liver)_1"
 
     def test_unmapped_core_stem(self):
-        assert core_stem("TMA1", 1, 4, None, "BF") == "TMA1_r2c5_unknown_BF"
-        assert core_stem("TMA1", 1, 4, None) == "TMA1_r2c5_unknown"
+        assert core_stem("TMA1", 1, 4, None, "BF") == "TMA1-r2c5.vsi - TMA1_BF_r2c5Annotation (Unmapped)_1"
+        assert core_stem("TMA1", 1, 4, None) == "TMA1-r2c5.vsi - TMA1_r2c5Annotation (Unmapped)_1"
 
     def test_slide_name_is_sanitized(self):
         info = load_array_map(3)[(0, 1)]
-        assert core_stem("APGI TMA 3 PicRed", 0, 1, info, "BF").startswith("APGI-TMA-3-PicRed_A2_")
+        assert " - APGI-TMA-3-PicRed_BF_A2Annotation" in core_stem("APGI TMA 3 PicRed", 0, 1, info, "BF")
 
     def test_coreinfo_properties(self):
         info = CoreInfo(1, 1, "B3", "B", 3, "8012191", "2113", "", "", False)

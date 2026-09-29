@@ -5,14 +5,14 @@ If you use Cabana in your research, please cite the software and its components 
 ## Cabana Citation
 
 ```
-Lin, X., Kallady, T., & Magenau, A. (2023). Cabana: ColAgen FiBre ANAlyzer.
+Lin, X., & Magenau, A. (2023). Cabana: ColAgen FiBre ANAlyzer.
 Garvan Institute of Medical Research. https://github.com/Garvan-Data-Science-Platform/Cabana
 ```
 
 BibTeX format:
 ```bibtex
 @software{lin_cabana_2023,
-  author = {Lin, Xufeng and Kallady, Tim and Magenau, Astrid},
+  author = {Lin, Xufeng and Magenau, Astrid},
   title = {Cabana: {ColAgen} {FiBre} {ANAlyzer}},
   url = {https://github.com/Garvan-Data-Science-Platform/Cabana},
   year = {2023},
@@ -103,7 +103,7 @@ BibTeX format:
 
 When publishing results obtained using Cabana, it is also recommended to include the following acknowledgment in your publication:
 
-> "Image analysis was performed using Cabana (ColAgen FiBre ANAlyzer), developed at the Garvan Institute of Medical Research by Lin, Kallady, and Magenau."
+> "Image analysis was performed using Cabana (ColAgen FiBre ANAlyzer), developed at the Garvan Institute of Medical Research by Lin and Magenau."
 
 ## Funding and Support
 

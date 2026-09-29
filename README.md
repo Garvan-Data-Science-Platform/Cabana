@@ -1,6 +1,6 @@
 [//]: # (# CABANA - Collagen Fibre Analyzer)
 ![image](cabana.png)
-[![PyPI version](https://badge.fury.io/py/cabana.svg)](https://pypi.org/project/cabana/0.0.1/)
+[![PyPI version](https://badge.fury.io/py/cabana.svg)](https://pypi.org/project/cabana/)
 [![Documentation Status](https://readthedocs.org/projects/cabana/badge/?version=latest)](https://cabana.readthedocs.io/en/latest/?badge=latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -21,7 +21,8 @@ CABANA combines advanced computer vision algorithms with an intuitive user inter
 - **Processor (CPU):** Intel Core i7, AMD Ryzen 7, or higher recommended
 - **Memory (RAM):** Minimum 16 GB, 32 GB recommended
 - **GPU:** NVIDIA GeForce GTX/RTX series with at least 10 GB VRAM recommended
-- **Python:** 3.8 or newer
+- **Python:** 3.12
+- **Apple silicon:** the segmentation network runs on the Apple GPU (MPS) automatically
 
 
 ## Quick Installation
@@ -40,13 +41,19 @@ pip install git+https://github.com/lxfhfut/Cabana.git
 After installation, you can launch the CABANA GUI by running:
 
 ```bash
-python -m cabana
+python -m cabana        # or: cabana-gui
 ```
 
-Alternatively, you can import CABANA in your Python code for customized analysis (**see examples in Tutorials**):
+Tissue micro-array slides can also be cut into per-core images from the command line:
+
+```bash
+cabana-tma "APGI TMA 1 PicRed.vsi" out/TMA1 --array 1
+```
+
+Alternatively, you can import CABANA in your Python code for customized analysis (see the [Python API](https://cabana.readthedocs.io/en/latest/api.html) page):
 
 ```python
-import cabana
+from cabana import Cabana, BatchProcessor, TMAPreprocessor
 ```
 
 ## Documentation

@@ -12,6 +12,8 @@ Cabana combines several image processing techniques to detect, quantify, and ana
 4. **Skeleton Analysis**: Evaluates the topological properties of fiber networks
 5. **Gap Analysis**: Measures spaces between and within fiber structures
 
+For tissue micro-arrays, a preprocessing step reads the whole-slide scan, fits every core and exports per-core images and masks named by patient, ready for batch analysis.
+
 ## Key Features
 
 - Compatible with both IHC (Picrosirius Red) and fluorescence microscopy images
@@ -20,6 +22,8 @@ Cabana combines several image processing techniques to detect, quantify, and ana
 - Calculation of fiber thickness, length, and branching patterns
 - Gap analysis to quantify spaces within the fiber network
 - Comprehensive statistical outputs for quantitative analysis
+- Tissue micro-array preprocessing: native Olympus VSI reading, core fitting and per-core export named by patient
+- Optional ROI masks that confine every measurement to a region of interest
 - Available in both desktop and cloud-based versions
 
 ## Application Areas

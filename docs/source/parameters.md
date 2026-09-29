@@ -1,5 +1,36 @@
 # Parameter Details
 
+## Quick reference
+
+All parameters live in the YAML parameter file (`Parameters.yml`, exported from **Parameters > Export Parameters**). The "Set in" column says whether a control exists in the GUI; the others are edited in the file.
+
+| Section | Parameter | Default | Unit | Set in |
+|---|---|---|---|---|
+| Configs | Segmentation | true | on/off | Segmentation page toggle |
+| Configs | Quantification | true | on/off | file only |
+| Configs | Gap Analysis | true | on/off | Gap Analysis page toggle |
+| Segmentation | Number of Labels | 32 | count | slider |
+| Segmentation | Max Iterations | 30 | count | slider |
+| Segmentation | Normalized Hue Value | 0.96 | 0 to 1 | colour picker |
+| Segmentation | Color Threshold | 0.2 | 0 to 1 | slider |
+| Segmentation | Min Size | 64 | px | file only |
+| Segmentation | Max Size | 2048 | px (side) | file only |
+| Segmentation | Patch Size | 0 (off) | px | spinner |
+| Detection | Dark Line | true | on/off | checkbox |
+| Detection | Min Line Width / Max Line Width | 5 / 13 | px | range slider |
+| Detection | Line Width Step | 2 | px | slider |
+| Detection | Low Contrast / High Contrast | 100 / 200 | grey levels | range slider |
+| Detection | Extend Line | false | on/off | checkbox |
+| Detection | Minimum Line Length | 5 | px | slider |
+| Detection | Maximum Line Length | 0 (no limit) | px | file only |
+| Quantification | Maximum Display HDM | 230 | grey level | slider |
+| Quantification | Contrast Enhancement | 0.1 | fraction | file only |
+| Quantification | Minimum Branch Length | 5 | px | file only |
+| Quantification | Minimum / Maximum Curvature Window, Curvature Window Step | 10 / 30 / 10 | px | file only |
+| Gap Analysis | Minimum Gap Diameter | 20 | px | slider |
+
+The folders of a run (parameter file, input, output and the optional ROI mask folder) are chosen on the Batch Run page and are not part of the parameter file; the folders used are recorded in `version_params.yaml` in the output folder.
+
 ## Configurations
 
 The user can set the parameters in this section to enable (setting to `true`) or disable (setting to `false`) the components to be used in the `Configs` section.
@@ -48,7 +79,7 @@ When the boundaries between regions of interest (SHG signal or Picrosirius Red a
 
 ## Fibre Detection and Quantification
 
-This component is designed to detect and quantify fibre structures in images. The file Parameters.yml contains three dedicated sections for controlling the outcomes of collagen fibre analysis:
+This component is designed to detect and quantify fibre structures in images. The file Parameters.yml contains two dedicated sections for controlling the outcomes of collagen fibre analysis:
 
 1. **Detection**: Parameters for detecting fibres.
 2. **Quantification**: Parameters for quantifying fibres.
@@ -120,7 +151,7 @@ if the `Dark Line` is set to `true` (for Picrosirius Red), the low contrast and 
 
 4. **Maximum Display HDM**
 
-   Pixels not in [0, maxDisHDM] is set to 0 for estimating high-density matrix (HDM) area.
+   Pixels outside [0, Maximum Display HDM] are set to 0 before estimating the high-density matrix (HDM) area.
 
 ## Gap Analysis Parameters
 

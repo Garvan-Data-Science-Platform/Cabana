@@ -16,7 +16,9 @@ The segmentation network runs on the NVIDIA GPU when CUDA is available. On Apple
 
 3. Install Cabana by running `pip install -U cabana`. If the installation is successful, you can start Cabana GUI by running `python -m cabana`. The same install provides the `cabana-tma` command (also `python -m cabana tma`) for [TMA preprocessing](tma.md) without the GUI. Alternatively, you can import Cabana in your code for more customized analysis (see examples in <a href="_static/tutorial.ipynb" target="_blank" rel="noopener">tutorial.ipynb</a>).
 
-If you want to create a shortcut on Desktop, follow the steps below:
+The steps above are written for Windows. On macOS and Linux install miniconda for your platform, run the same `conda create` and `conda activate` commands in a terminal, then `pip install -U cabana`. The install also provides two console commands, `cabana-gui` (the GUI) and `cabana-tma` (TMA preprocessing without the GUI). On Apple silicon Macs the segmentation network runs on the Apple GPU automatically.
+
+If you want to create a shortcut on the Windows desktop, follow the steps below:
 
 1) Make sure that Git is installed. If not, download it from this link and install it. Verify the installation by running `git --version` in the command line. 
 

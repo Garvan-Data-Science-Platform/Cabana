@@ -30,6 +30,31 @@ step lives on the **TMA** page of the GUI and in the `cabana-tma` command.
 The three stages run independently: fitting can be repeated with new settings
 before exporting, and exporting can be repeated into a different folder.
 
+## The TMA page
+
+![TMA page after fitting APGI TMA 4](media/tma.png)
+
+1. **Open** the slide (`.vsi`, or a whole-slide TIFF/PNG, in which case enter the
+   pixel size). A preview appears in the viewer.
+2. **Array Map.** Choose the printed ICGC/APGI array (1 to 8) for patient IDs,
+   or *None* to name cores by grid position only. Leave **Orientation** on
+   *Auto* unless you need to force one (see [Orientation](#orientation)).
+3. **Fit settings.** *Core Ø* is the nominal core diameter and sets the scale
+   of every step; *Sensitivity* is the tissue threshold; *Recover faint* looks
+   for pale cores at empty grid positions.
+4. **Fit Cores** fits the circles and matches the map. The overlay shows every
+   core with its number and map position; the status line below the settings
+   summarises the fit and any warnings.
+5. **Filter.** Quality gates applied after fitting; they update the overlay
+   instantly without a refit (see [Quality filters](#quality-filters)).
+6. **Export settings.** *Margin* around each circle, *Mask Shrink*, and the
+   channels (BF, POL) to write.
+7. **Output Folder** for the export (defaults to `<slide>_cores` beside the
+   slide).
+8. **Export Cores** writes the images, masks, `cores.csv` and `overlay.png`.
+   When it finishes you are offered to point **Batch Run** at the exported
+   Patients folder of a channel.
+
 ## How core fitting works and how to tune it
 
 1. **Tissue mask.** On a level of about 4 µm/px, a pixel is tissue when its
@@ -109,13 +134,19 @@ CLI: `--max-grid-offset`, `--diameter-range MIN MAX`, `--min-stain`, and
 ## Output naming
 
 ```
-<slide>_<position>_<patientID>_<icgcID>_<channel>.png   e.g. TMA1_A3_8010718_1734_BF.png
-<slide>_<position>_<tissue>_<channel>.png               e.g. TMA1_A1_Liver_BF.png   (control cores)
-<slide>_r<row>c<col>_unknown_<channel>.png              (no array map selected or unmapped cell)
+<patientID>.vsi - <slide>_<channel>_<position>Annotation (<class>)_<n>.png   e.g. 8010718.vsi - TMA1_BF_A3Annotation (Tumour)_1.png
+<tissue>.vsi - <slide>_<channel>_<position>Annotation (<tissue>)_<n>.png      e.g. Liver.vsi - TMA1_BF_A1Annotation (Liver)_1.png   (control cores)
+<slide>-r<row>c<col>.vsi - <slide>_<channel>_r<row>c<col>Annotation (Unmapped)_1.png   (no array map selected or unmapped cell)
 ```
 
+The names follow the pattern of the QuPath slide exports Cabana was built
+around, so that the per-patient statistics and scores of a batch run identify
+the patient from the prefix before `.vsi`, the channel from `_BF_`/`_POL_`,
+the class from the last bracket and the replicate from the trailing number.
+`<class>` is the map note where one exists (for example PNET, MCN), otherwise
+`Tumour`; `<n>` numbers the patient's cores on the slide in row-major order.
 `position` is the flat map position (rows A to L, columns 1 to 8) after the
-printed sector offsets are resolved. `cores.csv` records the map label,
+printed sector offsets are resolved; the ICGC ID is in `cores.csv`. `cores.csv` records the map label,
 sector, patient ID, ICGC ID, tissue, circle centre and radius (level-0 pixels),
 tissue fill, QC metrics, flag, exclusion reason, export group (`Patients`,
 `Controls` or `Unmapped`), and the orientation used together with the rule

@@ -204,7 +204,9 @@ def _segment_color_distance(img_bgr, args, iter_callback, cnn_size, device):
 
 def _clean_mask(thresholded, min_size):
     thresholded = remove_small_holes(thresholded, max_size=min_size)
-    thresholded = remove_small_objects(thresholded, min_size)
+    # skimage >= 0.26: ``max_size`` removes objects of size <= max_size, so
+    # ``min_size - 1`` keeps the old "smaller than min_size" rule exactly.
+    thresholded = remove_small_objects(thresholded, max_size=max(0, int(min_size) - 1))
     return thresholded
 
 

@@ -2,9 +2,9 @@
 
 Once the Cabana GUI is launched, you will see a window split horizontally: the control panel on the left and the image viewer on the right. The program is designed to let you:
 
-1. experiment with parameters for different components using your data,
-2. export the optimised parameters for batch processing on larger datasets, and
-3. cut tissue micro-array (TMA) slides into per-core images and masks ready for batch processing (see [TMA preprocessing](tma.md)).
+1. cut tissue micro-array (TMA) slides into per-core images and masks ready for batch processing (optional, see [TMA preprocessing](tma.md)),
+2. experiment with parameters for different components using your data, and
+3. export the optimised parameters for batch processing on larger datasets.
 
 ![Start page](media/start.png)
 

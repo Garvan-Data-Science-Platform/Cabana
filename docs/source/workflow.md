@@ -67,6 +67,32 @@ Once the settings on the three pages are chosen, use **Parameters > Export Param
 
 If a run is cancelled or stops with an error, the completed batches and a checkpoint are kept. Start Batch Run again with the same output folder and accept the resume prompt to continue from the last finished batch.
 
+## Image naming for per-patient statistics
+
+**Stats** and **Scores** group the analysed images by patient, so Cabana has to read the patient from the image file name. Name your images as the QuPath export script does, and every field below is recovered automatically:
+
+```
+<patient>.vsi - <anything>_<BF|POL>_<anything>Annotation (<sample type>)_<ROI number>
+```
+
+| Field | Rule | Example value |
+|---|---|---|
+| Patient / sample ID | Everything before `.vsi` (or `.czi`). A leading `_` or space is ignored. | `K324` |
+| Image type | `BF` or `POL` between underscores or spaces anywhere in the name | `BF` |
+| Sample type | The content of the last bracket after `Annotation`. Shape brackets QuPath adds, such as `(Ellipse)`, are skipped. Spaces are kept. | `Stroma FNA` |
+| ROI number | The first number after the last closing bracket | `1` |
+
+Examples that all parse correctly:
+
+```
+K324.vsi - 20x_BF_01Annotation (Tumor)_1.tif
+K324.vsi - 20x_POL_01Annotation (Stroma FNA)_12.tif
+540.vsi - 20x_BF multi-band_01Annotation (Ellipse) (Tumor)_0.tif
+8010718.vsi - TMA4_BF_A3Annotation (Tumor)_2.png          (a core exported by the TMA page)
+```
+
+Cores exported by the TMA page already follow this pattern (see [Output naming](tma.md#output-naming)): the patient ID comes from the array map, the sample type is the map note or `Tumor`, and the ROI number counts the patient's cores on the slide. Images without `.vsi` in their name are grouped by the first word before a space or underscore, so `K324_BF_tumour_1.tif` still gives patient `K324`, image type `BF` and ROI number `1`, but no sample type, because there is no `Annotation (…)` part. The per-patient table lists the image type and sample type of each patient's first image, so keep BF and POL images in separate runs.
+
 ## Cabana Outputs
 
 Cabana generates an output folder containing the subfolders below. The figure shows the main per-image result images for the sample Picrosirius Red image.
@@ -152,6 +178,6 @@ xi. **QuantificationResults.csv**
 
    Contains all resultant image statistics, one row per analysed image or block. Please refer to [Read-outs](readouts.md) for a detailed explanation of every column.
 
-   With **Stats** ticked, `QuantificationResults_MEAN_STD_SEM.csv` adds the mean, standard deviation and standard error per patient over that patient's images. Patients are identified from the image name: the prefix before `.vsi`, which is how both QuPath slide exports (`K324.vsi - 20x_BF_01Annotation (Tumor)_1`) and the TMA core export (`8010718.vsi - TMA1_BF_A3Annotation (Tumour)_1`) name their files; otherwise the first token of the name is used. With **Scores** ticked, `QuantificationResults_SCORES.csv` adds the Rigidity and Bundling collagen risk scores computed from those per-patient means.
+   With **Stats** ticked, `QuantificationResults_MEAN_STD_SEM.csv` adds the mean, standard deviation and standard error per patient over that patient's images. Patients are identified from the image name: the prefix before `.vsi`, which is how both QuPath slide exports (`K324.vsi - 20x_BF_01Annotation (Tumor)_1`) and the TMA core export (`8010718.vsi - TMA1_BF_A3Annotation (Tumor)_1`) name their files; otherwise the first token of the name is used. With **Scores** ticked, `QuantificationResults_SCORES.csv` adds the Rigidity and Bundling collagen risk scores computed from those per-patient means.
 
    The output folder also contains `version_params.yaml` with all parameters used for the run, the Cabana version and git commit, the user and time, and the folders used (including the ROI mask folder), for tracking and reproducibility.

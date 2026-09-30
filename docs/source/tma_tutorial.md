@@ -43,8 +43,8 @@ APGI_TMA_4_PicRed_cores/
   cores.csv               one row per core: position, IDs, QC metrics, flag, group
   overlay.png             the annotated overlay
   BF/
-    Patients/  Images/    8010718.vsi - TMA4_BF_A3Annotation (Tumour)_1.png …
-               Masks/     8010718.vsi - TMA4_BF_A3Annotation (Tumour)_1.png … (white disc = analyse)
+    Patients/  Images/    8010718.vsi - TMA4_BF_A3Annotation (Tumor)_1.png …
+               Masks/     8010718.vsi - TMA4_BF_A3Annotation (Tumor)_1.png … (white disc = analyse)
     Controls/  Images/, Masks/   Liver.vsi - TMA4_BF_A1Annotation (Liver)_1.png …
     Unmapped/  Images/, Masks/   cores in cells the map does not have
   POL/  (same layout)

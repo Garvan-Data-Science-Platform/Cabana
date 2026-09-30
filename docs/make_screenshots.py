@@ -194,7 +194,7 @@ def main(argv):
         win.stats_cb.setChecked(True)
         win.scores_cb.setChecked(True)
         # the status line and bar as they look during a run
-        win.progress_label.setText("Batch 2/9: Segmenting 8010718.vsi - TMA4_BF_A3Annotation (Tumour)_1.png (3/5)")
+        win.progress_label.setText("Batch 2/9: Segmenting 8010718.vsi - TMA4_BF_A3Annotation (Tumor)_1.png (3/5)")
         win.progress_label.setVisible(True)
         win.progress_bar.setVisible(True)
         win.progress_bar.setValue(14)

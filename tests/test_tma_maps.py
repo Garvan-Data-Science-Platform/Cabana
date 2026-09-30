@@ -64,8 +64,8 @@ class TestNaming:
 
     def test_patient_core_stem(self):
         info = load_array_map(1)[(0, 3)]
-        assert core_stem("TMA1", 0, 3, info, "BF") == "8010718.vsi - TMA1_BF_A4Annotation (Tumour)_1"
-        assert core_stem("TMA1", 0, 3, info, "POL", replicate=3) == "8010718.vsi - TMA1_POL_A4Annotation (Tumour)_3"
+        assert core_stem("TMA1", 0, 3, info, "BF") == "8010718.vsi - TMA1_BF_A4Annotation (Tumor)_1"
+        assert core_stem("TMA1", 0, 3, info, "POL", replicate=3) == "8010718.vsi - TMA1_POL_A4Annotation (Tumor)_3"
 
     def test_control_core_stem(self):
         info = load_array_map(1)[(0, 0)]

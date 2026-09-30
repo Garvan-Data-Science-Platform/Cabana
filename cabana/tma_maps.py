@@ -113,7 +113,7 @@ def occupancy_grid(array_number):
     return grid
 
 
-PATIENT_CLASS = "Tumour"    # annotation class written for patient cores without a map note
+PATIENT_CLASS = "Tumor"    # annotation class written for patient cores without a map note
 
 
 def core_stem(slide, row_index, col_index, info=None, channel=None, replicate=1):
@@ -125,7 +125,7 @@ def core_stem(slide, row_index, col_index, info=None, channel=None, replicate=1)
     patient ID from the prefix, the channel from ``_BF_``/``_POL_``, the class
     from the last bracket and the replicate number from the trailing ``_<n>``:
 
-        8010718.vsi - TMA1_BF_A3Annotation (Tumour)_1      patient core
+        8010718.vsi - TMA1_BF_A3Annotation (Tumor)_1      patient core
         Liver.vsi - TMA1_BF_A1Annotation (Liver)_1          control core
         TMA1-r2c5.vsi - TMA1_BF_r2c5Annotation (Unmapped)_1 no map entry
 

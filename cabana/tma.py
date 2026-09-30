@@ -4,10 +4,10 @@ Fits a circle to every core on a whole-slide scan, snaps the circles to the
 array grid, matches the grid to the printed ICGC/APGI array map, and exports
 one image and one binary mask per core and channel:
 
-    <out>/BF/Patients/Images/8010718.vsi - TMA1_BF_A3Annotation (Tumour)_1.png
-    <out>/BF/Patients/Masks/8010718.vsi - TMA1_BF_A3Annotation (Tumour)_1.png
+    <out>/BF/Patients/Images/8010718.vsi - TMA1_BF_A3Annotation (Tumor)_1.png
+    <out>/BF/Patients/Masks/8010718.vsi - TMA1_BF_A3Annotation (Tumor)_1.png
     <out>/BF/Controls/Images/Liver.vsi - TMA1_BF_A1Annotation (Liver)_1.png
-    <out>/POL/Patients/Images/8010718.vsi - TMA1_POL_A3Annotation (Tumour)_1.png
+    <out>/POL/Patients/Images/8010718.vsi - TMA1_POL_A3Annotation (Tumor)_1.png
     ...
     <out>/cores.csv
     <out>/overlay.png

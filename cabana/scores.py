@@ -52,6 +52,10 @@ def parse_image_name(filename):
             token_match = re.match(r'^([^\s_]+)', filename)
             result['patient_id'] = token_match.group(1) if token_match else filename
 
+    # Export scripts sometimes prefix the name with '_' or a space; never let
+    # that leak into the patient ID.
+    result['patient_id'] = result['patient_id'].strip(' _-')
+
     # Extract image type (BF or POL)
     type_match = re.search(r'[_\s](BF|POL|XPL)[_\s]', filename, re.IGNORECASE)
     if type_match:

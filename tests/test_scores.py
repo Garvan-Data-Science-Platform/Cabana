@@ -336,12 +336,22 @@ class TestCsvDecimalFormatting:
         assert df_back['Patient'].iloc[0] == 'K1'
 
 
+class TestExportPrefixes:
+    def test_leading_underscore_from_export_script_is_dropped(self):
+        r = parse_image_name("_K324.vsi - 20x_BF_01Annotation (Tumor)_1.tif")
+        assert r["patient_id"] == "K324"
+
+    def test_extra_underscore_before_annotation(self):
+        r = parse_image_name("K324.vsi - 20x_BF_01_Annotation (Stroma FNA)_1.tif")
+        assert (r["patient_id"], r["image_type"], r["tissue_type"], r["roi_number"]) == ("K324", "BF", "Stroma FNA", "1")
+
+
 class TestTMACoreNames:
     """Stems written by the TMA export follow the slide-export pattern."""
 
     def test_patient_core(self):
-        r = parse_image_name("8010718.vsi - TMA1_BF_A3Annotation (Tumour)_2_roi.png")
-        assert (r["patient_id"], r["image_type"], r["tissue_type"], r["roi_number"]) == ("8010718", "BF", "Tumour", "2")
+        r = parse_image_name("8010718.vsi - TMA1_BF_A3Annotation (Tumor)_2_roi.png")
+        assert (r["patient_id"], r["image_type"], r["tissue_type"], r["roi_number"]) == ("8010718", "BF", "Tumor", "2")
 
     def test_sanitised_by_batch_pipeline(self):
         r = parse_image_name("8010718.vsi_-_TMA1_POL_A3Annotation_(PNET)_1_roi.png")
@@ -354,8 +364,8 @@ class TestTMACoreNames:
     def test_replicates_aggregate_per_patient(self):
         import pandas as pd
         df = pd.DataFrame({
-            "Image": [f"8010718.vsi - TMA1_BF_{p}Annotation (Tumour)_{i}_roi.png" for i, p in enumerate(("A3", "E3", "I3"), 1)]
-                     + ["8010720.vsi - TMA1_BF_A4Annotation (Tumour)_1_roi.png"],
+            "Image": [f"8010718.vsi - TMA1_BF_{p}Annotation (Tumor)_{i}_roi.png" for i, p in enumerate(("A3", "E3", "I3"), 1)]
+                     + ["8010720.vsi - TMA1_BF_A4Annotation (Tumor)_1_roi.png"],
             "Total Length (µm)": [10.0, 12.0, 14.0, 5.0],
         })
         agg = generate_mean_std_sem(df)

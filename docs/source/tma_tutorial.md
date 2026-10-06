@@ -21,16 +21,24 @@ described in detail on the [TMA preprocessing](tma.md) page.
    chose it, how many cores each filter removed, the median fitted diameter
    and any patient left without a core. Check the overlay: green circles are
    exported, purple were recovered at empty grid positions, grey with a cross
-   were excluded by the filters, plain grey lie outside the printed map.
-   - If the status says the orientation is **unresolved**, find a control
-     core (for example Brain, which is nearly unstained) on the overlay, work
-     out which orientation puts it in the right map position, choose it under
-     **Orientation** and click **Fit Cores** again. Export is disabled until
-     the orientation is resolved.
+   were excluded by the filters, plain grey lie outside the printed map, and
+   dashed circles mark map positions that hold no core. Each core is
+   labelled with its map position and number; control cores also show their
+   tissue, and hovering a core gives its patient ID and measurements.
+   - If the status says the orientation is **unresolved**, look at the
+     control cores (for example Brain, which is nearly unstained) and switch
+     **Orientation** until their names land on the right tissue; the labels
+     update instantly, no refit. Export is disabled until the orientation is
+     resolved.
    - If the median fitted diameter differs from **Core Ø** by more than 10 %
      the status line says so; set Core Ø to the reported value and refit.
    - Torn or partial cores fit a smaller circle; lower **Min Ø** (for example
      70 %) to keep them. Filter changes apply instantly without a refit.
+   - For the odd circle the fit got wrong, tick **Edit cores**: drag a circle
+     to move it, drag its rim to resize it, double-click it to include or
+     exclude it, double-click a dashed circle to add a core there. The core
+     takes the patient ID of the cell it lands in (see
+     [Editing cores by hand](tma.md#editing-cores-by-hand)).
 5. Check the **Output Folder** (defaults to `<slide>_cores` next to the slide),
    tick the **Channels** to export and click **Export Cores**. A 20x slide
    with 80 cores exports in one to two minutes. The dialog at the end offers
@@ -40,8 +48,9 @@ The export folder now looks like this:
 
 ```
 APGI_TMA_4_PicRed_cores/
-  cores.csv               one row per core: position, IDs, QC metrics, flag, group
+  cores.csv               one row per core and per map position without a core: position, IDs, QC metrics, flag, group
   overlay.png             the annotated overlay
+  cores_edits.json        the cores as exported; a later refit offers to reinstate hand edits from it
   BF/
     Patients/  Images/    8010718.vsi - TMA4_BF_A3Annotation (Tumor)_1.png …
                Masks/     8010718.vsi - TMA4_BF_A3Annotation (Tumor)_1.png … (white disc = analyse)

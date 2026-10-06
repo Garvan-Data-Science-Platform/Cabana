@@ -1,8 +1,8 @@
-# Tissue Micro-Array (TMA) Preprocessing
+# TMA Dearrayer
 
 Cabana can turn a whole-slide scan of a tissue micro-array into one image and
 one binary mask per core, named by patient, ready for batch analysis. The
-step lives on the **TMA** page of the GUI and in the `cabana-tma` command.
+step lives on the **TMA Dearrayer** page of the GUI and in the `cabana-tma` command.
 
 ## What it does
 
@@ -18,27 +18,34 @@ step lives on the **TMA** page of the GUI and in the `cabana-tma` command.
    bundled). A numbered overlay is shown: green circles will be exported,
    purple were recovered at empty grid positions (also exported), grey with a
    cross were excluded by the quality filters, and grey lie outside the printed
-   map; neither grey kind is exported.
+   map; neither grey kind is exported. Thin lines join cores in neighbouring
+   grid cells, dashed circles mark map positions that hold no core, and
+   control cores carry their tissue name so the orientation can be checked at
+   a glance; the lines reach the dashed circles too, so the lattice stays
+visible across gaps. Circles can be corrected by hand (see
+   [Editing cores by hand](#editing-cores-by-hand)).
 3. **Export cores**: for every core and selected channel a square crop is
    written to `<channel>/<group>/Images/` and a circular mask (white inside the
    fitted circle, shrunk by *Mask Shrink*, black in the corners) to
    `<channel>/<group>/Masks/`. Channels are `BF` and `POL`; groups are
    `Patients`, `Controls` (Liver, Brain, … from the map) and `Unmapped` (cores
    without a map entry, e.g. when no array map is chosen). A `cores.csv`
-   manifest and `overlay.png` are written alongside.
+   manifest, `overlay.png` and `cores_edits.json` (the cores as exported,
+   so hand edits can be reinstated later) are written alongside.
 
 The three stages run independently: fitting can be repeated with new settings
 before exporting, and exporting can be repeated into a different folder.
 
-## The TMA page
+## The TMA Dearrayer page
 
-![TMA page after fitting APGI TMA 4](media/tma.png)
+![TMA Dearrayer page after fitting APGI TMA 4](media/tma.png)
 
 1. **Open** the slide (`.vsi`, or a whole-slide TIFF/PNG, in which case enter the
    pixel size). A preview appears in the viewer.
 2. **Array Map.** Choose the printed ICGC/APGI array (1 to 8) for patient IDs,
    or *None* to name cores by grid position only. Leave **Orientation** on
    *Auto* unless you need to force one (see [Orientation](#orientation)).
+   Changing either after a fit relabels the cores instantly; no refit.
 3. **Fit settings.** *Core Ø* is the nominal core diameter and sets the scale
    of every step; *Sensitivity* is the tissue threshold; *Recover faint* looks
    for pale cores at empty grid positions.
@@ -47,13 +54,16 @@ before exporting, and exporting can be repeated into a different folder.
    summarises the fit and any warnings.
 5. **Filter.** Quality gates applied after fitting; they update the overlay
    instantly without a refit (see [Quality filters](#quality-filters)).
-6. **Export settings.** *Margin* around each circle, *Mask Shrink*, and the
+6. **Edit.** *Edit cores* turns on hand correction of the circles on the
+   overlay, *Grid lines* shows or hides the lattice and *Undo* reverts the
+   last edit (see [Editing cores by hand](#editing-cores-by-hand)).
+7. **Export settings.** *Margin* around each circle, *Mask Shrink*, and the
    channels (BF, POL) to write.
-7. **Output Folder** for the export (defaults to `<slide>_cores` beside the
+8. **Output Folder** for the export (defaults to `<slide>_cores` beside the
    slide).
-8. **Export Cores** writes the images, masks, `cores.csv` and `overlay.png`.
-   When it finishes you are offered to point **Batch Run** at the exported
-   Patients folder of a channel.
+9. **Export Cores** writes the images, masks, `cores.csv`, `overlay.png` and
+   `cores_edits.json`. When it finishes you are offered to point **Batch
+   Run** at the exported Patients folder of a channel.
 
 ## How core fitting works and how to tune it
 
@@ -80,8 +90,14 @@ before exporting, and exporting can be repeated into a different folder.
    radius are therefore rebuilt from the largest tissue piece (split at thin
    attachments if it is itself too large), adding neighbouring pieces nearest
    first only while the circle stays within that size.
-4. **Grid.** Circle centres are snapped to a lattice whose pitch is the
-   median neighbour distance. Circles falling in one cell are merged largest
+4. **Grid.** The slide's rotation is estimated from the median angle between
+   horizontally adjacent cores and removed, so a tilted array (the APGI
+   slides are tilted by up to 3°) does not smear one row into the next.
+   Circle centres are then snapped to a lattice whose pitch and phase come
+   from the well-formed circles only (fill at least 30 %, radius within 20 %
+   of the median), so fragments and debris cannot shift the grid. Debris that
+   is both malformed and off the lattice is kept but does not widen the grid.
+   Circles falling in one cell are merged largest
    first, and a smaller one is only merged if the result stays within 110 % of
    the typical core radius, so a debris speck in the same cell is dropped
    rather than enlarging the core.
@@ -131,6 +147,47 @@ smaller circle; lower Min Ø (for example to 70 %) to keep them.
 CLI: `--max-grid-offset`, `--diameter-range MIN MAX`, `--min-stain`, and
 `--stain-sat` (the saturation threshold, 40, not exposed in the GUI).
 
+## Editing cores by hand
+
+The fit is right on the APGI slides, but a partial core excluded by the
+diameter filter, a circle inflated by a neighbouring fragment, or a pale core
+the recovery pass missed are quicker to fix by hand than by retuning. Tick
+**Edit cores** and work on the overlay:
+
+| Gesture | Effect |
+|---|---|
+| Click a circle | Select it (yellow dashed halo; its colour keeps showing its status) |
+| Drag inside a circle | Move the core |
+| Drag the rim, the yellow handle, or Shift+drag inside | Resize the core |
+| Double-click a circle | Include it if excluded, exclude it if included (overrides the filters) |
+| Double-click empty space or a dashed placeholder | Add a core there (median radius) |
+| Delete / Backspace | Remove the selected (yellow) core |
+| Ctrl+Z, or **Undo** | Revert the last edit |
+| Right-click | Menu with the same actions, and *Let filters decide* to drop an override |
+
+Hovering a core shows its number, map position, patient ID or tissue,
+diameter, fill, stain and filter status. Labels on the overlay give the map
+position and core number (the grid cell when no array map is chosen), and
+control cores their tissue name. Dashed circles mark positions without a
+core: the map positions when an array is matched, otherwise the empty cells of
+the fitted grid.
+The core under the cursor is drawn with a thicker ring, the selected one
+carries a yellow halo.
+Panning (drag on empty space) and zooming keep working while editing. No
+label is ever typed: a moved or added core takes the patient ID of the grid
+cell it lands in, computed from the fitted lattice and the current
+orientation, so the map stays the single source of identities. After each
+edit the core's diameter, grid offset and stain are re-measured, the quality
+filters re-run, the grid lines follow, and the status line counts the
+hand-edited cores. Hand-edited cores carry an orange dot on top of their ring on the overlay
+and `manual = 1` in `cores.csv`; an override is recorded as reason `manual`
+when it excludes a core.
+
+Edits are saved with every export as `cores_edits.json` next to `cores.csv`.
+Fitting the same slide again with that output folder offers to reinstate
+them (on the command line, `--edits FILE`). The file holds the complete set
+of cores as exported, so reinstating replaces the new fit.
+
 ## Output naming
 
 ```
@@ -149,8 +206,11 @@ the class from the last bracket and the replicate from the trailing number.
 printed sector offsets are resolved; the ICGC ID is in `cores.csv`. `cores.csv` records the map label,
 sector, patient ID, ICGC ID, tissue, circle centre and radius (level-0 pixels),
 tissue fill, QC metrics, flag, exclusion reason, export group (`Patients`,
-`Controls` or `Unmapped`), and the orientation used together with the rule
-that decided it (`orientation_method`).
+`Controls` or `Unmapped`), the orientation used together with the rule
+that decided it (`orientation_method`), and whether the core was edited by
+hand (`manual`). Map positions that hold no core are listed too, with flag
+`missing`, their scan cell and the lattice-predicted centre, so the manifest
+covers every position of the printed map.
 
 ## Orientation
 
@@ -177,6 +237,12 @@ disabled until you confirm a control core against the printed map and set the
 orientation explicitly (the CLI exits with an error unless `--orientation` is
 given). Orientation genuinely differs between slides of this set, so never
 assume one value for a batch.
+
+To check an orientation, look at the control cores: they are named on the
+overlay (Liver, Brain, Lung, Placenta, …), and Brain in particular must land
+on a pale, nearly unstained core. Changing **Orientation** relabels the
+fitted cores at once, so cycling through the candidates until the control
+names match the slide takes seconds.
 
 ## Using the export in Cabana
 
@@ -205,6 +271,7 @@ resolution instead of the whole core shrunk to 512 pixels.
 cabana-tma "APGI TMA 1 PicRed.vsi" out/TMA1 --array 1 --slide-name TMA1
 cabana-tma slide.tif out/slide --pixel-size 0.5 --fit-only        # cores.csv + overlay only
 cabana-tma slide.vsi out/x --array 4 --orientation 90+flip --channels BF
+cabana-tma slide.vsi out/x --array 4 --edits out/x/cores_edits.json  # reinstate hand edits
 ```
 
 Run `cabana-tma --help` for all options (core diameter, crop margin, mask
@@ -218,5 +285,9 @@ from cabana import TMAPreprocessor
 pre = TMAPreprocessor("APGI TMA 1 PicRed.vsi", array_number=1, slide_name="TMA1")
 pre.fit()                      # list of Core objects with centre, radius, grid position
 pre.map_to_array()             # orientation, sets map positions; pre.orientation_ties lists ambiguities
-pre.export("out/TMA1", channels=["BF", "POL"])
+pre.missing_positions()        # map positions without a core, with the lattice-predicted centre
+core = pre.add_core(x, y)      # hand edits: add_core, move_core, resize_core, remove_core,
+pre.set_override(core, "include")   # set_override; each re-snaps to the grid and re-filters
+pre.export("out/TMA1", channels=["BF", "POL"])   # also writes cores_edits.json
+pre.load_edits("out/TMA1/cores_edits.json")      # reinstate after a refit
 ```

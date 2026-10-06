@@ -9,7 +9,7 @@ Once the Cabana GUI is launched, you will see a window split horizontally: the c
 ![Start page](media/start.png)
 
 1. **Menu bar.** All commands live here: **File** (open or reload an image, open a TMA slide, quit), **Parameters** (import, export, restore defaults), **Analysis** (choose which page the control panel shows: **TMA**, **Segmentation**, **Fibre Detection**, **Gap Analysis** or **Batch Run**, shortcuts Ctrl/Cmd+1 to 5) and **Help** (about, documentation, issue tracker, version, licence).
-2. **Open TMA Slide** opens a whole-slide scan on the TMA page.
+2. **Open TMA Slide** opens a whole-slide scan on the TMA Dearrayer page.
 3. **Open Image** loads a single image to tune parameters on; the panel switches to Segmentation automatically. You can also drag an image onto the viewer.
 4. **Import Parameters** loads a saved `Parameters.yml` into the controls.
 
@@ -59,7 +59,7 @@ Once the settings on the three pages are chosen, use **Parameters > Export Param
 1. **Parameter File.** The exported `Parameters.yml`. Review it first, for example to disable segmentation or gap analysis or to raise `Max Size` for large images.
 2. **Input Folder.** The folder of images to quantify (tif, png and jpg are supported).
 3. **Output Folder.** Where the results are written.
-4. **ROI Masks** (optional). A folder of binary masks named like the input images (white = analyse, black = ignore), such as a `BF/Patients/Masks/` or `POL/Patients/Masks/` folder written by the TMA page, restricts every measurement to the masked region. Leave it empty to rely on segmentation alone. The mask folder is a per-run path like the input and output folders; it is not stored in the parameter file, but the folder used is recorded in `version_params.yaml` in the output folder.
+4. **ROI Masks** (optional). A folder of binary masks named like the input images (white = analyse, black = ignore), such as a `BF/Patients/Masks/` or `POL/Patients/Masks/` folder written by the TMA Dearrayer page, restricts every measurement to the masked region. Leave it empty to rely on segmentation alone. The mask folder is a per-run path like the input and output folders; it is not stored in the parameter file, but the folder used is recorded in `version_params.yaml` in the output folder.
 5. **Batch Size.** Images are processed in batches (default 5) so that an interrupted run can be resumed.
 6. **Stats** and **Scores** add per-patient statistics (`QuantificationResults_MEAN_STD_SEM.csv`) and collagen risk scores (`QuantificationResults_SCORES.csv`) to the output; they require the TMA naming scheme.
 7. **Process Batch** starts the run; the button turns into **Cancel** while it runs.
@@ -88,10 +88,10 @@ Examples that all parse correctly:
 K324.vsi - 20x_BF_01Annotation (Tumor)_1.tif
 K324.vsi - 20x_POL_01Annotation (Stroma FNA)_12.tif
 540.vsi - 20x_BF multi-band_01Annotation (Ellipse) (Tumor)_0.tif
-8010718.vsi - TMA4_BF_A3Annotation (Tumor)_2.png          (a core exported by the TMA page)
+8010718.vsi - TMA4_BF_A3Annotation (Tumor)_2.png          (a core exported by the TMA Dearrayer page)
 ```
 
-Cores exported by the TMA page already follow this pattern (see [Output naming](tma.md#output-naming)): the patient ID comes from the array map, the sample type is the map note or `Tumor`, and the ROI number counts the patient's cores on the slide. Images without `.vsi` in their name are grouped by the first word before a space or underscore, so `K324_BF_tumour_1.tif` still gives patient `K324`, image type `BF` and ROI number `1`, but no sample type, because there is no `Annotation (…)` part. The per-patient table lists the image type and sample type of each patient's first image, so keep BF and POL images in separate runs.
+Cores exported by the TMA Dearrayer page already follow this pattern (see [Output naming](tma.md#output-naming)): the patient ID comes from the array map, the sample type is the map note or `Tumor`, and the ROI number counts the patient's cores on the slide. Images without `.vsi` in their name are grouped by the first word before a space or underscore, so `K324_BF_tumour_1.tif` still gives patient `K324`, image type `BF` and ROI number `1`, but no sample type, because there is no `Annotation (…)` part. The per-patient table lists the image type and sample type of each patient's first image, so keep BF and POL images in separate runs.
 
 ## Cabana Outputs
 

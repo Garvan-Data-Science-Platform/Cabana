@@ -236,9 +236,10 @@ def main(argv):
                 (3, union(win, (win.tma_core_diameter_spin, win.tma_sat_spin, win.tma_recover_cb))),
                 (4, rect_of(win, win.tma_fit_btn)),
                 (5, union(win, (win.tma_offset_spin, win.tma_stain_spin, win.tma_dmin_spin, win.tma_dmax_spin))),
-                (6, union(win, (win.tma_margin_spin, win.tma_erode_spin, *win.tma_channel_cbs.values()))),
-                (7, rect_of(win, win.tma_output_btn), "right"),
-                (8, rect_of(win, win.tma_export_btn)),
+                (6, union(win, (win.tma_edit_cb, win.tma_links_cb, win.tma_undo_btn))),
+                (7, union(win, (win.tma_margin_spin, win.tma_erode_spin, *win.tma_channel_cbs.values()))),
+                (8, rect_of(win, win.tma_output_btn), "right"),
+                (9, rect_of(win, win.tma_export_btn)),
             ])
 
 

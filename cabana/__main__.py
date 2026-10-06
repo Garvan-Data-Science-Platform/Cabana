@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import Qt
+import os
 import sys
 from pathlib import Path
 from .cabana_gui import MainWindow
@@ -48,6 +49,12 @@ def main():
 
     if sys.platform == 'darwin':
         _set_macos_dock_name('Cabana')
+
+    # Qt on macOS logs "Back buffer dpr of 2 doesn't match ... contents scale of 1"
+    # whenever a window or popup is first shown on a Retina display and then fixes
+    # it itself; the message is noise, so silence that category unless the user
+    # has set their own logging rules.
+    os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.backingstore=false")
 
     # Enable High DPI display before creating QApplication
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)

@@ -77,7 +77,7 @@ If a run is cancelled or stops with an error, the completed batches and a checkp
 
 | Field | Rule | Example value |
 |---|---|---|
-| Patient / sample ID | Everything before `.vsi` (or `.czi`). A leading `_` or space is ignored. | `K324` |
+| Patient / sample ID | Everything before `.vsi` (or `.czi`). A leading `_` or space is ignored. A channel token (`red`, `green`, `yellow`, `original`) separated by `_`, `-`, `.` or spaces elsewhere in the name, as in `..._1_red_roi.png`, is appended to the ID (`K324_red`) so channels are tabulated separately. | `K324` |
 | Image type | `BF` or `POL` between underscores or spaces anywhere in the name | `BF` |
 | Sample type | The content of the last bracket after `Annotation`. Shape brackets QuPath adds, such as `(Ellipse)`, are skipped. Spaces are kept. | `Stroma FNA` |
 | ROI number | The first number after the last closing bracket | `1` |
@@ -178,6 +178,6 @@ xi. **QuantificationResults.csv**
 
    Contains all resultant image statistics, one row per analysed image or block. Please refer to [Read-outs](readouts.md) for a detailed explanation of every column.
 
-   With **Stats** ticked, `QuantificationResults_MEAN_STD_SEM.csv` adds the mean, standard deviation and standard error per patient over that patient's images. Patients are identified from the image name: the prefix before `.vsi`, which is how both QuPath slide exports (`K324.vsi - 20x_BF_01Annotation (Tumor)_1`) and the TMA core export (`8010718.vsi - TMA1_BF_A3Annotation (Tumor)_1`) name their files; otherwise the first token of the name is used. With **Scores** ticked, `QuantificationResults_SCORES.csv` adds the Rigidity and Bundling collagen risk scores computed from those per-patient means.
+   With **Stats** ticked, `QuantificationResults_MEAN_STD_SEM.csv` adds the mean, sample standard deviation and standard error per patient over that patient's images (a patient with a single image has a mean but no STD or SEM). Patients are identified from the image name: the prefix before `.vsi`, which is how both QuPath slide exports (`K324.vsi - 20x_BF_01Annotation (Tumor)_1`) and the TMA core export (`8010718.vsi - TMA1_BF_A3Annotation (Tumor)_1`) name their files; otherwise the first token of the name is used. With **Scores** ticked, `QuantificationResults_SCORES.csv` adds the Rigidity and Bundling collagen risk scores computed from those per-patient means.
 
    The output folder also contains `version_params.yaml` with all parameters used for the run, the Cabana version and git commit, the user and time, and the folders used (including the ROI mask folder), for tracking and reproducibility.

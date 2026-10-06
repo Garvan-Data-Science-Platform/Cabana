@@ -21,7 +21,7 @@ analyzer = Cabana(
     "Parameters.yml",
     "data/Picrocirius/540.vsi - 20x_BF multi-band_01Annotation (Ellipse) (Tumor)_0.tif",
     "out/single",
-    ignore_large=True,      # False: split images above Max Size into blocks
+    ignore_large=True,      # False: analyse the top-left block of an oversized image (BatchProcessor analyses every block)
     mask_dir=None,          # optional folder of ROI masks named like the image
 )
 ok = analyzer.run()         # False when the image was skipped (too dark, too small)

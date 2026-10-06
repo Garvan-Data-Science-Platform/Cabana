@@ -64,13 +64,25 @@ class TestEnhanceContrast:
         assert result.ndim == 2
 
     def test_dark_line_inverts(self, tmp_path):
-        path = make_test_image(tmp_path, value=50)
-        h_normal = HDM(dark_line=False)
-        h_dark = HDM(dark_line=True)
-        result_normal = h_normal.enhance_contrast(path)
-        result_dark = h_dark.enhance_contrast(path)
-        # Bright pixels in normal should be dark in inverted
-        assert result_normal.mean() != result_dark.mean()
+        img = np.full((64, 64), 200, dtype=np.uint8)
+        img[16:48, 16:48] = 50                      # a dark blob on a bright background
+        path = str(tmp_path / "blob.png")
+        cv2.imwrite(path, img)
+        result_normal = HDM(dark_line=False).enhance_contrast(path)
+        result_dark = HDM(dark_line=True).enhance_contrast(path)
+        # the blob is dark in the normal image and bright (dark matter) after inversion
+        assert result_normal[32, 32] < result_normal[2, 2]
+        assert result_dark[32, 32] > result_dark[2, 2]
+
+    def test_uniform_tile_has_no_dark_matter(self, tmp_path):
+        """A flat tile (white padding, blank block) must give 0% HDM in both modes,
+        not 100% when dark_line is on."""
+        for value in (255, 100):
+            path = make_test_image(tmp_path, name=f"flat{value}.png", value=value)
+            for dark in (False, True):
+                out = HDM(dark_line=dark).enhance_contrast(path)
+                assert out.max() == 0
+
 
     def test_max_hdm_clipping(self, tmp_path):
         # Image with values above max_hdm should be clipped

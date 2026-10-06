@@ -717,3 +717,27 @@ class TestDetectorEquivalenceVsLapack:
             if c_new.width_l is not None and c_ref.width_l is not None:
                 np.testing.assert_allclose(c_new.width_l, c_ref.width_l, atol=1e-9)
                 np.testing.assert_allclose(c_new.width_r, c_ref.width_r, atol=1e-9)
+
+
+class TestClosedContours:
+    def test_dark_ring_is_one_closed_contour(self):
+        img = np.full((96, 96), 255, dtype=np.uint8)
+        yy, xx = np.ogrid[:96, :96]
+        d = np.sqrt((yy - 48) ** 2 + (xx - 48) ** 2)
+        img[np.abs(d - 30) < 1.5] = 40          # a dark ring, 3 px wide
+        det = FibreDetector(line_widths=[3], dark_line=True, min_len=3)
+        det.detect_lines(img)
+        from cabana.utils import LinesUtil
+        closed = [c for c in det.contours if c.cont_class == LinesUtil.ContourClass.cont_closed]
+        assert len(closed) >= 1
+        ring = max(closed, key=lambda c: c.num)
+        assert ring.num > 150                   # the whole circumference, not half of it
+        assert not any(j.cont1 == j.cont2 for j in det.junctions)   # no self-junction
+
+    def test_nan_input_is_sanitised(self):
+        img = np.full((64, 64), 200.0, dtype=np.float32)
+        img[30:34, :] = 20.0
+        img[0, 0] = np.nan
+        det = FibreDetector(line_widths=[3], dark_line=True, min_len=3)
+        det.detect_lines(img)
+        assert det.image.max() > 0 and len(det.contours) >= 1

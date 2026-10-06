@@ -83,8 +83,11 @@ class OrientationAnalyzer:
         if self.image.dtype != np.uint8:
             lo, hi = self.image.min(), self.image.max()
             if hi <= lo:
-                return
-            self.image = ((self.image - lo) / (hi - lo) * 255).astype(np.uint8)
+                # a flat image has no orientation; analyse it as black rather than
+                # leaving the tensors of the previous image in place
+                self.image = np.zeros(self.image.shape, dtype=np.uint8)
+            else:
+                self.image = ((self.image - lo) / (hi - lo) * 255).astype(np.uint8)
 
         # Convert to grayscale if image is RGB
         self.gray = cv2.cvtColor(self.image, cv2.COLOR_RGB2GRAY) if self.image.ndim == 3 else self.image
@@ -201,6 +204,8 @@ class OrientationAnalyzer:
             Mean orientation in degrees.
         """
         mask = np.ones_like(self.gray, dtype=bool) if mask is None else img_as_bool(mask)
+        if not mask.any():
+            return 0.0
 
         # Calculate mean of structure tensor components
         vxy = np.mean(self.dxy[mask])
@@ -225,6 +230,8 @@ class OrientationAnalyzer:
             Mean coherency, ranging from 0 to 1.
         """
         mask = np.ones_like(self.gray, dtype=bool) if mask is None else img_as_bool(mask)
+        if not mask.any():
+            return 0.0
 
         # Calculate mean of structure tensor components
         vxy = np.mean(self.dxy[mask])
@@ -252,6 +259,8 @@ class OrientationAnalyzer:
             Circular variance, ranging from 0 to 1.
         """
         mask = np.ones_like(self.gray, dtype=bool) if mask is None else img_as_bool(mask)
+        if not mask.any():
+            return 0.0
 
         # Add π/2 to shift range to [0, π] before calculating circular variance
         return circvar(self.orient[mask] + np.pi / 2.0, high=np.pi)
@@ -278,16 +287,14 @@ class OrientationAnalyzer:
         mask = np.ones_like(self.gray, dtype=bool) if mask is None else img_as_bool(mask)
 
         # Create histogram of orientations
-        hist, _ = np.histogram((self.orient[mask] + np.pi / 2) / np.pi * 180, bins=bins, range=(0, 180), density=True)
+        hist, _ = np.histogram((self.orient[mask] + np.pi / 2) / np.pi * 180, bins=bins, range=(0, 180))
+        if hist.sum() == 0:
+            return 0.0
 
-        # Calculate non-zero probabilities
-        probabilities = hist[hist > 0] / np.sum(hist[hist > 0])
-
-        # Create a uniform distribution for comparison
-        uniform_probabilities = np.full(bins, 1.0 / bins)
-
-        # Calculate Kullback-Leibler divergence
-        kl_divergence = np.sum(probabilities * np.log(probabilities / uniform_probabilities))
+        # Kullback-Leibler divergence from the uniform distribution (1/bins per bin);
+        # empty bins contribute nothing, so only the populated ones enter the sum
+        probabilities = hist[hist > 0] / hist.sum()
+        kl_divergence = np.sum(probabilities * np.log(probabilities * bins))
 
         # Transform KL divergence into a randomness measure (higher = more random)
         return 1.0 / (np.sqrt(kl_divergence) + 1.0 + np.finfo(float).eps)

@@ -113,7 +113,7 @@ class Cabana:
             try:
                 self.args = yaml.safe_load(pf)
             except yaml.YAMLError as exc:
-                print(exc)
+                raise ValueError(f"Could not parse the parameter file {self.param_file}: {exc}") from exc
 
         # overwrite specific fields of seg_args with those in the parameter file
         setattr(self.seg_args, 'num_channels', int(self.args['Segmentation']["Number of Labels"]))
@@ -127,7 +127,13 @@ class Cabana:
 
     def prepare_image(self):
         """Prepare the input image for analysis"""
+        # pixel size from the image metadata, as the batch pipeline does; 1.0 when absent
+        from .io import split2batches
+        _, res = split2batches([self.input_image_path])      # one batch, one resolution
+        self.ims_res = float(res[0]) if len(res) else 1.0
         img = cv2.imread(self.input_image_path, cv2.IMREAD_UNCHANGED)
+        if img is not None and img.ndim == 3 and img.shape[2] == 4:
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
 
         # Convert 16-bit to 8-bit if needed
         if img.dtype == np.uint16:
@@ -163,13 +169,19 @@ class Cabana:
                 warnings.warn('Image is too large. No analysis will be performed.')
                 return False
             else:
-                # Split large image into smaller blocks
+                # The single-image pipeline analyses the top-left block only; BatchProcessor
+                # writes and analyses every block of an oversized image.
                 row_blk_sz = int(np.ceil(height / int(np.ceil(height / max_size))))
                 col_blk_sz = int(np.ceil(width / int(np.ceil(width / max_size))))
-                warnings.warn('Image is oversized. Splitting into smaller blocks.')
-                # Use only the first block for simplicity
+                warnings.warn(f'Image is oversized ({width}x{height} > Max Size {max_size}); only its '
+                              f'top-left {col_blk_sz}x{row_blk_sz} block is analysed. Use BatchProcessor '
+                              f'to analyse every block.')
                 crop_box = (0, 0, col_blk_sz, row_blk_sz)
                 img = img[crop_box[1]:crop_box[3], crop_box[0]:crop_box[2]]
+                bright_percent = np.sum(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) > 5) / img.shape[0] / img.shape[1]
+                if bright_percent <= 0.01:
+                    warnings.warn('The analysed block is too dark. No analysis will be performed.')
+                    return False
 
         # Store original image
         self.original_img = img
@@ -487,10 +499,11 @@ class Cabana:
             self.stats.loc[0, 'Fibre Area (ROI, µm²)'] = self.stats.loc[0, 'Area (ROI)'] * self.ims_res ** 2
             self.stats.loc[0, 'Fibre Area (WIDTH, µm²)'] = self.stats.loc[0, 'Area (WIDTH)'] * self.ims_res ** 2
 
-        # Calculate HDM area
+        # Calculate HDM area (relative to the analysed ROI area when a mask was used)
         if '% HDM Area' in self.stats.columns:
-            self.stats.loc[0, 'Fibre Area (HDM, µm²)'] = self.stats.loc[0, '% HDM Area'] * self.stats.loc[
-                0, 'Total Image Area (µm²)']
+            from .stages import hdm_reference_area
+            self.stats.loc[0, 'Fibre Area (HDM, µm²)'] = (
+                self.stats.loc[0, '% HDM Area'] * float(hdm_reference_area(self.stats).iloc[0]))
 
         # Calculate average thickness
         if 'Total Length (µm)' in self.stats.columns and self.stats.loc[0, 'Total Length (µm)'] > 0:
@@ -571,7 +584,7 @@ class Cabana:
 
         # Load original image
         rgb_img = iio.imread(join_path(self.eligible_dir, self.name_wo_ext + ".png"))
-        mask_img = 255 - iio.imread(join_path(self.export_img_dir, self.name_wo_ext + "_Mask.png"))
+        mask_img = 255 - iio.imread(join_path(self.export_img_dir, "Mask.png"))
 
         if np.sum(mask_img) == 0:
             # Create empty placeholder images if no mask
@@ -597,8 +610,8 @@ class Cabana:
         Image.fromarray(mask_glow).save(join_path(self.color_img_dir, f"{self.name_wo_ext}_color_mask.png"))
 
         # Create skeleton color map
-        if os.path.exists(join_path(self.export_img_dir, f"{self.name_wo_ext}_Skeleton.png")):
-            skeleton = iio.imread(join_path(self.export_img_dir, f"{self.name_wo_ext}_Skeleton.png"))
+        if os.path.exists(join_path(self.export_img_dir, "Skeleton.png")):
+            skeleton = iio.imread(join_path(self.export_img_dir, "Skeleton.png"))
             red_pos = np.where((skeleton[..., 0] == 255) & (skeleton[..., 1] == 0) & (skeleton[..., 2] == 0))
             skeleton[red_pos[0], red_pos[1], :] = [0, 255, 0]
             index_pos = np.where(cv2.cvtColor(skeleton, cv2.COLOR_BGR2GRAY) == 0)
@@ -607,56 +620,56 @@ class Cabana:
             Image.fromarray(skeleton).save(join_path(self.color_img_dir, f"{self.name_wo_ext}_color_skeleton.png"))
 
         # Create energy, coherency, orientation, and length color maps
-        if os.path.exists(join_path(self.export_img_dir, f"{self.name_wo_ext}_Energy.tif")):
-            energy_map = iio.imread(join_path(self.export_img_dir, f"{self.name_wo_ext}_Energy.tif"))
+        if os.path.exists(join_path(self.export_img_dir, "Energy.tif")):
+            energy_map = iio.imread(join_path(self.export_img_dir, "Energy.tif"))
             overlay_colorbar(rgb_img, energy_map,
                              join_path(self.color_img_dir, f"{self.name_wo_ext}_color_energy.png"),
                              clabel="Normalized Energy", mode="overlay")
 
-        if os.path.exists(join_path(self.export_img_dir, f"{self.name_wo_ext}_Orientation.tif")):
-            orient_map = iio.imread(join_path(self.export_img_dir, f"{self.name_wo_ext}_Orientation.tif"))
+        if os.path.exists(join_path(self.export_img_dir, "Orientation.tif")):
+            orient_map = iio.imread(join_path(self.export_img_dir, "Orientation.tif"))
             color_survey_with_colorbar(orient_map, np.ones_like(orient_map), np.ones_like(orient_map),
                                        join_path(self.color_img_dir, f"{self.name_wo_ext}_color_orientation.png"),
                                        clabel="Orientation (rad)")
 
-        if os.path.exists(join_path(self.export_img_dir, f"{self.name_wo_ext}_Coherency.tif")):
-            cohere_map = iio.imread(join_path(self.export_img_dir, f"{self.name_wo_ext}_Coherency.tif"))
+        if os.path.exists(join_path(self.export_img_dir, "Coherency.tif")):
+            cohere_map = iio.imread(join_path(self.export_img_dir, "Coherency.tif"))
             overlay_colorbar(rgb_img, cohere_map,
                              join_path(self.color_img_dir, f"{self.name_wo_ext}_color_coherency.png"),
                              clabel="Coherency", mode="overlay")
 
-        if os.path.exists(join_path(self.export_img_dir, f"{self.name_wo_ext}_Length_Map.tif")):
-            length_map = iio.imread(join_path(self.export_img_dir, f"{self.name_wo_ext}_Length_Map.tif"))
+        if os.path.exists(join_path(self.export_img_dir, "Length_Map.tif")):
+            length_map = iio.imread(join_path(self.export_img_dir, "Length_Map.tif"))
             overlay_colorbar(rgb_img, length_map,
                              join_path(self.color_img_dir, f"{self.name_wo_ext}_color_length.png"),
                              clabel="Length (µm)", cmap='plasma', dpi=200, font_size=10)
 
         # Create curvature color maps
-        curve_paths = glob(join_path(self.export_img_dir, f"{self.name_wo_ext}_Curve_Map_*"))
+        curve_paths = glob(join_path(self.export_img_dir, "Curve_Map_*"))
         for curve_path in curve_paths:
-            curve_name_wo_ext = os.path.basename(curve_path)[:-4]
-            suffix = curve_name_wo_ext[len(f"{self.name_wo_ext}_Curve_Map"):]
+            curve_name_wo_ext = os.path.splitext(os.path.basename(curve_path))[0]
+            suffix = curve_name_wo_ext[len("Curve_Map"):]
             curve_map = tiff.imread(curve_path) / 180
             save_path = join_path(self.color_img_dir, f"{self.name_wo_ext}_color_curve{suffix}.png")
             overlay_colorbar(rgb_img, curve_map, save_path,
                              clabel="Curliness", cmap='plasma', dpi=200, font_size=10)
 
         # Create orientation color survey
-        if os.path.exists(join_path(self.export_img_dir, f"{self.name_wo_ext}_Orientation.tif")) and \
-                os.path.exists(join_path(self.export_img_dir, f"{self.name_wo_ext}_Coherency.tif")):
-            orient_map = iio.imread(join_path(self.export_img_dir, f"{self.name_wo_ext}_Orientation.tif"))
-            cohere_map = iio.imread(join_path(self.export_img_dir, f"{self.name_wo_ext}_Coherency.tif"))
-            energy_map = iio.imread(join_path(self.export_img_dir, f"{self.name_wo_ext}_Energy.tif"))
+        if os.path.exists(join_path(self.export_img_dir, "Orientation.tif")) and \
+                os.path.exists(join_path(self.export_img_dir, "Coherency.tif")):
+            orient_map = iio.imread(join_path(self.export_img_dir, "Orientation.tif"))
+            cohere_map = iio.imread(join_path(self.export_img_dir, "Coherency.tif"))
+            energy_map = iio.imread(join_path(self.export_img_dir, "Energy.tif"))
             color_survey_with_colorbar(orient_map, cohere_map, energy_map,
                                        join_path(self.color_img_dir, f"{self.name_wo_ext}_orient_color_survey.png"))
 
         # Copy gap images if they exist
-        if os.path.exists(join_path(self.export_img_dir, f"{self.name_wo_ext}_GapImage.png")):
-            shutil.copy(join_path(self.export_img_dir, f"{self.name_wo_ext}_GapImage.png"),
+        if os.path.exists(join_path(self.export_img_dir, "GapImage.png")):
+            shutil.copy(join_path(self.export_img_dir, "GapImage.png"),
                         join_path(self.color_img_dir, f"{self.name_wo_ext}_all_gaps.png"))
 
-        if os.path.exists(join_path(self.export_img_dir, f"{self.name_wo_ext}_GapImage_intra_gaps.png")):
-            shutil.copy(join_path(self.export_img_dir, f"{self.name_wo_ext}_GapImage_intra_gaps.png"),
+        if os.path.exists(join_path(self.export_img_dir, "GapImage_intra_gaps.png")):
+            shutil.copy(join_path(self.export_img_dir, "GapImage_intra_gaps.png"),
                         join_path(self.color_img_dir, f"{self.name_wo_ext}_intra_gaps.png"))
         print(f"Color maps have been saved to {self.color_img_dir}")
 

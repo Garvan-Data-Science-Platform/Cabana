@@ -464,3 +464,20 @@ def test_post_process_moves_results_and_merges_summaries(tmp_path):
     for name in ("GapAnalysisSummary.csv", "IntraGapAnalysisSummary.csv"):
         assert len(pd.read_csv(out / "Masks" / "GapAnalysis" / name)) == 2
     assert len(pd.read_csv(out / "QuantificationResults.csv")) == 2
+
+
+def test_bad_paths_raise_instead_of_exiting(tmp_path):
+    """A missing folder must raise so the GUI worker can report it; os._exit killed the GUI."""
+    param_file = tmp_path / "p.yml"
+    param_file.write_text("Configs: {}\n")
+    with pytest.raises(FileNotFoundError):
+        BatchProcessor(str(param_file), str(tmp_path / "missing"), str(tmp_path / "out"),
+                       batch_size=2, batch_num=0, resume=False, ignore_large=True)
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    with pytest.raises(ValueError):
+        BatchProcessor(str(param_file), str(empty), str(tmp_path / "out"),
+                       batch_size=2, batch_num=0, resume=False, ignore_large=True)
+    with pytest.raises(FileNotFoundError):
+        BatchProcessor(str(tmp_path / "nope.yml"), str(empty), str(tmp_path / "out"),
+                       batch_size=2, batch_num=0, resume=False, ignore_large=True)

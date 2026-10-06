@@ -522,8 +522,10 @@ class FibreDetector:
                 cross[indx[maxy, maxx] - 1].done = True
 
             # Select line direction
-            row.append(maxy)
-            col.append(maxx)
+            # the start point is stored at sub-pixel precision like every later point,
+            # so a loop closing on it is recognised (row[0] == posy[y, x])
+            row.append(self.posy[maxy, maxx])
+            col.append(self.posx[maxy, maxx])
             nx = -self.normx[maxy, maxx]
             ny = self.normy[maxy, maxx]
             alpha = normalize_to_half_circle(np.arctan2(ny, nx))
@@ -566,6 +568,8 @@ class FibreDetector:
                             cross[indx[nexty, nextx] - 1].done = True
 
             for it in range(1, 3):
+                if cls == LinesUtil.ContourClass.cont_closed:
+                    break           # closed in the first pass: the reverse pass would re-trace the loop
                 y, x = maxy, maxx
                 ny, nx = self.normy[y, x], -self.normx[y, x]
 
@@ -685,7 +689,6 @@ class FibreDetector:
                                         col.reverse()
                                         angle.reverse()
                                         resp.reverse()
-                                        it = 2
                                     else:
                                         # Determine contour class
                                         if it == 2:
@@ -973,7 +976,12 @@ class FibreDetector:
         # the dynamic range.
         if self.image.dtype != np.uint8:
             img_arr = self.image.astype(np.float64)
-            lo, hi = np.percentile(img_arr, (0.5, 99.5))
+            if np.isnan(img_arr).any():
+                Log.logger.warning("Detector input contains NaN pixels; treating them as background.")
+            lo, hi = np.nanpercentile(img_arr, (0.5, 99.5))
+            if not (np.isfinite(lo) and np.isfinite(hi)):
+                lo, hi = 0.0, 0.0
+            img_arr = np.nan_to_num(img_arr, nan=lo, posinf=hi, neginf=lo)
             dyn = hi - lo
             if dyn < np.finfo(float).eps:
                 Log.logger.warning(

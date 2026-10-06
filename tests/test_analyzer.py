@@ -345,3 +345,52 @@ class TestCalcTotalLenIntegration:
         light_analyzer.analyze_image(binary)
         assert np.isfinite(light_analyzer.total_length)
         assert light_analyzer.total_length > 0.0
+
+
+# ---------------------------------------------------------------------------
+# Regressions: empty masks, parallel paths and self-loops (white fibres on black)
+# ---------------------------------------------------------------------------
+
+def _white_on_black_analyzer():
+    return SkeletonAnalyzer(skel_thresh=5, branch_thresh=3, hole_threshold=4, dark_line=False)
+
+
+class TestEmptyMask:
+    def test_empty_mask_gives_zero_metrics(self):
+        a = _white_on_black_analyzer()
+        a.analyze_image(np.zeros((64, 64), dtype=np.uint8))
+        assert a.proj_area == 0 and a.total_length == 0 and a.lacunarity == 0 and a.frac_dim == 0
+        assert a.num_tips == 0 and a.num_branches == 0
+        assert a.key_pts_image.shape == (64, 64, 3) and a.length_map_all.shape == (64, 64)
+        a.calc_curve_all(11)
+        assert a.avg_curve_all == 0 and a.curve_map_all.shape == (64, 64)
+
+    def test_empty_dark_line_mask_gives_zero_metrics(self):
+        a = SkeletonAnalyzer(skel_thresh=5, branch_thresh=3, hole_threshold=4, dark_line=True)
+        a.analyze_image(np.full((64, 64), 255, dtype=np.uint8))     # all background
+        assert a.proj_area == 0 and a.total_length == 0 and a.lacunarity == 0
+
+
+class TestLoops:
+    @staticmethod
+    def _ring(img, r=20, c=32):
+        yy, xx = np.ogrid[:img.shape[0], :img.shape[1]]
+        d = np.sqrt((yy - c) ** 2 + (xx - c) ** 2)
+        img[np.abs(d - r) < 0.7] = 255
+
+    def test_ring_with_chord_keeps_both_arcs(self):
+        img = np.zeros((64, 64), dtype=np.uint8)
+        self._ring(img)
+        img[32, 12:53] = 255                 # a chord: two junctions, three paths between them
+        a = _white_on_black_analyzer()
+        a.analyze_image(img)
+        # ring (~126 px) + chord (~40 px); before the fix one arc was dropped (~100 px)
+        assert a.total_length > 140
+
+    def test_loop_on_a_single_junction_is_kept(self):
+        img = np.zeros((64, 64), dtype=np.uint8)
+        self._ring(img)
+        img[52:62, 32] = 255                 # a tail: the ring closes on its own junction
+        a = _white_on_black_analyzer()
+        a.analyze_image(img)
+        assert a.total_length > 110          # ring ~126 + tail ~10; before the fix only the tail counted

@@ -230,7 +230,8 @@ class SkeletonAnalyzer:
                         continue
 
                     for neighbor in neighbors:
-                        if neighbor not in visited:
+                        # a loop closing on its own junction must be allowed back to src
+                        if neighbor not in visited or (neighbor == src and visited_other and len(path) >= 5):
                             dist = np.sqrt((neighbor[0] - current[0]) ** 2.0 +
                                            (neighbor[1] - current[1]) ** 2.0)
                             new_path = path + [neighbor]
@@ -296,7 +297,8 @@ class SkeletonAnalyzer:
                         continue
 
                     for neighbor in neighbors:
-                        if neighbor not in visited:
+                        # a loop closing on its own junction must be allowed back to src
+                        if neighbor not in visited or (neighbor == src and visited_other and len(path) >= 5):
                             dist = np.sqrt((neighbor[0] - current[0]) ** 2.0 +
                                            (neighbor[1] - current[1]) ** 2.0)
                             new_path = path + [neighbor]
@@ -488,6 +490,21 @@ class SkeletonAnalyzer:
             # Find paths between key points and add edges
             lengths_paths = SkeletonAnalyzer.traverse_skeletons(canvas, endpoints, branchpoints, self.FOREGROUND)
             for src, dst, length, path, typ in lengths_paths:
+                if (src == dst or G.has_edge(src, dst)) and len(path) >= 6:
+                    # nx.Graph keeps one edge per node pair: a second path between the same
+                    # junctions (a closed cell) is split through one degree-2 node, and a loop
+                    # back to its own junction through two, so no skeleton length is lost
+                    cuts = [len(path) // 3, 2 * len(path) // 3] if src == dst else [len(path) // 2]
+                    nodes = [src] + [tuple(path[k]) for k in cuts] + [dst]
+                    bounds = [0] + cuts + [len(path) - 1]
+                    if all(n not in G for n in nodes[1:-1]) and len(set(nodes[1:-1])) == len(cuts):
+                        for n in nodes[1:-1]:
+                            G.add_node(n, node_type="mid-point")
+                        for i in range(len(nodes) - 1):
+                            seg = path[bounds[i]:bounds[i + 1] + 1]
+                            G.add_edge(nodes[i], nodes[i + 1], length=SkeletonAnalyzer._path_length(seg),
+                                       path=seg, type=typ)
+                        continue
                 G.add_edge(src, dst, length=length, path=path, type=typ)
 
             # Prune short branches
@@ -510,6 +527,11 @@ class SkeletonAnalyzer:
 
             for node in isolated_nodes:
                 self.pruned_image[node[0], node[1]] = self.BACKGROUND
+
+    @staticmethod
+    def _path_length(path):
+        pts = np.asarray(path, dtype=float)
+        return float(np.sqrt(((pts[1:] - pts[:-1]) ** 2).sum(axis=1)).sum()) if len(pts) > 1 else 0.0
 
     def calc_curve_all(self, win_sz=11):
         """
@@ -911,6 +933,10 @@ class SkeletonAnalyzer:
 
         # Minimal dimension of image
         p = min(self.pruned_image.shape)
+        if p < 8:
+            # fewer than two box sizes: the slope is undefined
+            self.frac_dim = 0.0
+            return
 
         # Greatest power of 2 less than or equal to p
         n = 2 ** np.floor(np.log(p) / np.log(2)) - 2
@@ -934,7 +960,7 @@ class SkeletonAnalyzer:
             counts.append(len(np.where((S > 0) & (S < size ** 2))[0]))
 
         # Check if all counts are zero
-        if np.all(counts == 0):
+        if not np.any(counts):
             Log.logger.warning("All counts are zero. Fractal dimension cannot be computed meaningfully.")
             return None
         else:
@@ -1022,6 +1048,27 @@ class SkeletonAnalyzer:
         # Calculate global average curvature
         self.avg_curve_spline = np.mean(curve_map[calc_mask]) if calc_mask.any() else 0.0
 
+    def _set_empty_results(self):
+        """Metrics and maps for a mask without any fibre: zeros of the right shapes."""
+        h, w = self.raw_image.shape[:2]
+        self.skel_image = np.zeros((h, w), dtype=np.uint8)
+        self.pruned_image = np.zeros((h, w), dtype=np.uint8)
+        self.key_pts_image = np.zeros((h, w, 3), dtype=np.uint8)
+        self.long_path_image = np.zeros((h, w, 3), dtype=np.uint8)
+        self.length_map_all = np.zeros((h, w), dtype=float)
+        self.length_map_long = np.zeros((h, w), dtype=float)
+        self.curve_map_all = np.zeros((h, w), dtype=float)
+        self.curve_map_long = np.zeros((h, w), dtype=float)
+        self.subgraphs = []
+        self.proj_area = 0.0
+        self.num_tips = 0
+        self.num_branches = 0
+        self.total_length = 0.0
+        self.growth_unit = 0.0
+        self.frac_dim = 0.0
+        self.lacunarity = 0.0
+        self.avg_curve_all = self.avg_curve_long = self.avg_curve_spline = 0.0
+
     @staticmethod
     def dilate_color(color_image, mask):
         """
@@ -1105,11 +1152,15 @@ class SkeletonAnalyzer:
             Log.logger.warning("Image to be analyzed has to be binary.")
             return
 
-        # Handle dark lines on light background if needed
+        # Normalise the mask to 0/255 and invert dark-on-light masks. FOREGROUND and
+        # BACKGROUND stay fixed at 255/0: deriving them from the data made an empty mask
+        # (max == min) count every pixel as fibre.
+        self.raw_image = np.where(self.raw_image > 0, 255, 0).astype(np.uint8)
         if self.dark_line:
             self.raw_image = 255 - self.raw_image
-            self.FOREGROUND = self.raw_image.max()
-            self.BACKGROUND = self.raw_image.min()
+        if not np.any(self.raw_image == self.FOREGROUND):
+            self._set_empty_results()
+            return
 
         # Step 1: Skeletonize the binary image
         # First remove small holes, then perform skeletonization

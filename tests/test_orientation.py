@@ -241,3 +241,32 @@ class TestDrawColorSurvey:
     def test_shape_matches_input(self, computed):
         result = computed.draw_color_survey()
         assert result.shape[:2] == (64, 64)
+
+
+class TestRandomnessOrientation:
+    def test_striped_image_does_not_raise(self):
+        img = np.zeros((64, 64), dtype=np.uint8)
+        img[::6, :] = 255                    # horizontal stripes: a few populated bins only
+        a = OrientationAnalyzer(sigma=2.0)
+        a.compute_orient(img)
+        r = a.randomness_orientation()
+        assert 0 < r <= 1
+
+    def test_grid_is_more_random_than_stripes(self):
+        stripes = np.zeros((64, 64), dtype=np.uint8)
+        stripes[::6, :] = 255
+        grid = stripes.copy()
+        grid[:, ::6] = 255
+        a = OrientationAnalyzer(sigma=2.0)
+        a.compute_orient(stripes)
+        r_stripes = a.randomness_orientation()
+        a.compute_orient(grid)
+        r_grid = a.randomness_orientation()
+        assert r_grid > r_stripes
+
+    def test_empty_mask_returns_zero(self):
+        a = OrientationAnalyzer(sigma=2.0)
+        a.compute_orient(np.random.default_rng(0).integers(0, 255, (32, 32), dtype=np.uint8))
+        empty = np.zeros((32, 32), dtype=bool)
+        assert a.mean_coherency(mask=empty) == 0 and a.circular_variance(mask=empty) == 0
+        assert a.randomness_orientation(mask=empty) == 0

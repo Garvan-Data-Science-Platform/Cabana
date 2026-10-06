@@ -371,3 +371,23 @@ class TestTMACoreNames:
         agg = generate_mean_std_sem(df)
         assert sorted(agg["Patient"]) == ["8010718", "8010720"]
         assert agg.set_index("Patient").loc["8010718", "Total Length (µm) MEAN"] == 12.0
+
+
+class TestChannelTokenAndSampleStats:
+    def test_channel_must_be_a_whole_token(self):
+        assert parse_image_name("Fred.vsi - 20x_BF_01Annotation (Tumor)_1.tif")['patient_id'] == "Fred"
+        assert parse_image_name("K1.vsi - PSR Red_BF_01Annotation (Tumor)_1.tif")['patient_id'] == "K1_red"
+        assert parse_image_name("K1.vsi - BF_01Annotation (Tumor)_1_registered.tif")['patient_id'] == "K1"
+        assert parse_image_name("K324.vsi - 20x_BF_01Annotation (Tumor)_1_red_roi.png")['patient_id'] == "K324_red"
+
+    def test_std_is_sample_std_and_single_roi_has_no_sem(self):
+        df = pd.DataFrame({
+            'Image': ['K1.vsi - BF _01Annotation (Tumor)_1_roi.png',
+                      'K1.vsi - BF _01Annotation (Tumor)_2_roi.png',
+                      'K2.vsi - BF _01Annotation (Tumor)_1_roi.png'],
+            'Length': [10.0, 20.0, 30.0],
+        })
+        agg = generate_mean_std_sem(df).set_index('Patient')
+        assert abs(agg.loc['K1', 'Length STD'] - 50 ** 0.5) < 1e-9
+        assert abs(agg.loc['K1', 'Length SEM'] - (50 ** 0.5) / 2 ** 0.5) < 1e-9
+        assert np.isnan(agg.loc['K2', 'Length STD']) and np.isnan(agg.loc['K2', 'Length SEM'])

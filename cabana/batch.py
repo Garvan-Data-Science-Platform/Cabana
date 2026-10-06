@@ -681,11 +681,12 @@ class BatchCabana:
             col = df.pop(col)
             df.insert(pos, col.name, col)
 
+        from .stages import hdm_reference_area
         percent = self.df_stats.loc[:, '% HDM Area'].tolist()
         self.df_stats.insert(
             self.df_stats.columns.get_loc("Area of Fibre Spines (µm²)")+1,
             'Fibre Area (HDM, µm²)',
-            self.df_stats['% HDM Area'] * self.df_stats['Total Image Area (µm²)'])
+            self.df_stats['% HDM Area'] * hdm_reference_area(self.df_stats))
         total_area = self.df_stats.loc[:, 'Total Image Area (µm²)'].tolist()
         total_length = self.df_stats.loc[:, 'Total Length (µm)'].tolist()
 
@@ -866,8 +867,10 @@ class BatchCabana:
         df_results.insert(df_results.columns.get_loc('Endpoints') + 1,
                           'Endpoints Density (µm⁻¹)', endpoints_density)
 
-        # Normalize gap area
-        if self.args["Configs"]["Gap Analysis"] and self.args["Gap Analysis"]["Minimum Gap Diameter"] > 0:
+        # Normalize gap area (the gap columns are absent when no image in the batch had a gap)
+        if self.args["Configs"]["Gap Analysis"] and self.args["Gap Analysis"]["Minimum Gap Diameter"] > 0 \
+                and 'Mean (All gaps area in µm²)' in df_results.columns \
+                and 'Mean (ROI gaps area in µm²)' in df_results.columns:
             mean_total_area = df_results['Mean (All gaps area in µm²)'].values
             total_image_area = df_results['Total Image Area (µm²)'].values
             mean_gap_area_total_norm = array_divide(mean_total_area, total_image_area)
@@ -1166,16 +1169,14 @@ class BatchProcessor():
         self._last_progress = 0  # Monotonicity guard for update_progress
 
         # Validate inputs
+        # Raise rather than os._exit: the GUI runs this inside a worker thread and
+        # reports exceptions, whereas os._exit would kill the whole application
         if not os.path.exists(self.param_file):
-            print("Invalid parameter file path. Abort!")
-            os._exit(1)
-
+            raise FileNotFoundError(f"Parameter file not found: {self.param_file}")
         if not os.path.exists(self.input_folder):
-            print(f"Input folder does not exist: {self.input_folder}. Abort!")
-            os._exit(1)
+            raise FileNotFoundError(f"Input folder does not exist: {self.input_folder}")
         if not os.listdir(self.input_folder):
-            print(f"Input folder is empty (no images found): {self.input_folder}. Abort!")
-            os._exit(1)
+            raise ValueError(f"Input folder is empty (no images found): {self.input_folder}")
 
         # Create output directory if it doesn't exist
         if not os.path.exists(self.output_folder):
@@ -1192,6 +1193,7 @@ class BatchProcessor():
                 self.args = yaml.safe_load(pf)
             except yaml.YAMLError as exc:
                 Log.logger.error(exc)
+                raise ValueError(f"Could not parse the parameter file {self.param_file}: {exc}") from exc
         Log.log_parameters(self.param_file)
 
     def update_progress(self, value):
@@ -1253,8 +1255,8 @@ class BatchProcessor():
             # Check for oversized images based on configuration
             max_res = self.args['Segmentation']["Max Size"]
             if contains_oversized(img_paths, max_res):
-                self.ignore_large = False
-                Log.logger.warning(f"Oversized (> {max_res:d}x{max_res:d} pixels) images will be ignored.")
+                action = "ignored" if self.ignore_large else "split into blocks"
+                Log.logger.warning(f"Oversized (> {max_res:d}x{max_res:d} pixels) images will be {action}.")
 
             # Create checkpoint file for tracking progress
             with open(join_path(self.output_folder, '.CheckPoint.txt'), 'w') as ckpt:

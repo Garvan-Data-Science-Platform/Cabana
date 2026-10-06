@@ -1,5 +1,6 @@
 import os
 import cv2
+from .log import Log
 import numpy as np
 import pandas as pd
 import imageio.v3 as iio
@@ -104,14 +105,20 @@ class HDM:
 
             # Restrict to the external ROI mask when one is available
             denominator = np.prod(enhanced_image.shape[:2])
-            stem = os.path.basename(img_path)[:-4]
+            stem = os.path.splitext(os.path.basename(img_path))[0]
             mask_path = join_path(mask_dir, stem + ".png") if mask_dir else None
             if mask_path and os.path.exists(mask_path):
                 roi = cv2.imread(mask_path, 0)
-                if roi is not None and roi.shape[:2] == enhanced_image.shape[:2] and np.any(roi > 128):
+                if roi is not None and roi.shape[:2] != enhanced_image.shape[:2]:
+                    Log.logger.warning(f"ROI mask {mask_path} has shape {roi.shape[:2]}, image has "
+                                       f"{enhanced_image.shape[:2]}; resizing the mask.")
+                    roi = cv2.resize(roi, (enhanced_image.shape[1], enhanced_image.shape[0]),
+                                     interpolation=cv2.INTER_NEAREST)
+                if roi is not None:
+                    # an empty mask means nothing to analyse, not the whole image
                     enhanced_image = enhanced_image.copy()
                     enhanced_image[roi <= 128] = 0
-                    denominator = np.count_nonzero(roi > 128)
+                    denominator = max(1, np.count_nonzero(roi > 128))
             hdm_imgs.append(enhanced_image)
 
             # Store image name and calculate HDM area percentage
@@ -160,14 +167,18 @@ class HDM:
         # Convert to grayscale if the image is RGB
         image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY) if len(image.shape) == 3 else image
 
-        # Clip intensity values to max_hdm and normalize to 0-255 range
+        # Clip intensity values to max_hdm and scale that absolute range to 0-255, so the
+        # threshold means the same on every tile; a flat tile (all background) has no
+        # dark matter in either dark_line mode
         image = np.clip(image, 0, self.max_hdm).astype(float)
-        image = ((image - image.min()) / (image.max() - image.min() + np.finfo(float).eps) * 255).astype(np.uint8)
+        if image.max() <= image.min():
+            return np.zeros(image.shape, dtype=np.uint8)
+        image = (image / max(float(self.max_hdm), np.finfo(float).eps) * 255).astype(np.uint8)
 
-        # Apply percentile-based contrast enhancement if sat_ratio > 0
+        # Apply percentile-based contrast enhancement if sat_ratio > 0 and the percentiles differ
         percent_saturation = self.sat_ratio * 100
         pl, pu = np.percentile(image, (percent_saturation / 2.0, 100 - percent_saturation / 2.0))
-        enhanced_image = exposure.rescale_intensity(image, in_range=(pl, pu))
+        enhanced_image = exposure.rescale_intensity(image, in_range=(pl, pu)) if pu > pl else image
 
         # Invert image if dark_line is True (to highlight dark features)
         if self.dark_line:

@@ -10,6 +10,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import pandas as pd
 import imageio.v3 as iio
 from skimage.color import rgb2hed, hed2rgb, rgb2gray
 
@@ -200,7 +201,11 @@ def compute_fibre_areas(img_mask_path, ori_img_path, width_mask_path, hdm_mask_p
         else:
             ext_mask = None
     percent_roi = area_roi / analysis_area
-    ori_img = iio.imread(ori_img_path)
+    ori_img = np.asarray(iio.imread(ori_img_path))
+    if ori_img.ndim == 2:
+        ori_img = np.stack([ori_img] * 3, axis=-1)
+    elif ori_img.ndim == 3 and ori_img.shape[2] == 4:
+        ori_img = ori_img[..., :3]          # colour deconvolution needs exactly three channels
 
     hed = rgb2hed(ori_img)
     null = np.zeros_like(hed[:, :, 0])
@@ -245,14 +250,33 @@ def compute_fibre_areas(img_mask_path, ori_img_path, width_mask_path, hdm_mask_p
     }
 
 
+def hdm_reference_area(stats):
+    """Area (µm²) that ``% HDM Area`` refers to, per row of a stats frame: the
+    analysed ROI-mask area when an external mask was used (recovered from
+    ``Fibre Area (ROI, µm²)`` / ``% ROI Area``), else the whole image."""
+    total = stats['Total Image Area (µm²)'].astype(float)
+    if 'Fibre Area (ROI, µm²)' in stats.columns and '% ROI Area' in stats.columns:
+        pct = stats['% ROI Area'].astype(float)
+        roi = stats['Fibre Area (ROI, µm²)'].astype(float)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            analysed = np.where(pct > 0, roi / pct, total)
+        return pd.Series(analysed, index=stats.index)
+    return total
+
+
+def _range_from_params(section, min_key, max_key, step_key, cast=float):
+    """``np.arange(min, max + step, step)`` with the YAML values validated."""
+    lo, hi, step = cast(section[min_key]), cast(section[max_key]), cast(section[step_key])
+    if step <= 0 or lo > hi:
+        raise ValueError(f"{step_key} must be > 0 and {min_key} <= {max_key} "
+                         f"(got {min_key}={lo}, {max_key}={hi}, {step_key}={step})")
+    return np.arange(lo, hi + step, step)
+
+
 def build_fibre_detector(args):
     """Construct a FibreDetector from a parsed parameters dict."""
     d = args["Detection"]
-    line_widths = np.arange(
-        d["Min Line Width"],
-        d["Max Line Width"] + d["Line Width Step"],
-        d["Line Width Step"],
-    )
+    line_widths = _range_from_params(d, "Min Line Width", "Max Line Width", "Line Width Step")
     return FibreDetector(
         line_widths=line_widths,
         low_contrast=d["Low Contrast"],
@@ -336,12 +360,9 @@ def build_skeleton_analyzer(args):
 
 
 def curve_windows_from_args(args):
-    q = args["Quantification"]
-    return np.arange(
-        int(q["Minimum Curvature Window"]),
-        int(q["Maximum Curvature Window"]) + int(q["Curvature Window Step"]),
-        int(q["Curvature Window Step"]),
-    )
+    """Curvature window sizes (pixels) from the Quantification section."""
+    return _range_from_params(args["Quantification"], "Minimum Curvature Window",
+                              "Maximum Curvature Window", "Curvature Window Step", cast=int)
 
 
 def quantify_one_skeleton(skel_analyzer, mask_path, export_subdir,

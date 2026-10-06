@@ -15,7 +15,7 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-CHANNEL_NAMES = {'original', 'red', 'yellow', 'green'}
+CHANNEL_NAMES = ('original', 'red', 'yellow', 'green')     # fixed order: matching must be deterministic
 SHAPE_TYPES = {'ellipse', 'rectangle', 'polygon', 'line', 'polyline', 'points'}
 
 
@@ -84,12 +84,11 @@ def parse_image_name(filename):
     if roi_match:
         result['roi_number'] = roi_match.group(1)
 
-    # Check for known channel names anywhere in the filename (case-insensitive substring match).
-    filename_lower = filename.lower()
-    for channel in CHANNEL_NAMES:
-        if channel in filename_lower:
-            result['patient_id'] = f"{result['patient_id']}_{channel}"
-            break
+    # A channel token ("red", "green", ...) delimited by separators, e.g. "_1_red_roi.png";
+    # a substring match would turn "Fred" or "registered" into a channel.
+    m = re.search(r'(?:^|[\s_.-])(' + '|'.join(CHANNEL_NAMES) + r')(?=[\s_.-]|$)', filename, re.IGNORECASE)
+    if m:
+        result['patient_id'] = f"{result['patient_id']}_{m.group(1).lower()}"
 
     return result
 
@@ -138,8 +137,9 @@ def generate_mean_std_sem(df, output_path=None):
         for col in numeric_cols:
             values = group[col].dropna()
             mean = values.mean()
-            std = values.std(ddof=0)
-            sem = std / np.sqrt(len(values)) if len(values) > 0 else np.nan
+            # sample statistics: a single ROI has no spread estimate (NaN), not zero
+            std = values.std(ddof=1) if len(values) > 1 else np.nan
+            sem = std / np.sqrt(len(values)) if len(values) > 1 else np.nan
             row[f'{col} MEAN'] = mean
             row[f'{col} STD'] = std
             row[f'{col} SEM'] = sem

@@ -14,7 +14,7 @@ from sklearn.metrics.pairwise import euclidean_distances
 from PyQt5.QtWidgets import (QSlider, QWidget, QSplitter, QSplitterHandle,
                              QMenu, QAction, QFileDialog, QMessageBox,
                              QProgressBar, QSizePolicy, QPushButton)
-from PyQt5.QtCore import Qt, QSize, QEvent, QPoint, QRect, QPropertyAnimation, QEasingCurve, pyqtProperty
+from PyQt5.QtCore import Qt, QSize, QEvent, QPoint, QRect, QRectF, QPropertyAnimation, QEasingCurve, pyqtProperty
 from PyQt5.QtGui import QPixmap, QPainter, QPen, QColor, QDragEnterEvent, QDropEvent, QImage, QBrush, QFont
 from PyQt5.QtCore import QThread, pyqtSignal
 
@@ -588,12 +588,21 @@ class GapAnalysisWorker(QThread):
     progress_updated = pyqtSignal(int)
     gap_analysis_complete = pyqtSignal(object)
 
+    failed = pyqtSignal(str)
+
     def __init__(self, image, min_gap_diameter):
         super().__init__()
         self.image = image
         self.min_gap_diameter = min_gap_diameter
 
     def run(self):
+        try:
+            self._run()
+        except Exception as e:      # an escaping exception would abort the whole GUI process
+            Log.logger.exception("Gap analysis failed")
+            self.failed.emit(str(e))
+
+    def _run(self):
         min_gap_radius = self.min_gap_diameter / 2
         min_dist = int(np.max([1, min_gap_radius]))
         mask = self.image.copy()
@@ -650,16 +659,27 @@ class DetectionWorker(QThread):
     progress_updated = pyqtSignal(int)
     detection_complete = pyqtSignal(list)
 
+    failed = pyqtSignal(str)
+
     def __init__(self, image, args):
         super().__init__()
         self.image = image
         self.args = args
 
     def run(self):
-        if self.args.min_line_width == self.args.max_line_width:
+        try:
+            self._run()
+        except Exception as e:
+            Log.logger.exception("Fibre detection failed")
+            self.failed.emit(str(e))
+
+    def _run(self):
+        # the same scales as the batch pipeline (stages.build_fibre_detector): the upper bound is included
+        if self.args.min_line_width == self.args.max_line_width or self.args.line_step <= 0:
             line_widths = np.array([self.args.min_line_width])
         else:
-            line_widths = np.arange(self.args.min_line_width, self.args.max_line_width, self.args.line_step)
+            line_widths = np.arange(self.args.min_line_width, self.args.max_line_width + self.args.line_step,
+                                    self.args.line_step)
         det = FibreDetector(
             line_widths= line_widths,
             low_contrast=self.args.low_contrast,
@@ -672,7 +692,10 @@ class DetectionWorker(QThread):
 
         # Normalize to uint8 if needed
         if self.image.dtype != np.uint8:
-            self.image = ((self.image - self.image.min()) / (self.image.max() - self.image.min()) * 255).astype(np.uint8)
+            lo, hi = float(np.nanmin(self.image)), float(np.nanmax(self.image))
+            if hi <= lo:
+                raise ValueError("The image has no dynamic range; nothing to detect.")
+            self.image = ((np.nan_to_num(self.image, nan=lo) - lo) / (hi - lo) * 255).astype(np.uint8)
 
         # Convert to grayscale
         det.image = self.image.copy()
@@ -705,12 +728,21 @@ class SegmentationWorker(QThread):
     progress_updated = pyqtSignal(int)
     segmentation_complete = pyqtSignal(object)
 
+    failed = pyqtSignal(str)
+
     def __init__(self, image, args):
         super().__init__()
         self.ori_img = image          # RGB array as loaded by the GUI
         self.args = args
 
     def run(self):
+        try:
+            self._run()
+        except Exception as e:
+            Log.logger.exception("Segmentation failed")
+            self.failed.emit(str(e))
+
+    def _run(self):
         def _progress(it, max_iter):
             self.progress_updated.emit(int((it + 1.0) / max(1, max_iter) * 100))
 
@@ -1632,7 +1664,10 @@ class ImagePanel(QWidget):
         else:
             # If image is a numpy array
             try:
-                # Convert numpy array to QImage
+                # QImage needs a C-contiguous 8-bit buffer (a sliced RGBA view is not)
+                image = np.ascontiguousarray(image)
+                if image.dtype != np.uint8:
+                    image = np.clip(image, 0, 255).astype(np.uint8)
                 height, width = image.shape[:2]
 
                 # Handle different image formats
@@ -1901,16 +1936,16 @@ class ImagePanel(QWidget):
             x = center_x - (scaled_width / 2) + self.offset_x
             y = center_y - (scaled_height / 2) + self.offset_y
 
-            # Create a scaled version of the image
-            scaled_pixmap = self.image.scaled(
-                int(scaled_width),
-                int(scaled_height),
-                Qt.KeepAspectRatio,
-                Qt.SmoothTransformation
-            )
-
-            # Draw the image at the calculated position
-            painter.drawPixmap(int(x), int(y), scaled_pixmap)
+            # Draw only the visible part of the image, scaled on the fly: scaling the
+            # whole pixmap at high zoom would allocate a gigantic intermediate image
+            visible = QRectF(0, 0, self.width(), self.height()).intersected(
+                QRectF(x, y, scaled_width, scaled_height))
+            if not visible.isEmpty():
+                z = self.zoom_factor
+                source = QRectF((visible.left() - x) / z, (visible.top() - y) / z,
+                                visible.width() / z, visible.height() / z)
+                painter.setRenderHint(QPainter.SmoothPixmapTransform, z < 1.0)
+                painter.drawPixmap(visible, self.image, source)
 
             if self.overlay_painter is not None:
                 painter.save()

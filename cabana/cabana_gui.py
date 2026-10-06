@@ -1077,6 +1077,12 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Load Edits", f"Could not load {path}:\n{e}")
             return
         self.tma_editor.selected = None
+        # the saved orientation is reapplied by load_edits; show it in the combo without re-triggering a remap
+        idx = self.tma_orientation_combo.findData(self.tma_pre.orientation)
+        if idx >= 0 and idx != self.tma_orientation_combo.currentIndex():
+            self.tma_orientation_combo.blockSignals(True)
+            self.tma_orientation_combo.setCurrentIndex(idx)
+            self.tma_orientation_combo.blockSignals(False)
         self._show_tma_result(preserve_view=True)
         self.tma_status_label.setText(f"Reinstated {n} cores ({self.tma_pre.manual_count()} hand-edited) from {path}. "
                                       + self.tma_status_label.text())
@@ -2473,6 +2479,7 @@ class MainWindow(QMainWindow):
         # Connect signals
         self.segmentation_worker.progress_updated.connect(lambda value: self.progress_bar.setValue(value))
         self.segmentation_worker.segmentation_complete.connect(self.handle_segmentation_complete)
+        self.segmentation_worker.failed.connect(lambda m: self.handle_worker_failed("Segmentation", m))
 
         # Start the worker thread
         self.segmentation_worker.start()
@@ -2512,6 +2519,18 @@ class MainWindow(QMainWindow):
         self.detect_btn.setEnabled(True)
         self.detect_btn.setText("Detect")
         self.analyze_btn.setEnabled(True)
+
+    def handle_worker_failed(self, stage, message):
+        """A single-image worker raised: restore the buttons and tell the user."""
+        self.hide_progress_bar()
+        self.load_btn.setEnabled(True)
+        self.segment_btn.setEnabled(self.ori_img is not None)
+        self.segment_btn.setText("Segment")
+        self.detect_btn.setEnabled(self.ori_img is not None or self.seg_img is not None)
+        self.detect_btn.setText("Detect")
+        self.analyze_btn.setEnabled(self.frb_img is not None and self.toggle_gap_btn.isChecked())
+        self.analyze_btn.setText("Analyze")
+        QMessageBox.warning(self, f"{stage} failed", f"{stage} did not complete:\n{message}")
 
     def show_progress_bar(self):
         self.progress_bar.setValue(0)
@@ -2569,6 +2588,7 @@ class MainWindow(QMainWindow):
         # Connect signals
         self.detection_worker.progress_updated.connect(lambda value: self.progress_bar.setValue(value))
         self.detection_worker.detection_complete.connect(self.handle_detection_complete)
+        self.detection_worker.failed.connect(lambda m: self.handle_worker_failed("Fibre detection", m))
 
         # Start the worker thread
         self.detection_worker.start()
@@ -2589,6 +2609,7 @@ class MainWindow(QMainWindow):
         self.gap_analysis_worker = GapAnalysisWorker(self.frb_img, min_gap_diameter)
         self.gap_analysis_worker.progress_updated.connect(lambda value: self.progress_bar.setValue(value))
         self.gap_analysis_worker.gap_analysis_complete.connect(self.handle_gap_analysis_complete)
+        self.gap_analysis_worker.failed.connect(lambda m: self.handle_worker_failed("Gap analysis", m))
 
         self.gap_analysis_worker.start()
 

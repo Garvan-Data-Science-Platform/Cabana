@@ -793,6 +793,83 @@ class TestEditing:
         assert len(pre.grid_links()) == 4 and len(pre.grid_segments()) == 7
         pre.close()
 
+    def test_duplicate_cell_is_excluded(self, tmp_path):
+        pre, _, _ = self._pre(tmp_path)
+        a = next(c for c in pre.cores if (c.row, c.col) == (1, 1))
+        b = next(c for c in pre.cores if (c.row, c.col) == (1, 2))
+        pre.move_core(a, b.cx + 3, b.cy)
+        assert (a.row, a.col) == (1, 2) and a.excluded and a.reason == "duplicate" and not b.excluded
+        stems = [pre.core_stem(c) for c in pre.exportable_cores()]
+        assert len(stems) == len(set(stems))
+        pre.set_override(a, "include")          # an override cannot create a duplicate export
+        assert a.excluded and a.reason == "duplicate"
+        pre.close()
+
+    def test_manual_core_fill_is_measured(self, tmp_path):
+        pre, _, _ = self._pre(tmp_path)
+        x, y = pre.predict_centre(0, 1)         # an empty cell on the synthetic slide
+        empty = pre.add_core(x, y)
+        assert empty.fill < 0.05
+        full = pre.cores[0]
+        r0 = full.radius
+        pre.resize_core(full, r0 * 0.5)         # still entirely on tissue
+        assert full.fill > 0.9
+        pre.close()
+
+    def test_load_edits_restores_saved_orientation(self, tmp_path):
+        pre, _, _ = self._pre(tmp_path)
+        path = str(tmp_path / "edits.json")
+        pre.save_edits(path)
+        pre.close()
+        img_path = str(tmp_path / "e.png")
+        pre2 = TMAPreprocessor(img_path, array_number=1, slide_name="E", pixel_size_um=PX_UM,
+                               core_diameter_um=CORE_UM, fit_pixel_size_um=PX_UM)   # orientation auto
+        pre2.fit()
+        pre2.map_to_array()
+        pre2.load_edits(path)
+        assert pre2.orientation == "90" and pre2.matched_orientation == "90"
+        assert pre2.orientation_method == "manual"
+        with pytest.raises(ValueError):
+            pre3 = TMAPreprocessor(img_path, array_number=2, slide_name="E", pixel_size_um=PX_UM,
+                                   core_diameter_um=CORE_UM, fit_pixel_size_um=PX_UM)
+            pre3.fit()
+            pre3.load_edits(path)
+        pre2.close()
+
+    def test_load_edits_rejects_bad_records(self, tmp_path):
+        import json
+        pre, _, _ = self._pre(tmp_path)
+        bad = {"slide": "E", "array": 1, "orientation": "90",
+               "cores": [{"cx": 10.0, "cy": 10.0, "radius": 5.0, "override": "maybe"}]}
+        path = str(tmp_path / "bad.json")
+        json.dump(bad, open(path, "w"))
+        with pytest.raises(ValueError):
+            pre.load_edits(path)
+        pre.close()
+
+    def test_fit_resets_previous_match(self, tmp_path):
+        pre, _, _ = self._pre(tmp_path)
+        assert pre.matched_orientation == "90"
+        pre.fit()
+        assert pre.matched_orientation is None and pre.orientation_method is None and not pre.missing_positions()
+        pre.map_to_array()
+        assert pre.matched_orientation == "90"
+        pre.close()
+
+    def test_include_override_exports_outside_map_core(self, tmp_path):
+        pre, _, _ = self._pre(tmp_path)
+        core = pre.add_core(pre.cores[0].cx + 20 * PITCH_PX, pre.cores[0].cy)
+        assert core.outside_map and core not in pre.exportable_cores()
+        pre.set_override(core, "include")
+        assert core in pre.exportable_cores() and pre.core_group(core) == "Unmapped"
+        pre.close()
+
+    def test_export_rejects_unknown_channel(self, tmp_path):
+        pre, _, _ = self._pre(tmp_path)
+        with pytest.raises(ValueError):
+            pre.export(str(tmp_path / "out"), channels=["../x"])
+        pre.close()
+
     def test_manifest_marks_manual(self, tmp_path):
         pre, _, _ = self._pre(tmp_path)
         x, y = pre.predict_centre(0, 1)

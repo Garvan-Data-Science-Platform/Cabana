@@ -21,9 +21,11 @@ the core. ``Images`` and ``Masks`` are drop-in inputs for ``BatchCabana``
 import copy
 import csv
 import json
+import math
 import os
 import sys
-from dataclasses import dataclass, asdict
+import warnings
+from dataclasses import dataclass
 
 import cv2
 import numpy as np
@@ -142,7 +144,10 @@ def tissue_mask(img_bgr, sat_thresh=15, val_ratio=0.965, permissive=False):
     # grow by the gradient kernel so the edge of a no-data region is not kept
     nodata = cv2.dilate(nodata.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
     near_bg = unsaturated & (np.abs(val - bg_level) <= BG_WINDOW)
-    col_bg = np.ma.median(np.ma.masked_array(val, mask=~near_bg), axis=0).filled(bg_level)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)     # all-NaN columns
+        col_bg = np.nanmedian(np.where(near_bg, val, np.nan), axis=0)
+    col_bg = np.where(np.isnan(col_bg), bg_level, col_bg)
     enough = near_bg.sum(axis=0) >= 0.02 * val.shape[0]
     col_bg = np.where(enough, col_bg, bg_level)[None, :]
     sat_cut, ratio = sat_thresh, val_ratio
@@ -282,6 +287,18 @@ def fit_cores(img_bgr, pixel_size_um, core_diameter_um=1250.0,
     return circles
 
 
+def tissue_footprint(img_bgr, pixel_size_um, core_diameter_um=1250.0, sat_thresh=15, val_ratio=0.965,
+                     open_frac=0.1):
+    """Cleaned tissue mask (closed, opened, holes filled) as in the first steps
+    of :func:`fit_cores`; the fill grade of a hand-placed core is measured on it."""
+    core_px = core_diameter_um / pixel_size_um
+    raw = tissue_mask(img_bgr, sat_thresh=sat_thresh, val_ratio=val_ratio)
+    closed = cv2.morphologyEx(raw, cv2.MORPH_CLOSE, _ellipse(0.3 * core_px))
+    if open_frac and open_frac > 0:
+        closed = cv2.morphologyEx(closed, cv2.MORPH_OPEN, _ellipse(open_frac * core_px))
+    return ndi.binary_fill_holes(closed > 0).astype(np.uint8)
+
+
 # ---------------------------------------------------------------------------
 # Grid inference and orientation
 # ---------------------------------------------------------------------------
@@ -345,19 +362,8 @@ def recover_faint_cores(img_bgr, circles, rows, cols, n_rows, n_cols, pixel_size
     n = len(circles)
     if n < 3 or n_rows * n_cols <= n:
         return circles, rows, cols, [False] * n
-    pts = np.array([[c[0], c[1]] for c in circles], dtype=float)
-    A = np.stack([np.ones(n), cols.astype(float), rows.astype(float)], axis=1)
-    coef_x, *_ = np.linalg.lstsq(A, pts[:, 0], rcond=None)
-    coef_y, *_ = np.linalg.lstsq(A, pts[:, 1], rcond=None)
-    # With a single populated row (or column) the lattice slope along that
-    # axis is undetermined; fall back to the pitch measured on the other axis.
-    d = np.sqrt(((pts[:, None, :] - pts[None, :, :]) ** 2).sum(-1))
-    np.fill_diagonal(d, np.inf)
-    pitch = float(np.median(d.min(axis=1)))
-    if len(np.unique(rows)) < 2:
-        coef_x[2], coef_y[2] = 0.0, pitch
-    if len(np.unique(cols)) < 2:
-        coef_x[1], coef_y[1] = pitch, 0.0
+    # the same robust lattice (outliers rejected) that grid_offset and predict_centre use
+    coef_x, coef_y, _ = fit_lattice(circles, rows, cols)
     r_med = float(np.median([c[2] for c in circles]))
     core_px = core_diameter_um / pixel_size_um
     if not (0.2 * core_px / 2 < r_med < 1.5 * core_px / 2):
@@ -705,8 +711,11 @@ class TMAPreprocessor:
         self._sat = None
         self._hsv = None
         self._pitch_px = None
+        self._footprint = None
         self._lattice = None            # (coef_x, coef_y, pitch) at fit level, see fit_lattice
         self._map_transform = None      # (orientation, row offset, col offset) of the map on the scan
+        self._idx_t = None              # map (row, col) of every transformed-map cell, cached per match
+        self._scan_of_map = {}          # map (row, col) -> scan (row, col), cached per match
 
     # -- stage 1: fit -------------------------------------------------------
     def fit(self):
@@ -736,9 +745,21 @@ class TMAPreprocessor:
         self._fit_level, self._fit_image = lv, img
         self._hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         self._sat = self._hsv[:, :, 1]
-        self._map_transform = None
+        self._footprint = None      # computed on first hand edit (see _refresh_features)
+        self._reset_match()
         self._set_cores(cores, rows, cols, (n_rows, n_cols))
         return self.cores
+
+    def _reset_match(self):
+        """Forget a previous map match; cores are unmapped until map_to_array runs."""
+        self.matched_orientation = None
+        self.match_score = None
+        self.orientation_ties = []
+        self.orientation_method = None
+        self.orientation_margin = None
+        self._map_transform = None
+        self._idx_t = None
+        self._scan_of_map = {}
 
     def _set_cores(self, cores, rows, cols, grid_shape):
         """Install ``cores`` with their grid indices: fit the lattice, derive
@@ -830,6 +851,12 @@ class TMAPreprocessor:
             return
         yy, xx = np.ogrid[y0:y1, x0:x1]
         disc = (xx - cx) ** 2 + (yy - cy) ** 2 <= r * r
+        if c.manual:
+            # a moved, resized or added core: measure its fill where it now sits
+            if self._footprint is None:
+                self._footprint = tissue_footprint(self._fit_image, self.reader.pixel_size_um * ds,
+                                                   self.core_diameter_um, self.sat_thresh, self.val_ratio)
+            c.fill = float(self._footprint[y0:y1, x0:x1][disc].sum() / max(1, disc.sum()))
         sat = hsv[y0:y1, x0:x1, 1][disc]
         val = hsv[y0:y1, x0:x1, 2][disc]
         tissue = sat > self.sat_thresh
@@ -857,7 +884,7 @@ class TMAPreprocessor:
             c.map_row = c.map_col = -1
             c.outside_map = False
         if self.array_number is None or not self.cores:
-            self.matched_orientation = None
+            self._reset_match()
             self.apply_filters()
             return None
         observed = np.zeros(self.grid_shape, dtype=bool)
@@ -876,6 +903,14 @@ class TMAPreprocessor:
             self.orientation_method, self.orientation_margin = method, margin
         self.matched_orientation = o
         self._map_transform = self._transform_from_lookup(o, lookup)
+        self._idx_t, self._scan_of_map = None, {}
+        if self._map_transform is not None:
+            _, oy, ox = self._map_transform
+            self._idx_t = _transform_grid(np.stack(np.meshgrid(np.arange(MAP_ROWS), np.arange(MAP_COLS),
+                                                               indexing="ij"), axis=-1), o)
+            for tr in range(self._idx_t.shape[0]):
+                for tc in range(self._idx_t.shape[1]):
+                    self._scan_of_map[(int(self._idx_t[tr, tc, 0]), int(self._idx_t[tr, tc, 1]))] = (tr - oy, tc - ox)
         for c in self.cores:
             self._assign_map_cell(c)
         self.apply_filters()
@@ -903,14 +938,12 @@ class TMAPreprocessor:
         """Map ``(row, col)`` of scan cell ``(row, col)`` under the matched
         orientation, ``(-1, -1)`` when the cell lies outside the map. Works for
         cells beyond the fitted grid."""
-        if self._map_transform is None:
+        if self._map_transform is None or self._idx_t is None:
             return -1, -1
-        o, oy, ox = self._map_transform
-        idx_t = _transform_grid(np.stack(np.meshgrid(np.arange(MAP_ROWS), np.arange(MAP_COLS),
-                                                     indexing="ij"), axis=-1), o)
+        _, oy, ox = self._map_transform
         tr, tc = row + oy, col + ox
-        if 0 <= tr < idx_t.shape[0] and 0 <= tc < idx_t.shape[1]:
-            return int(idx_t[tr, tc, 0]), int(idx_t[tr, tc, 1])
+        if 0 <= tr < self._idx_t.shape[0] and 0 <= tc < self._idx_t.shape[1]:
+            return int(self._idx_t[tr, tc, 0]), int(self._idx_t[tr, tc, 1])
         return -1, -1
 
     def scan_cell(self, map_row, map_col):
@@ -918,14 +951,7 @@ class TMAPreprocessor:
         may lie outside the fitted grid. ``None`` without a matched map."""
         if self._map_transform is None:
             return None
-        o, oy, ox = self._map_transform
-        idx_t = _transform_grid(np.stack(np.meshgrid(np.arange(MAP_ROWS), np.arange(MAP_COLS),
-                                                     indexing="ij"), axis=-1), o)
-        hit = np.argwhere((idx_t[:, :, 0] == map_row) & (idx_t[:, :, 1] == map_col))
-        if not len(hit):
-            return None
-        tr, tc = (int(v) for v in hit[0])
-        return tr - oy, tc - ox
+        return self._scan_of_map.get((int(map_row), int(map_col)))
 
     def _assign_map_cell(self, c):
         c.map_row, c.map_col = self.map_cell(c.row, c.col)
@@ -1031,14 +1057,14 @@ class TMAPreprocessor:
         return segments
 
     # -- manual editing -------------------------------------------------------
-    def _after_edit(self, core=None):
+    def _after_edit(self, core=None, resnap=True):
         """Re-derive everything that depends on a core's geometry: its grid
-        cell (snapped to the fitted lattice), map position, offset, diameter
-        and appearance, then the numbering and the QC filters. The lattice and
-        orientation themselves are left as fitted."""
+        cell (snapped to the fitted lattice, unless ``resnap`` is False), map
+        position, offset, diameter and appearance, then the numbering and the
+        QC filters. The lattice and orientation themselves are left as fitted."""
         targets = [core] if core is not None else list(self.cores)
         for c in targets:
-            cell = self.cell_of(c.cx, c.cy)
+            cell = self.cell_of(c.cx, c.cy) if resnap else None
             if cell is not None:
                 c.row, c.col = cell
             self._refresh_geometry(c)
@@ -1094,7 +1120,7 @@ class TMAPreprocessor:
     def restore(self, cores):
         """Reinstate a :meth:`snapshot`."""
         self.cores = copy.deepcopy(cores)
-        self._after_edit()
+        self._after_edit(resnap=False)      # keep the snapshot's cells exactly
 
     def grid_links(self):
         """Pairs of cores in neighbouring grid cells (sharing a row or a
@@ -1131,11 +1157,24 @@ class TMAPreprocessor:
             raise RuntimeError("Call fit() first")
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
+        saved_array = data.get("array")
+        if saved_array is not None and self.array_number is not None and int(saved_array) != int(self.array_number):
+            raise ValueError(f"{path} was saved for array {saved_array}, not array {self.array_number}.")
+        saved_o = data.get("orientation")
+        if saved_o in ORIENTATIONS[1:] and self.orientation == "auto":
+            self.orientation = saved_o          # a confirmed orientation must survive the reload
         ds = self.reader.level_downsample(self._fit_level)
-        cores = [Core(index=i + 1, cx=float(d["cx"]), cy=float(d["cy"]), radius=float(d["radius"]),
-                      fill=float(d.get("fill", 1.0)), recovered=bool(d.get("recovered", False)),
-                      manual=bool(d.get("manual", False)), override=str(d.get("override", "")))
-                 for i, d in enumerate(data["cores"])]
+        h0, w0 = self.reader.level_shape(0)
+        cores = []
+        for i, d in enumerate(data["cores"]):
+            cx, cy, radius = (float(d[k]) for k in ("cx", "cy", "radius"))
+            override = str(d.get("override", ""))
+            if not all(math.isfinite(v) for v in (cx, cy, radius)) or radius < 1.0 \
+                    or not (0 <= cx < w0 and 0 <= cy < h0) or override not in ("", "include", "exclude"):
+                raise ValueError(f"Core {i + 1} in {path} is invalid: {d}")
+            cores.append(Core(index=i + 1, cx=cx, cy=cy, radius=radius, fill=float(d.get("fill", 1.0)),
+                              recovered=bool(d.get("recovered", False)), manual=bool(d.get("manual", False)),
+                              override=override))
         circles = [(c.cx / ds, c.cy / ds, c.radius / ds, c.fill) for c in cores]
         px_um = self.reader.pixel_size_um * ds
         rows, cols, n_rows, n_cols = infer_grid(circles, self.core_diameter_um / px_um)
@@ -1237,6 +1276,17 @@ class TMAPreprocessor:
                 reason = "manual"
             c.excluded = bool(reason)
             c.reason = reason
+        # one core per grid cell: a core moved or added onto an occupied cell would
+        # export the same patient ID twice, so all but the best-filled one are excluded
+        by_cell = {}
+        for c in self.cores:
+            by_cell.setdefault((c.row, c.col), []).append(c)
+        for members in by_cell.values():
+            if len(members) < 2:
+                continue
+            members.sort(key=lambda c: (c.excluded, c.manual, -c.fill * c.radius))
+            for c in members[1:]:
+                c.excluded, c.reason = True, "duplicate"
         return self.exclusion_summary()
 
     def exclusion_summary(self):
@@ -1259,7 +1309,8 @@ class TMAPreprocessor:
         return counts
 
     def exportable_cores(self):
-        return [c for c in self.cores if not c.outside_map and not c.excluded]
+        return [c for c in self.cores
+                if not c.excluded and (not c.outside_map or c.override == "include")]
 
     def array_map(self):
         return load_array_map(self.array_number) if self.array_number is not None else {}
@@ -1274,7 +1325,7 @@ class TMAPreprocessor:
         replicate number counts the slide's cores of the same patient or
         control tissue in row-major order, filters notwithstanding."""
         info = self.core_info(core)
-        if info is None:
+        if info is None or info.empty:
             return core_stem(self.slide_name, core.row, core.col, None, channel)
         same = [c for c in self.cores
                 if (i := self.core_info(c)) is not None and i.identity() == info.identity()]
@@ -1300,6 +1351,9 @@ class TMAPreprocessor:
                 "printed map and set the orientation explicitly before exporting.")
         r = self.reader
         channels = list(channels or r.channels)
+        unknown = [c for c in channels if c not in r.channels]
+        if unknown:
+            raise ValueError(f"Unknown channel(s) {unknown}; the slide has {list(r.channels)}.")
         made = set()
         margin_px = self.margin_um / r.pixel_size_um
         cores = self.exportable_cores()
@@ -1331,8 +1385,6 @@ class TMAPreprocessor:
         cv2.imwrite(os.path.join(out_dir, "overlay.png"), self.draw_overlay())
         self.save_edits(os.path.join(out_dir, EDITS_FILE))
         return True
-
-    GROUPS = ("Patients", "Controls", "Unmapped")
 
     def core_group(self, core):
         """``Patients``, ``Controls`` or ``Unmapped`` for export foldering."""

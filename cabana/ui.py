@@ -431,6 +431,36 @@ def generate_combo_style():
     )
 
 
+def generate_context_menu_style():
+    """Stylesheet for pop-up menus (image panel context menus) in the current theme."""
+    return f"""
+        QMenu {{
+            background-color: {color_to_stylesheet(COLORS['dock'])};
+            color: {color_to_stylesheet(COLORS['text'])};
+            border: 1px solid {color_to_stylesheet(COLORS['border'])};
+            border-radius: 4px;
+            padding: 4px;
+        }}
+        QMenu::item {{
+            background-color: transparent;
+            padding: 6px 12px;
+            border-radius: 2px;
+        }}
+        QMenu::item:selected {{
+            background-color: {color_to_stylesheet(COLORS['highlight'])};
+            color: {color_to_stylesheet(COLORS['background'])};
+        }}
+        QMenu::item:disabled {{
+            color: {color_to_stylesheet(COLORS['border'])};
+        }}
+        QMenu::separator {{
+            height: 1px;
+            background-color: {color_to_stylesheet(COLORS['border'])};
+            margin: 4px 0px;
+        }}
+    """
+
+
 def generate_menubar_style():
     """Stylesheet for the in-window menu bar (ignored by the native macOS bar)."""
     return f"""
@@ -1523,6 +1553,48 @@ class ImagePanel(QWidget):
 
         # Enable mouse tracking for zoom and pan operations
         self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.StrongFocus)
+
+        # Optional overlay drawn on top of the image in image coordinates, and an
+        # editing handler that may consume mouse events (see set_edit_handler).
+        self.overlay_painter = None
+        self.edit_handler = None
+        self._edit_drag = False
+
+    # -- overlay and editing hooks ------------------------------------------
+    def set_overlay_painter(self, painter_fn):
+        """``painter_fn(painter, zoom, to_widget)`` is called after the image is
+        drawn, with the painter transformed to image coordinates (use cosmetic
+        pens so line widths stay constant on screen). ``to_widget(x, y)`` maps
+        image to widget coordinates for text drawn with the transform reset.
+        Cleared by :meth:`setImage`."""
+        self.overlay_painter = painter_fn
+        self.update()
+
+    def set_edit_handler(self, handler):
+        """``handler`` receives ``press/move/release/double_click(x, y, event)``
+        in image coordinates and ``key(event)`` / ``context_menu(x, y, global_pos)``;
+        the mouse methods return True to consume the event (no panning).
+        Cleared by :meth:`setImage`."""
+        self.edit_handler = handler
+        self._edit_drag = False
+        self.update()
+
+    def image_origin(self):
+        """Widget coordinates of the image's top-left corner and the zoom."""
+        scaled_width = self.image.width() * self.zoom_factor
+        scaled_height = self.image.height() * self.zoom_factor
+        x = self.width() / 2 - scaled_width / 2 + self.offset_x
+        y = self.height() / 2 - scaled_height / 2 + self.offset_y
+        return x, y, self.zoom_factor
+
+    def widget_to_image(self, wx, wy):
+        x0, y0, z = self.image_origin()
+        return (wx - x0) / z, (wy - y0) / z
+
+    def image_to_widget(self, ix, iy):
+        x0, y0, z = self.image_origin()
+        return x0 + ix * z, y0 + iy * z
 
     def setImage(self, image, preserve_view=False):
         """
@@ -1537,6 +1609,12 @@ class ImagePanel(QWidget):
         """
         if image is None:
             return
+
+        # overlays belong to the image they were set for
+        self.overlay_painter = None
+        self.edit_handler = None
+        self._edit_drag = False
+        self.setToolTip("")
 
         if not preserve_view:
             # Reset offset to 0 when setting a new image
@@ -1656,8 +1734,15 @@ class ImagePanel(QWidget):
             self.zoomChanged.emit(self.zoom_factor)
 
     def mousePressEvent(self, event):
-        """Handle mouse press events for panning"""
+        """Handle mouse press events for editing (if a handler consumes it) or panning"""
         if self.image and not self.image.isNull():
+            self.setFocus()
+            if self.edit_handler is not None and event.button() == Qt.LeftButton:
+                ix, iy = self.widget_to_image(event.x(), event.y())
+                if self.edit_handler.press(ix, iy, event):
+                    self._edit_drag = True
+                    self.update()
+                    return
             # Support both left and middle mouse button for panning
             if event.button() == Qt.LeftButton or event.button() == Qt.MiddleButton:
                 self.panning = True
@@ -1666,14 +1751,47 @@ class ImagePanel(QWidget):
                 self.setCursor(Qt.ClosedHandCursor)
 
     def mouseReleaseEvent(self, event):
-        """Handle mouse release events for panning"""
+        """Handle mouse release events for editing or panning"""
+        if self._edit_drag and event.button() == Qt.LeftButton:
+            self._edit_drag = False
+            if self.edit_handler is not None:
+                ix, iy = self.widget_to_image(event.x(), event.y())
+                self.edit_handler.release(ix, iy, event)
+            self.update()
+            return
         # Support both left and middle mouse button for panning
         if event.button() == Qt.LeftButton or event.button() == Qt.MiddleButton:
             self.panning = False
             self.setCursor(Qt.ArrowCursor)
 
+    def mouseDoubleClickEvent(self, event):
+        if (self.edit_handler is not None and self.image and not self.image.isNull()
+                and event.button() == Qt.LeftButton):
+            ix, iy = self.widget_to_image(event.x(), event.y())
+            if self.edit_handler.double_click(ix, iy, event):
+                self._edit_drag = False
+                self.panning = False
+                self.update()
+                return
+        super().mouseDoubleClickEvent(event)
+
+    def keyPressEvent(self, event):
+        if self.edit_handler is not None and self.edit_handler.key(event):
+            self.update()
+            return
+        super().keyPressEvent(event)
+
     def mouseMoveEvent(self, event):
-        """Handle mouse move events for panning"""
+        """Handle mouse move events for editing or panning"""
+        if self.edit_handler is not None and self.image and not self.image.isNull():
+            ix, iy = self.widget_to_image(event.x(), event.y())
+            if self._edit_drag:
+                self.edit_handler.move(ix, iy, event)
+                self.update()
+                return
+            cursor = self.edit_handler.cursor_at(ix, iy)
+            if cursor is not None and not self.panning:
+                self.setCursor(cursor)
         if self.panning and self.image and not self.image.isNull():
             # Calculate the movement delta
             delta_x = event.x() - self.pan_start_x
@@ -1793,6 +1911,17 @@ class ImagePanel(QWidget):
 
             # Draw the image at the calculated position
             painter.drawPixmap(int(x), int(y), scaled_pixmap)
+
+            if self.overlay_painter is not None:
+                painter.save()
+                painter.setRenderHint(QPainter.Antialiasing, True)
+                painter.translate(x, y)
+                painter.scale(self.zoom_factor, self.zoom_factor)
+                try:
+                    self.overlay_painter(painter, self.zoom_factor,
+                                         lambda ix, iy: (x + ix * self.zoom_factor, y + iy * self.zoom_factor))
+                finally:
+                    painter.restore()
         else:
             # Draw placeholder text
             painter.setPen(COLORS['highlight'])
@@ -1815,32 +1944,15 @@ class ImagePanel(QWidget):
         """Handle right-click context menu events"""
         # Only show context menu if there's an image loaded
         if self.image and not self.image.isNull():
+            if self.edit_handler is not None:
+                ix, iy = self.widget_to_image(event.x(), event.y())
+                if self.edit_handler.context_menu(ix, iy, event.globalPos()):
+                    self.update()
+                    return
             context_menu = QMenu(self)
 
             # Apply the same styling as other UI elements
-            context_menu.setStyleSheet(f"""
-                QMenu {{
-                    background-color: {color_to_stylesheet(COLORS['dock'])};
-                    color: {color_to_stylesheet(COLORS['text'])};
-                    border: 1px solid {color_to_stylesheet(COLORS['border'])};
-                    border-radius: 4px;
-                    padding: 4px;
-                }}
-                QMenu::item {{
-                    background-color: transparent;
-                    padding: 6px 12px;
-                    border-radius: 2px;
-                }}
-                QMenu::item:selected {{
-                    background-color: {color_to_stylesheet(COLORS['highlight'])};
-                    color: {color_to_stylesheet(COLORS['background'])};
-                }}
-                QMenu::separator {{
-                    height: 1px;
-                    background-color: {color_to_stylesheet(COLORS['border'])};
-                    margin: 4px 0px;
-                }}
-            """)
+            context_menu.setStyleSheet(generate_context_menu_style())
 
             # Create download action
             download_action = QAction("Save Image As...", self)

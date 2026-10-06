@@ -21,7 +21,8 @@ from PyQt5.QtGui import QDesktopServices
 
 from .ui import *
 from .themes import THEMES, DEFAULT_THEME
-from .tma import ORIENTATIONS
+from .tma import ORIENTATIONS, EDITS_FILE
+from .tma_editor import TMACoreEditor
 from .tma_maps import available_arrays
 from . import __version__
 
@@ -255,7 +256,7 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         self.open_slide_action = QAction("Open &TMA Slide…", self)
         self.open_slide_action.setShortcut(QKeySequence("Ctrl+Shift+O"))
-        self.open_slide_action.setStatusTip("Choose a whole-slide TMA scan on the TMA page")
+        self.open_slide_action.setStatusTip("Choose a whole-slide TMA scan on the TMA Dearrayer page")
         self.open_slide_action.triggered.connect(self._open_tma_slide_from_menu)
         file_menu.addAction(self.open_slide_action)
 
@@ -292,7 +293,7 @@ class MainWindow(QMainWindow):
         # ExclusiveOptional lets the Start page leave every Analysis entry unchecked
         self._page_group.setExclusionPolicy(QActionGroup.ExclusionPolicy.ExclusiveOptional)
         self._page_actions = []
-        for i, title in enumerate(("TMA", "Segmentation", "Fibre Detection",
+        for i, title in enumerate(("TMA Dearrayer", "Segmentation", "Fibre Detection",
                                    "Gap Analysis", "Batch Run")):
             action = QAction(title, self)
             action.setCheckable(True)
@@ -367,7 +368,7 @@ class MainWindow(QMainWindow):
 
         self.start_slide_btn = QPushButton("Open TMA Slide…")
         self.start_slide_btn.setStyleSheet(self.primary_btn_style)
-        self.start_slide_btn.setToolTip("Choose a whole-slide TMA scan and switch to the TMA page.")
+        self.start_slide_btn.setToolTip("Choose a whole-slide TMA scan and switch to the TMA Dearrayer page.")
         self.start_slide_btn.clicked.connect(self._open_tma_slide_from_menu)
         layout.addWidget(self.start_slide_btn)
 
@@ -622,7 +623,7 @@ class MainWindow(QMainWindow):
         self.mask_folder_path.setStyleSheet(self.path_edit_style)
         self.mask_folder_path.setToolTip(
             "Optional. Binary masks (white = analyse, black = ignore) named like the input images,\n"
-            "e.g. the Masks folder written by the TMA page. Leave empty to rely on segmentation alone.")
+            "e.g. the Masks folder written by the TMA Dearrayer page. Leave empty to rely on segmentation alone.")
         mask_layout.addWidget(self.mask_folder_path, 1)
 
         self.mask_btn = QPushButton("Select")
@@ -762,7 +763,10 @@ class MainWindow(QMainWindow):
         self.tma_orientation_combo.setToolTip(
             "How the printed map sits on the scan. Auto compares the pattern of missing cores;\n"
             "a fully populated array cannot distinguish a rotation from its mirror image,\n"
-            "so check the labels on the overlay and pick the orientation explicitly if needed.")
+            "so check the control cores (named on the overlay) against the printed map and\n"
+            "pick the orientation explicitly if needed. Changing it relabels instantly, no refit.")
+        self.tma_orientation_combo.currentIndexChanged.connect(self._tma_map_changed)
+        self.tma_array_combo.currentIndexChanged.connect(self._tma_map_changed)
         orient_layout.addWidget(self.tma_orientation_combo, 1)
         layout.addLayout(orient_layout)
 
@@ -866,6 +870,44 @@ class MainWindow(QMainWindow):
         flt.addWidget(self.tma_dmax_spin, 1, 3)
         layout.addLayout(flt)
 
+        # --- Edit --------------------------------------------------------
+        # Hand corrections of the fitted circles; every edit re-snaps to the grid.
+        layout.addWidget(create_separator())
+        edit_title = QLabel("Edit")
+        edit_title.setStyleSheet(self.value_label_style + " font-weight: 600;")
+        edit_title.setToolTip(
+            "Correct the fit by hand. A moved or added core takes the patient ID of the grid\n"
+            "cell it lands in; nothing is typed. Edits are saved with the export (cores_edits.json);\n"
+            "refitting the slide into the same output folder offers to reinstate them.")
+        layout.addWidget(edit_title)
+        edit_layout = QHBoxLayout()
+        edit_layout.setSpacing(12)
+        self.tma_edit_cb = QCheckBox("Edit cores")
+        self.tma_edit_cb.setStyleSheet(self.checkbox_style)
+        self.tma_edit_cb.setEnabled(False)
+        self.tma_edit_cb.setToolTip(
+            "Click a circle to select it (yellow halo). Drag inside it to move it; drag its rim,\n"
+            "the yellow handle, or Shift+drag inside it to resize it. Double-click a circle to\n"
+            "include or exclude it, double-click empty space or a dashed placeholder to add a core,\n"
+            "Delete removes the selected core, Ctrl+Z undoes, right-click for a menu.\n"
+            "Hand-edited cores carry an orange dot on top of their ring; hover a core for its details.")
+        self.tma_edit_cb.toggled.connect(self._tma_edit_toggled)
+        edit_layout.addWidget(self.tma_edit_cb)
+        self.tma_links_cb = QCheckBox("Grid lines")
+        self.tma_links_cb.setChecked(True)
+        self.tma_links_cb.setStyleSheet(self.checkbox_style)
+        self.tma_links_cb.setToolTip("Draw lines between cores in neighbouring grid cells; they follow edits.")
+        self.tma_links_cb.toggled.connect(self._tma_links_toggled)
+        edit_layout.addWidget(self.tma_links_cb)
+        edit_layout.addStretch()
+        self.tma_undo_btn = QPushButton("Undo")
+        self.tma_undo_btn.setStyleSheet(self.btn_style)
+        self.tma_undo_btn.setEnabled(False)
+        self.tma_undo_btn.setToolTip("Undo the last edit (Ctrl+Z on the image).")
+        self.tma_undo_btn.clicked.connect(lambda: self.tma_editor.undo())
+        edit_layout.addWidget(self.tma_undo_btn)
+        layout.addLayout(edit_layout)
+
         # --- Export ------------------------------------------------------
         # Settings below only affect Export Cores; changing them needs no refit.
         layout.addWidget(create_separator())
@@ -952,7 +994,9 @@ class MainWindow(QMainWindow):
             "Fit summary: cores found and to export, grid size, matched orientation and any\n"
             "orientations that fit equally well, exclusions per filter and median diameter.\n"
             "Overlay: green = exported, purple = recovered at an empty grid position (exported),\n"
-            "grey with a cross = excluded by a filter, grey = outside the printed map.")
+            "grey with a cross = excluded by a filter, grey = outside the printed map,\n"
+            "orange dot on the ring = hand-edited, dashed grey = position without a core.\n"
+            "Labels: map position (grid cell without a map) and core number; controls show their tissue.")
         layout.addWidget(self.tma_status_label)
 
         btn_layout = QHBoxLayout()
@@ -985,6 +1029,86 @@ class MainWindow(QMainWindow):
         self.tma_reader = None
         self.tma_worker = None
         self.tma_overlay = None
+        self._tma_shown_pre = None
+        self._tma_editor = None     # created on first use: the image panel does not exist yet
+
+    @property
+    def tma_editor(self):
+        if self._tma_editor is None:
+            self._tma_editor = TMACoreEditor(self.image_panel, lambda: self.tma_pre, self._tma_edited)
+        return self._tma_editor
+
+    def _tma_map_changed(self, *_):
+        """Relabel the fitted cores for a new array or orientation without refitting."""
+        pre = self.tma_pre
+        if pre is None or (self.tma_worker is not None and self.tma_worker.isRunning()):
+            return
+        pre.array_number = self.tma_array_combo.currentData()
+        pre.orientation = self.tma_orientation_combo.currentData()
+        pre.map_to_array()
+        self._show_tma_result(preserve_view=True)
+
+    def _tma_edit_toggled(self, on):
+        self.tma_editor.enabled = bool(on)
+        self.image_panel.update()
+        if self.tma_pre is not None:
+            self._show_tma_result(preserve_view=True)
+
+    def _tma_links_toggled(self, on):
+        self.tma_editor.show_links = bool(on)
+        self.image_panel.update()
+
+    def _tma_edited(self, full):
+        """Editor callback: repaint, and after a completed edit refresh the summary."""
+        if full:
+            self._show_tma_result(preserve_view=True)
+        else:
+            self.image_panel.update()
+        self.tma_undo_btn.setEnabled(self.tma_editor.can_undo())
+
+    def load_tma_edits(self, path):
+        """Reinstate the cores saved by an earlier export (see _offer_saved_edits)."""
+        if self.tma_pre is None:
+            return
+        try:
+            self.tma_editor.push_undo()
+            n = self.tma_pre.load_edits(path)
+        except Exception as e:
+            QMessageBox.warning(self, "Load Edits", f"Could not load {path}:\n{e}")
+            return
+        self.tma_editor.selected = None
+        self._show_tma_result(preserve_view=True)
+        self.tma_status_label.setText(f"Reinstated {n} cores ({self.tma_pre.manual_count()} hand-edited) from {path}. "
+                                      + self.tma_status_label.text())
+
+    def _offer_saved_edits(self):
+        """After a fit, offer to reinstate hand edits saved by an earlier export."""
+        pre = self.tma_pre
+        if pre is None or not self.tma_output:
+            return
+        path = join_path(self.tma_output, EDITS_FILE)
+        if not os.path.isfile(path):
+            return
+        try:
+            import json
+            with open(path, encoding="utf-8") as f:
+                saved = json.load(f)
+        except Exception:
+            return
+        n_manual = sum(1 for c in saved.get("cores", []) if c.get("manual") or c.get("override"))
+        if saved.get("slide") != pre.slide_name or not n_manual:
+            return
+        msg = QMessageBox(self)
+        msg.setWindowTitle("TMA Edits Found")
+        msg.setText(f"An earlier export of this slide saved {n_manual} hand-edited cores.")
+        msg.setInformativeText(f"{path}\n\nReinstate those cores in place of the new fit?")
+        msg.setStyleSheet(self.msgbox_style)
+        yes = msg.addButton("Reinstate", QMessageBox.AcceptRole)
+        msg.addButton("Keep new fit", QMessageBox.RejectRole)
+        self._fit_dialog_buttons(msg)
+        msg.exec_()
+        if msg.clickedButton() == yes:
+            self.load_tma_edits(path)
 
     def select_tma_slide(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -1090,6 +1214,14 @@ class MainWindow(QMainWindow):
                   self.tma_margin_spin, self.tma_erode_spin, self.tma_sat_spin, self.tma_recover_cb,
                   self.tma_offset_spin, self.tma_dmin_spin, self.tma_dmax_spin, self.tma_stain_spin):
             w.setEnabled(not busy)
+        fitted = not busy and self.tma_pre is not None
+        for w in (self.tma_edit_cb, self.tma_links_cb):
+            w.setEnabled(fitted)
+        self.tma_undo_btn.setEnabled(fitted and self.tma_editor.can_undo())
+        if busy:
+            self.tma_editor.enabled = False
+        else:
+            self.tma_editor.enabled = fitted and self.tma_edit_cb.isChecked()
         self.tma_fit_btn.setEnabled(not busy and self.tma_slide is not None
                                     and (self.tma_reader is not None or self.tma_pre is not None))
         self.tma_export_btn.setEnabled(not busy and self.tma_pre is not None
@@ -1128,6 +1260,7 @@ class MainWindow(QMainWindow):
     def handle_tma_fit_complete(self, pre):
         self.tma_pre = pre
         self.tma_reader = pre.reader
+        self.tma_editor.reset()
         self.tma_fit_btn.setText("Fit Cores")
         self._tma_set_busy(False)
         reader = pre.reader
@@ -1140,12 +1273,19 @@ class MainWindow(QMainWindow):
         self._show_tma_result(preserve_view=False)
         self.status_file_label.setText(f"  {os.path.basename(self.tma_slide)}")
         self.status_dims_label.setText(f"{reader.level_shape(0)[1]} x {reader.level_shape(0)[0]}  ")
+        self._offer_saved_edits()
 
     def _show_tma_result(self, preserve_view=False):
-        """Draw the overlay and write the fit/filter summary to the status line."""
+        """Show the fit image with the live overlay and write the fit/filter summary to the status line."""
         pre = self.tma_pre
-        self.tma_overlay = np.ascontiguousarray(pre.draw_overlay()[:, :, ::-1])
-        self.image_panel.setImage(self.tma_overlay, preserve_view=preserve_view)
+        if self._tma_shown_pre is not pre or not preserve_view or self.image_panel.overlay_painter is None:
+            # the base image changes only with a refit; the overlay is painted live on top
+            self.tma_overlay = np.ascontiguousarray(pre._fit_image[:, :, ::-1])
+            self.image_panel.setImage(self.tma_overlay, preserve_view=preserve_view and self._tma_shown_pre is pre)
+            self._tma_shown_pre = pre
+        self.image_panel.set_overlay_painter(self.tma_editor.paint)
+        self.image_panel.set_edit_handler(self.tma_editor)
+        self.tma_undo_btn.setEnabled(self.tma_editor.can_undo())
         n_rows, n_cols = pre.grid_shape
         n_out = len([c for c in pre.cores if c.outside_map])
         n_export = len(pre.exportable_cores())
@@ -1170,6 +1310,12 @@ class MainWindow(QMainWindow):
             msg += "; excluded " + ", ".join(f"{v} {names.get(k, k)}" for k, v in sorted(summary.items()))
         if n_out:
             msg += f"; {n_out} outside the map"
+        n_missing = len(pre.missing_positions())
+        if n_missing:
+            msg += f"; {n_missing} map position{'s' if n_missing > 1 else ''} without a core (dashed)"
+        n_manual = pre.manual_count()
+        if n_manual:
+            msg += f"; {n_manual} hand-edited"
         diams = [c.diameter_um for c in pre.cores if not c.outside_map]
         if diams:
             med = float(np.median(diams))
@@ -2686,7 +2832,7 @@ class MainWindow(QMainWindow):
         for btn in (self.start_open_btn, self.start_params_btn,
                     self.param_btn, self.input_btn, self.output_btn, self.cancel_batch_btn,
                      self.mask_btn, self.mask_clear_btn, self.tma_slide_btn, self.tma_output_btn,
-                     self.tma_cancel_btn):
+                     self.tma_cancel_btn, self.tma_undo_btn):
             btn.setStyleSheet(self.btn_style)
 
         # Primary buttons
@@ -2714,7 +2860,8 @@ class MainWindow(QMainWindow):
         # Checkboxes
         for cb in (self.white_bg_cb, self.toggle_img_cb, self.dark_line_cb,
                    self.extend_line_cb, self.overlay_fibres_cb, self.overlay_gaps_cb,
-                   self.stats_cb, self.scores_cb, self.tma_recover_cb, *self.tma_channel_cbs.values()):
+                   self.stats_cb, self.scores_cb, self.tma_recover_cb,
+                   self.tma_edit_cb, self.tma_links_cb, *self.tma_channel_cbs.values()):
             cb.setStyleSheet(self.checkbox_style)
 
         # Path edits

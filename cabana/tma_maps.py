@@ -12,6 +12,7 @@ Arrays 1 and 2 have an empty last row (88 cores); arrays 3 to 8 have 96.
 
 import csv
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -85,11 +86,15 @@ def available_arrays():
     return sorted({int(r["array"]) for r in _read_rows()})
 
 
+@lru_cache(maxsize=None)
 def load_array_map(array_number):
     """Return ``{(row_index, col_index): CoreInfo}`` for one array.
 
     Every one of the 12 x 8 cells is present; empty cells have ``empty=True``.
+    The result is cached (the maps are static and read-only): the GUI overlay
+    looks a core's entry up on every repaint.
     """
+    array_number = int(array_number)
     cells = {}
     for r in _read_rows():
         if int(r["array"]) != int(array_number):

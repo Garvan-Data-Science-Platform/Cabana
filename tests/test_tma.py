@@ -284,7 +284,7 @@ class TestPreprocessor:
         assert pre.grid_shape == (occ.shape[0], occ.any(axis=0).sum())   # empty column trimmed
         assert len(pre.cores) == occ.sum()
         assert pre.matched_orientation is not None
-        assert sorted(p.name for p in out.iterdir()) == ["BF", "cores.csv", "overlay.png"]
+        assert sorted(p.name for p in out.iterdir()) == ["BF", "cores.csv", "cores_edits.json", "overlay.png"]
         assert sorted(p.name for p in (out / "BF").iterdir()) == ["Controls", "Patients"]
         ctrl = sorted(os.listdir(out / "BF" / "Controls" / "Images"))
         pats = sorted(os.listdir(out / "BF" / "Patients" / "Images"))
@@ -309,10 +309,18 @@ class TestPreprocessor:
         assert abs(np.sqrt((m > 0).sum() / np.pi) - expected_r) < 2
         with open(out / "cores.csv", newline="") as f:
             rows = list(csv.DictReader(f))
-        assert len(rows) == occ.sum()
+        present = [r for r in rows if r["flag"] != "missing"]
+        missing = [r for r in rows if r["flag"] == "missing"]
+        assert len(present) == occ.sum()
+        # the two dropped cores appear as "missing" rows at their scan cell, so the
+        # manifest covers every position of the printed map
+        assert len(missing) == 2
+        assert {(int(r["scan_row"]) - 1, int(r["scan_col"]) - 1) for r in missing} == {(0, 1), (3, 5)}
         assert all(r["patient_id"] or r["tissue"] for r in rows)
+        assert all(r["excluded"] == "1" and r["reason"] == "missing" and r["cx"] for r in missing)
         assert {r["group"] for r in rows} == {"Patients", "Controls"}
         assert (out / "overlay.png").exists()
+        assert (out / "cores_edits.json").exists()
         # exported images carry the pixel size so Cabana recovers µm/pixel
         from cabana.io import split2batches
         _, res = split2batches([str(out / "BF" / "Patients" / "Images" / pats[0])])
@@ -587,3 +595,213 @@ class TestTieBreaking:
         pre.map_to_array()
         assert pre.orientation_method == "manual" and pre.orientation_resolved
         assert pre.export(str(tmp_path / "out"))
+
+
+def rotate_slide(img, degrees):
+    """Rotate a synthetic slide about its centre, padding with the slide background."""
+    h, w = img.shape[:2]
+    M = cv2.getRotationMatrix2D((w / 2, h / 2), degrees, 1.0)
+    return cv2.warpAffine(img, M, (w, h), flags=cv2.INTER_LINEAR, borderValue=(245, 245, 245))
+
+
+class TestDeskew:
+    """A tilted array must snap to the same grid as an upright one."""
+
+    @pytest.mark.parametrize("degrees", [-4.0, 3.0])
+    def test_rotated_grid_shape(self, degrees):
+        from cabana.tma import estimate_rotation, well_formed
+        occ = np.ones((5, 8), dtype=bool)
+        occ[1, 3] = occ[4, 0] = False
+        img, _ = synthetic_slide(occ)
+        img = rotate_slide(img, degrees)
+        circles = fit_cores(img, PX_UM, CORE_UM)
+        pts = np.array([[c[0], c[1]] for c in circles])
+        angle = np.degrees(estimate_rotation(pts[well_formed(circles)], CORE_UM / PX_UM))
+        # image rotation is counter-clockwise for positive degrees in image coordinates (y down)
+        assert abs(angle + degrees) < 0.5
+        rows, cols, n_rows, n_cols = infer_grid(circles, CORE_UM / PX_UM)
+        assert (n_rows, n_cols) == (5, 8)
+        assert len({(r, c) for r, c in zip(rows, cols)}) == len(circles)   # one circle per cell
+
+    def test_off_lattice_debris_does_not_widen_grid(self):
+        occ = np.ones((4, 6), dtype=bool)
+        img, centres = synthetic_slide(occ)
+        # a small blob half a pitch above the top row, between two columns
+        cx, cy = centres[(0, 2)]
+        cv2.circle(img, (cx + int(0.55 * PITCH_PX), cy - int(0.55 * PITCH_PX)), 30, (190, 150, 230), -1)
+        circles = fit_cores(img, PX_UM, CORE_UM)
+        assert len(circles) == 25
+        rows, cols, n_rows, n_cols = infer_grid(circles, CORE_UM / PX_UM)
+        assert (n_rows, n_cols) == (4, 6)
+        small = int(np.argmin([c[2] for c in circles]))
+        assert rows[small] < 0 or rows[small] >= n_rows or cols[small] < 0 or cols[small] >= n_cols
+        assert all(0 <= r < 4 and 0 <= c < 6 for i, (r, c) in enumerate(zip(rows, cols)) if i != small)
+
+    def test_pitch_ignores_malformed_circles(self):
+        from cabana.tma import well_formed
+        circles = [(0, 0, 50, 0.9), (200, 0, 50, 0.9), (400, 0, 48, 0.8), (600, 0, 52, 0.95),
+                   (700, 0, 15, 0.9),   # debris: wrong radius
+                   (100, 300, 50, 0.1)]  # hollow ring: low fill
+        assert set(well_formed(circles).tolist()) == {0, 1, 2, 3}
+
+
+class TestEditing:
+    """Hand edits re-snap to the lattice, re-map and survive a save/load."""
+
+    def _pre(self, tmp_path, name="e.png"):
+        from cabana.tma import _transform_grid
+        occ = _transform_grid(occupancy_grid(1), "90").copy()
+        occ[0, 1] = False
+        occ[3, 5] = False
+        img, centres = synthetic_slide(occ, jitter=5)
+        path = str(tmp_path / name)
+        cv2.imwrite(path, img)
+        pre = TMAPreprocessor(path, array_number=1, slide_name="E", pixel_size_um=PX_UM,
+                              core_diameter_um=CORE_UM, fit_pixel_size_um=PX_UM, orientation="90")
+        pre.fit()
+        pre.map_to_array()
+        return pre, centres, occ
+
+    def test_map_and_scan_cells_are_inverse(self, tmp_path):
+        pre, _, _ = self._pre(tmp_path)
+        for c in pre.cores:
+            assert pre.map_cell(c.row, c.col) == (c.map_row, c.map_col)
+            assert pre.scan_cell(c.map_row, c.map_col) == (c.row, c.col)
+        assert pre.map_cell(-5, -5) == (-1, -1)
+        assert pre.map_cell(50, 50) == (-1, -1)
+        pre.close()
+
+    def test_missing_positions_and_links(self, tmp_path):
+        pre, _, occ = self._pre(tmp_path)
+        miss = pre.missing_positions()
+        assert {(r, c) for _, r, c, _ in miss} == {(0, 1), (3, 5)}
+        assert all(centre is not None for _, _, _, centre in miss)
+        n_rows, n_cols = occ.shape
+        expected = sum(1 for r in range(n_rows) for c in range(n_cols)
+                       if occ[r, c] and ((c + 1 < n_cols and occ[r, c + 1])))
+        expected += sum(1 for r in range(n_rows) for c in range(n_cols)
+                        if occ[r, c] and ((r + 1 < n_rows and occ[r + 1, c])))
+        assert len(pre.grid_links()) == expected
+        pre.close()
+
+    def test_add_move_remove(self, tmp_path):
+        pre, centres, _ = self._pre(tmp_path)
+        n0 = len(pre.cores)
+        info_missing = {(r, c): info for info, r, c, _ in pre.missing_positions()}
+        # add a core at the lattice-predicted centre of an empty cell
+        x, y = pre.predict_centre(0, 1)
+        core = pre.add_core(x, y)
+        assert core.manual and (core.row, core.col) == (0, 1)
+        assert pre.core_info(core).position == info_missing[(0, 1)].position
+        assert {(r, c) for _, r, c, _ in pre.missing_positions()} == {(3, 5)}
+        assert len(pre.cores) == n0 + 1 and [c.index for c in pre.cores] == list(range(1, n0 + 2))
+        assert core.diameter_um == pytest.approx(2 * core.radius * PX_UM)
+        # move it to the other empty cell: map position follows the lattice cell
+        x2, y2 = pre.predict_centre(3, 5)
+        pre.move_core(core, x2 + 3, y2 - 2)
+        assert (core.row, core.col) == (3, 5)
+        assert pre.core_info(core).position == info_missing[(3, 5)].position
+        assert core.grid_offset < 0.05
+        assert {(r, c) for _, r, c, _ in pre.missing_positions()} == {(0, 1)}
+        # move it far off the array: outside the map, still listed
+        pre.move_core(core, x2 + 6 * PITCH_PX * 1.0, y2)
+        assert core.outside_map
+        pre.remove_core(core)
+        assert len(pre.cores) == n0
+        assert {(r, c) for _, r, c, _ in pre.missing_positions()} == {(0, 1), (3, 5)}
+        pre.close()
+
+    def test_resize_and_override(self, tmp_path):
+        pre, _, _ = self._pre(tmp_path)
+        core = next(c for c in pre.cores if not c.excluded and pre.core_info(c).patient_id)
+        pre.resize_core(core, core.radius * 0.5)
+        assert core.excluded and core.reason == "diameter" and core.manual
+        pre.set_override(core, "include")
+        assert not core.excluded and core.reason == ""
+        pre.map_to_array()                       # re-mapping keeps the override
+        assert not core.excluded
+        pre.apply_filters()
+        assert not core.excluded
+        pre.set_override(core, "")
+        assert core.excluded and core.reason == "diameter"
+        other = next(c for c in pre.cores if not c.excluded)
+        pre.set_override(other, "exclude")
+        assert other.excluded and other.reason == "manual" and other not in pre.exportable_cores()
+        assert pre.manual_count() == 2
+        pre.close()
+
+    def test_snapshot_restore(self, tmp_path):
+        pre, _, _ = self._pre(tmp_path)
+        before = pre.snapshot()
+        core = pre.cores[0]
+        pre.move_core(core, core.cx + PITCH_PX, core.cy)
+        pre.remove_core(pre.cores[-1])
+        pre.restore(before)
+        assert len(pre.cores) == len(before)
+        assert not any(c.manual for c in pre.cores)
+        assert [(c.row, c.col, c.map_row, c.map_col) for c in pre.cores] == \
+               [(c.row, c.col, c.map_row, c.map_col) for c in before]
+        pre.close()
+
+    def test_save_and_load_edits(self, tmp_path):
+        pre, _, _ = self._pre(tmp_path)
+        x, y = pre.predict_centre(0, 1)
+        added = pre.add_core(x, y)
+        pre.set_override(added, "include")       # the synthetic cell holds no tissue
+        added_pos = pre.core_info(added).position
+        victim = next(c for c in pre.cores if not c.excluded and c is not added)
+        pre.set_override(victim, "exclude")
+        victim_pos = pre.core_info(victim).position
+        path = str(tmp_path / "edits.json")
+        pre.save_edits(path)
+        n = len(pre.cores)
+        pre.close()
+
+        pre2, _, _ = self._pre(tmp_path, "e2.png")
+        assert len(pre2.cores) == n - 1
+        assert pre2.load_edits(path) == n
+        assert len(pre2.cores) == n and pre2.manual_count() == 2
+        assert pre2.matched_orientation == "90"
+        by_pos = {pre2.core_info(c).position: c for c in pre2.cores}
+        assert by_pos[added_pos].manual and by_pos[added_pos].override == "include"
+        assert not by_pos[added_pos].excluded
+        assert by_pos[victim_pos].override == "exclude" and by_pos[victim_pos].excluded
+        assert {(r, c) for _, r, c, _ in pre2.missing_positions()} == {(3, 5)}
+        pre2.close()
+
+    def test_empty_positions_without_map_and_labels(self, tmp_path):
+        occ = np.ones((2, 3), dtype=bool)
+        occ[1, 1] = False
+        img, _ = synthetic_slide(occ)
+        path = str(tmp_path / "nomap.png")
+        cv2.imwrite(path, img)
+        pre = TMAPreprocessor(path, array_number=None, pixel_size_um=PX_UM,
+                              core_diameter_um=CORE_UM, fit_pixel_size_um=PX_UM)
+        pre.fit()
+        pre.map_to_array()
+        empties = pre.empty_positions()
+        assert [(r, c) for _, r, c, _ in empties] == [(1, 1)] and empties[0][0] is None
+        assert empties[0][3] is not None
+        c = next(c for c in pre.cores if (c.row, c.col) == (0, 2))
+        assert pre.core_labels(c) == [f"r1c3 #{c.index}"]
+        assert "r1c3" in pre.core_tooltip(c) and "exported" in pre.core_tooltip(c)
+        a = next(c for c in pre.cores if (c.row, c.col) == (0, 0))
+        b = next(c for c in pre.cores if (c.row, c.col) == (0, 1))
+        (x1, y1), (x2, y2) = pre.link_segment(a, b)
+        assert abs(x1 - (a.cx + a.radius)) < 1e-6 and abs(x2 - (b.cx - b.radius)) < 1e-6
+        # the lattice lines also reach the empty cell: every adjacent pair of a 2x3 grid
+        assert len(pre.grid_links()) == 4 and len(pre.grid_segments()) == 7
+        pre.close()
+
+    def test_manifest_marks_manual(self, tmp_path):
+        pre, _, _ = self._pre(tmp_path)
+        x, y = pre.predict_centre(0, 1)
+        pre.add_core(x, y)
+        out = tmp_path / "out"
+        out.mkdir()
+        pre.write_manifest(str(out / "cores.csv"))
+        with open(out / "cores.csv", newline="") as f:
+            rows = list(csv.DictReader(f))
+        assert sum(int(r["manual"]) for r in rows) == 1
+        assert sum(r["flag"] == "missing" for r in rows) == 1
+        pre.close()

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.2
+
+- The automatic orientation entry on the TMA Dearrayer page is labelled
+  "Auto"; the tooltip and the status line explain how it is chosen.
+- The GUI silences Qt's harmless macOS "Back buffer dpr ... contents scale"
+  log message at start-up.
+
 ## 0.3.1
 
 ### TMA Dearrayer

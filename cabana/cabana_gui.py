@@ -758,7 +758,7 @@ class MainWindow(QMainWindow):
         orient_layout.addWidget(orient_label)
         self.tma_orientation_combo = QComboBox()
         for o in ORIENTATIONS:
-            self.tma_orientation_combo.addItem("Auto (from missing cores)" if o == "auto" else o, o)
+            self.tma_orientation_combo.addItem("Auto" if o == "auto" else o, o)
         self.tma_orientation_combo.setStyleSheet(self.combo_style)
         self.tma_orientation_combo.setToolTip(
             "How the printed map sits on the scan. Auto compares the pattern of missing cores;\n"

@@ -59,8 +59,12 @@ before exporting, and exporting can be repeated into a different folder.
    last edit (see [Editing cores by hand](#editing-cores-by-hand)).
 7. **Export settings.** *Margin* around each circle, *Mask Shrink*, and the
    channels (BF, POL) to write.
-8. **Output Folder** for the export (defaults to `<slide>_cores` beside the
-   slide).
+8. **Output Folder** for the export. Opening a slide always sets it to
+   `<slide>_cores`, placed in the folder that held the output folder you last
+   chose with **Select** (remembered between sessions), or beside the slide
+   until you have chosen one. One output folder holds one slide's export:
+   Export asks before writing into a folder that already holds another
+   slide's export.
 9. **Export Cores** writes the images, masks, `cores.csv`, `overlay.png` and
    `cores_edits.json`. When it finishes you are offered to point **Batch
    Run** at the exported Patients folder of a channel.
@@ -163,10 +167,11 @@ the recovery pass missed are quicker to fix by hand than by retuning. Tick
 | Double-click empty space or a dashed placeholder | Add a core there (median radius) |
 | Delete / Backspace | Remove the selected (yellow) core |
 | Ctrl+Z, or **Undo** | Revert the last edit |
-| Right-click | Menu with the same actions, and *Let filters decide* to drop an override |
+| Right-click | Menu with the same actions, *Let filters decide* to drop an override, and *Set map position…* (see [Correcting the map placement](#correcting-the-map-placement)) |
 
 Hovering a core shows its number, map position, patient ID or tissue,
-diameter, fill, stain and filter status. Labels on the overlay give the map
+diameter, fill, stain and filter status, plus a reminder that a wrong label
+can be corrected by right-clicking the core. Labels on the overlay give the map
 position and core number (the grid cell when no array map is chosen), and
 control cores their tissue name. Dashed circles mark positions without a
 core: the map positions when an array is matched, otherwise the empty cells of
@@ -183,10 +188,28 @@ hand-edited cores. Hand-edited cores carry an orange dot on top of their ring on
 and `manual = 1` in `cores.csv`; an override is recorded as reason `manual`
 when it excludes a core.
 
-Edits are saved with every export as `cores_edits.json` next to `cores.csv`.
-Fitting the same slide again with that output folder offers to reinstate
-them (on the command line, `--edits FILE`). The file holds the complete set
-of cores as exported, so reinstating replaces the new fit.
+Edits are saved with every export as `cores_edits.json` next to `cores.csv`,
+and **Save Edits…** saves them at any time without exporting (by default to
+the same file in the output folder; choose another name to keep a copy that
+an export never replaces). The file holds the complete set of cores, the
+orientation in use and any map position set by hand, so reinstating it
+replaces the new fit.
+
+Fitting the same slide again with that output folder offers to reinstate the
+file when it holds hand-edited cores or a hand-set map position.
+**Load Edits…** reinstates any edits file at any time, for example one from
+another folder or one saved for a rescan of the same array (it asks before
+loading edits saved for a different slide name; edits for a different array
+are refused). On the command line use `--edits FILE`.
+
+Export replaces the output folder's `cores_edits.json`. When that file holds
+hand edits of this slide but the cores on screen have none, typically after a
+refit whose offer was declined, Export asks before replacing it, so saved
+corrections are not lost by accident.
+
+The saved orientation is the one in use at the time, whether it was confirmed
+or chosen by *Auto*. On reinstating it is applied when **Orientation** is
+*Auto*; an orientation chosen explicitly takes precedence.
 
 ## Output naming
 
@@ -246,15 +269,42 @@ on a pale, nearly unstained core. Changing **Orientation** relabels the
 fitted cores at once, so cycling through the candidates until the control
 names match the slide takes seconds.
 
+### Correcting the map placement
+
+Choosing an orientation fixes how the map is turned, but Cabana still works
+out where the map sits on the fitted grid. That placement can be wrong, for
+example when stray tissue beside the array is fitted as extra cores and an
+edge row of the map is empty: every label is then shifted by a row, whatever
+the orientation. Moving cores does not help, because a moved core simply
+takes the label of the grid cell it lands in.
+
+To fix it, tick **Edit cores**, right-click a core you can identify (a
+control is easiest: lung, liver, brain, …) and choose **Set map position…**.
+Pick its true position from the list (controls are listed first, then every
+map position with its patient ID). The current orientation is kept and the
+whole map is shifted so that this core gets the chosen position; every other
+core is relabelled from it. Then check a second control on the far side of the
+array: if it is wrong too, the orientation is wrong, so choose another one in
+**Orientation**. The map then turns about the pinned core, which keeps its
+position.
+
+A hand-set placement counts as resolved, so it enables **Export** even when
+*Auto* was unresolved. The status line and `cores.csv` show
+`orientation_method = anchor`. It is saved in `cores_edits.json` and comes back
+with the other edits. **Clear map position** in the same menu, choosing
+*Auto*, or choosing another array returns to the automatic placement, and
+**Undo** reverts it like any other edit.
+
 ## Using the export in Cabana
 
 Each group folder is a self-contained batch input: `BF/Patients/Images/` is
 the input folder and `BF/Patients/Masks/` the ROI-mask folder of **Batch
 Run**, and likewise for `Controls/` and for `POL/` (the GUI's "Use BF in Batch
 Run" and "Use POL in Batch Run" point at the Patients folders). Keep the
-controls for checking staining consistency between slides; exporting several
-slides into one output folder collects every slide's controls in
-`<channel>/Controls/`. Controls are exempt from the stain filter but not from
+controls for checking staining consistency between slides. To collect every
+slide's controls in one `<channel>/Controls/`, select the same output folder
+for each slide and confirm Export's warning; `cores.csv`, `overlay.png` and
+`cores_edits.json` then describe only the last slide exported there. Controls are exempt from the stain filter but not from
 the grid-offset and diameter filters. Run the channels separately: bright-field with
 Dark Line on, polarised with Dark Line off. With a mask, the corners of each
 crop are excluded from segmentation, fibre detection, HDM, fibre-area and gap
@@ -290,6 +340,7 @@ pre.map_to_array()             # orientation, sets map positions; pre.orientatio
 pre.missing_positions()        # map positions without a core, with the lattice-predicted centre
 core = pre.add_core(x, y)      # hand edits: add_core, move_core, resize_core, remove_core,
 pre.set_override(core, "include")   # set_override; each re-snaps to the grid and re-filters
+pre.set_map_position(core, 10, 7)   # place the map by hand: this core is map cell K8 (row/col from 0)
 pre.export("out/TMA1", channels=["BF", "POL"])   # also writes cores_edits.json
 pre.load_edits("out/TMA1/cores_edits.json")      # reinstate after a refit
 ```

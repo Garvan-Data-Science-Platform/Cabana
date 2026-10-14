@@ -8,7 +8,9 @@ include or exclude it (double-click), add one (double-click empty space or a
 placeholder), delete it (Delete key) and undo (Ctrl+Z). Every edit goes
 through the preprocessor's editing API, so the core re-snaps to its grid cell,
 takes the patient ID of that cell and is re-filtered; the user never types a
-label.
+label. When the automatic map placement is wrong, the context menu's "Set map
+position…" pins one recognised core (typically a control) to its printed
+position and relabels every core from it.
 
 The panel shows the fit-level image; core coordinates are level-0 pixels, so
 the editor converts with the fit level's downsample.
@@ -18,7 +20,7 @@ import numpy as np
 from PyQt5.QtCore import Qt
 from PyQt5.QtCore import QRectF
 from PyQt5.QtGui import QColor, QFont, QPen
-from PyQt5.QtWidgets import QAction, QMenu
+from PyQt5.QtWidgets import QAction, QInputDialog, QMenu
 
 from .tma import OVERLAY_COLOURS
 
@@ -220,7 +222,7 @@ class TMACoreEditor:
         pre = self.get_pre()
         if core is not self.hovered:
             self.hovered = core
-            self.panel.setToolTip(pre.core_tooltip(core) if core is not None and pre is not None else "")
+            self.panel.setToolTip(self.tooltip(core))
             self.panel.update()
         if not self.enabled:
             return None
@@ -229,6 +231,17 @@ class TMACoreEditor:
         if kind == "inside":
             return Qt.SizeAllCursor
         return Qt.ArrowCursor
+
+    def tooltip(self, core):
+        """Hover text of ``core``: its details plus how to correct its map position."""
+        pre = self.get_pre()
+        if core is None or pre is None:
+            return ""
+        tip = pre.core_tooltip(core)
+        if pre.array_number is not None and pre.matched_orientation:
+            tip += ("\nWrong label? Right-click to set this core's map position." if self.enabled else
+                    "\nWrong label? Tick Edit cores, then right-click to set this core's map position.")
+        return tip
 
     def context_menu(self, ix, iy, global_pos):
         if not self.enabled:
@@ -246,6 +259,15 @@ class TMACoreEditor:
             title = QAction(f"Core {core.index}" + (f" ({info.position})" if info and not info.empty else ""), menu)
             title.setEnabled(False)
             menu.addAction(title)
+            menu.addSeparator()
+            place = QAction("Set map position…", menu)
+            place.setEnabled(pre.array_number is not None and pre.matched_orientation is not None)
+            place.triggered.connect(lambda: self._set_map_position(core))
+            menu.addAction(place)
+            if pre.map_anchor is not None:
+                clear = QAction("Clear map position", menu)
+                clear.triggered.connect(self._clear_map_position)
+                menu.addAction(clear)
             menu.addSeparator()
             include = QAction("Include", menu)
             include.setCheckable(True)
@@ -282,6 +304,49 @@ class TMACoreEditor:
         menu.addAction(undo)
         menu.exec_(global_pos)
         return True
+
+    def map_position_choices(self):
+        """``[(label, (map_row, map_col))]`` for every map position with a
+        core, controls first (they are what can be recognised on the slide)."""
+        pre = self.get_pre()
+        controls, patients = [], []
+        for (r, c), info in sorted(pre.array_map().items()):
+            if info.empty:
+                continue
+            if info.is_control:
+                controls.append((f"{info.tissue} ({info.position})", (r, c)))
+            else:
+                what = f"patient {info.patient_id}" if info.patient_id else "core"
+                patients.append((f"{info.position}  {what}", (r, c)))
+        return controls + patients
+
+    def ask_map_position(self, core):
+        """Ask which map position ``core`` really is; ``(map_row, map_col)`` or None."""
+        pre = self.get_pre()
+        choices = self.map_position_choices()
+        current = (core.map_row, core.map_col)
+        start = next((i for i, (_, cell) in enumerate(choices) if cell == current), 0)
+        label, ok = QInputDialog.getItem(
+            self.panel, "Set Map Position",
+            f"Core {core.index} is really (orientation {pre.orientation if pre.orientation != 'auto' else pre.matched_orientation} is kept):",
+            [lab for lab, _ in choices], start, False)
+        if not ok:
+            return None
+        return dict(choices)[label]
+
+    def _set_map_position(self, core):
+        cell = self.ask_map_position(core)
+        if cell is None:
+            return
+        self.push_undo()
+        self.get_pre().set_map_position(core, *cell)
+        self.selected = core
+        self.on_change(True)
+
+    def _clear_map_position(self):
+        self.push_undo()
+        self.get_pre().clear_map_position()
+        self.on_change(True)
 
     def _override(self, core, value):
         self.push_undo()

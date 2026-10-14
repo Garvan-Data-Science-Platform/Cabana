@@ -199,3 +199,221 @@ class TestRefit:
         settle(app, 100)
         assert not closed
         assert win.tma_pre is not pre and win.tma_pre.reader is reader
+
+
+class TestMapPositionGui:
+    def test_hover_hint(self, fitted_gui):
+        win, pre = fitted_gui
+        ed = win.tma_editor
+        win.tma_edit_cb.setChecked(False)
+        assert "Tick Edit cores, then right-click" in ed.tooltip(pre.cores[0])
+        win.tma_edit_cb.setChecked(True)
+        assert "Right-click to set this core's map position" in ed.tooltip(pre.cores[0])
+        win.tma_array_combo.setCurrentIndex(win.tma_array_combo.findData(None))
+        assert "map position" not in ed.tooltip(pre.cores[0])
+
+    def test_choices_list_controls_first(self, fitted_gui):
+        win, pre = fitted_gui
+        choices = win.tma_editor.map_position_choices()
+        n_ctrl = sum(1 for i in pre.array_map().values() if i.is_control)
+        assert all("(" in lab for lab, _ in choices[:n_ctrl])
+        assert choices[0][0] == "Liver (A1)"
+        assert len(choices) == sum(1 for i in pre.array_map().values() if not i.empty)
+
+    def test_set_and_undo_map_position(self, fitted_gui, app, monkeypatch):
+        win, pre = fitted_gui
+        ed = win.tma_editor
+        win.tma_edit_cb.setChecked(True)
+        core = next(c for c in pre.cores if 0 <= c.map_row < 9)
+        target = (core.map_row + 1, core.map_col)
+        monkeypatch.setattr(ed, "ask_map_position", lambda c: target)
+        ed._set_map_position(core)
+        settle(app)
+        assert (core.map_row, core.map_col) == target and pre.orientation_method == "anchor"
+        assert win.tma_orientation_combo.currentData() == pre.orientation == "90"
+        assert "map position set by hand" in win.tma_status_label.text()
+        assert win.tma_export_btn.isEnabled()
+        ed.undo()
+        settle(app)
+        same = next(c for c in pre.cores if (c.row, c.col) == (core.row, core.col))   # undo restores copies
+        assert pre.map_anchor is None and (same.map_row, same.map_col) == (target[0] - 1, target[1])
+
+    def test_auto_in_combo_clears_map_position(self, fitted_gui, app, monkeypatch):
+        win, pre = fitted_gui
+        ed = win.tma_editor
+        core = pre.cores[0]
+        monkeypatch.setattr(ed, "ask_map_position", lambda c: (core.map_row, core.map_col))
+        ed._set_map_position(core)
+        win.tma_orientation_combo.setCurrentIndex(win.tma_orientation_combo.findData("auto"))
+        settle(app)
+        assert pre.map_anchor is None and pre.orientation == "auto"
+
+
+class TestEditsFiles:
+    """Load Edits… / Save Edits… buttons, the reinstate offer and the export guard."""
+
+    def test_buttons_enabled_after_fit(self, fitted_gui):
+        win, _ = fitted_gui
+        assert win.tma_load_edits_btn.isEnabled() and win.tma_save_edits_btn.isEnabled()
+
+    def test_save_then_load(self, fitted_gui, app, monkeypatch, tmp_path):
+        from PyQt5.QtWidgets import QFileDialog
+        win, pre = fitted_gui
+        path = str(tmp_path / "keep" / "mine.json")
+        core = pre.cores[0]
+        pre.move_core(core, core.cx + 10, core.cy)
+        monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (path, ""))
+        win.save_tma_edits()
+        assert os.path.isfile(path) and win.tma_status_label.text().startswith("Saved")
+        n = len(pre.cores)
+        pre.remove_core(pre.cores[-1])
+        monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (path, ""))
+        win.open_tma_edits()
+        settle(app)
+        assert len(pre.cores) == n and pre.manual_count() == 1
+        assert win.tma_status_label.text().startswith("Reinstated")
+
+    def test_load_other_slide_asks(self, fitted_gui, monkeypatch, tmp_path):
+        import json
+        from PyQt5.QtWidgets import QFileDialog
+        win, pre = fitted_gui
+        path = str(tmp_path / "other.json")
+        pre.save_edits(path)
+        with open(path) as f:
+            data = json.load(f)
+        data["slide"] = "TMA32"
+        with open(path, "w") as f:
+            json.dump(data, f)
+        asked = []
+        monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (path, ""))
+        monkeypatch.setattr(win, "_ask_tma", lambda *a: asked.append(a) or False)
+        loaded = []
+        monkeypatch.setattr(win, "load_tma_edits", lambda p: loaded.append(p))
+        win.open_tma_edits()
+        assert len(asked) == 1 and "TMA32" in asked[0][1] and not loaded
+        monkeypatch.setattr(win, "_ask_tma", lambda *a: True)
+        win.open_tma_edits()
+        assert loaded == [path]
+
+    def test_offer_includes_map_position_only(self, fitted_gui, app, monkeypatch):
+        win, pre = fitted_gui
+        core = next(c for c in pre.cores if 0 <= c.map_row < 9)
+        pre.set_map_position(core, core.map_row + 1, core.map_col)
+        assert pre.manual_count() == 0
+        os.makedirs(win.tma_output, exist_ok=True)
+        pre.save_edits(os.path.join(win.tma_output, EDITS_FILE))
+        anchor = dict(pre.map_anchor)
+        pre.clear_map_position()
+        asked = []
+        monkeypatch.setattr(win, "_ask_tma", lambda *a: asked.append(a) or True)
+        win._offer_saved_edits()
+        settle(app)
+        assert len(asked) == 1 and "map position set by hand" in asked[0][1]
+        assert pre.map_anchor == anchor and pre.orientation_method == "anchor"
+
+    def test_export_guard(self, fitted_gui, monkeypatch):
+        win, pre = fitted_gui
+        os.makedirs(win.tma_output, exist_ok=True)
+        path = os.path.join(win.tma_output, EDITS_FILE)
+        before = pre.snapshot()
+        core = pre.cores[0]
+        pre.move_core(core, core.cx + 10, core.cy)
+        pre.save_edits(path)
+        asked = []
+        monkeypatch.setattr(win, "_ask_tma", lambda *a: asked.append(a) or False)
+        assert win._confirm_edits_overwrite() and not asked          # screen holds the edits: no question
+        pre.restore(before)                                          # e.g. a refit whose offer was declined
+        assert pre.manual_count() == 0
+        assert not win._confirm_edits_overwrite() and len(asked) == 1
+        assert "1 hand-edited core" in asked[0][1]
+        os.remove(path)
+        assert win._confirm_edits_overwrite() and len(asked) == 1    # nothing to lose
+
+
+class _FakeSettings:
+    """Stand-in for QSettings so tests never touch the user's real settings."""
+    store = {}
+
+    def __init__(self, *a):
+        pass
+
+    def value(self, key, default=None):
+        return self.store.get(key, default)
+
+    def setValue(self, key, value):
+        self.store[key] = value
+
+
+class TestOutputFolder:
+    @pytest.fixture
+    def win(self, app, monkeypatch):
+        import cabana.cabana_gui as gui
+        from cabana.cabana_gui import MainWindow
+        monkeypatch.setattr(gui, "QSettings", _FakeSettings)
+        monkeypatch.setattr(_FakeSettings, "store", {})
+        w = MainWindow()
+        w.show_page(w.pages.indexOf(w.tma_tab))
+        yield w
+        if w.tma_worker is not None:
+            w.tma_worker.wait(30000)
+        w.close()
+
+    @staticmethod
+    def _slide(folder, name):
+        os.makedirs(folder, exist_ok=True)
+        img, _ = synthetic_slide(occupancy_grid(1)[:2, :2], jitter=0)
+        path = os.path.join(folder, name)
+        cv2.imwrite(path, img)
+        return path
+
+    def _open(self, win, app, path):
+        win.open_tma_slide(path)
+        win.tma_worker.wait(30000)
+        settle(app)
+
+    def test_output_follows_each_slide(self, win, app, tmp_path):
+        a = self._slide(str(tmp_path / "scans"), "APGI TMA 2.png")
+        b = self._slide(str(tmp_path / "scans"), "APGI TMA 3.png")
+        self._open(win, app, a)
+        assert win.tma_output == os.path.join(str(tmp_path / "scans"), "APGI_TMA_2_cores")
+        self._open(win, app, b)
+        assert win.tma_output == os.path.join(str(tmp_path / "scans"), "APGI_TMA_3_cores")
+        assert win.tma_output_path.text() == win.tma_output
+
+    def test_chosen_parent_is_remembered(self, win, app, tmp_path, monkeypatch):
+        from PyQt5.QtWidgets import QFileDialog
+        a = self._slide(str(tmp_path / "scans"), "TMA2.png")
+        b = self._slide(str(tmp_path / "scans"), "TMA3.png")
+        chosen = tmp_path / "analysis" / "tma2_out"
+        chosen.mkdir(parents=True)
+        self._open(win, app, a)
+        monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(chosen))
+        win.select_tma_output()
+        assert win.tma_output == str(chosen)
+        self._open(win, app, b)
+        assert win.tma_output == os.path.join(str(tmp_path / "analysis"), "TMA3_cores")
+
+    def test_missing_parent_falls_back_to_slide_folder(self, win, app, tmp_path):
+        _FakeSettings.store[win.TMA_OUTPUT_PARENT_KEY] = str(tmp_path / "gone")
+        a = self._slide(str(tmp_path / "scans"), "TMA5.png")
+        self._open(win, app, a)
+        assert win.tma_output == os.path.join(str(tmp_path / "scans"), "TMA5_cores")
+
+
+class TestExportIntoOtherSlidesFolder:
+    def test_asks_before_mixing_slides(self, fitted_gui, monkeypatch):
+        import json
+        win, pre = fitted_gui
+        os.makedirs(win.tma_output, exist_ok=True)
+        path = os.path.join(win.tma_output, EDITS_FILE)
+        pre.save_edits(path)
+        asked = []
+        monkeypatch.setattr(win, "_ask_tma", lambda *a: asked.append(a) or False)
+        assert win._confirm_output_slide() and not asked             # same slide: no question
+        with open(path) as f:
+            data = json.load(f)
+        data["slide"] = "TMA3"
+        with open(path, "w") as f:
+            json.dump(data, f)
+        assert not win._confirm_output_slide() and len(asked) == 1
+        assert "TMA3" in asked[0][1]

@@ -908,6 +908,26 @@ class MainWindow(QMainWindow):
         edit_layout.addWidget(self.tma_undo_btn)
         layout.addLayout(edit_layout)
 
+        edits_file_layout = QHBoxLayout()
+        self.tma_load_edits_btn = QPushButton("Load Edits…")
+        self.tma_load_edits_btn.setStyleSheet(self.btn_style)
+        self.tma_load_edits_btn.setEnabled(False)
+        self.tma_load_edits_btn.setToolTip(
+            f"Replace the fitted cores with hand edits saved earlier ({EDITS_FILE}),\n"
+            "including the orientation and any map position set by hand.")
+        self.tma_load_edits_btn.clicked.connect(self.open_tma_edits)
+        edits_file_layout.addWidget(self.tma_load_edits_btn)
+        self.tma_save_edits_btn = QPushButton("Save Edits…")
+        self.tma_save_edits_btn.setStyleSheet(self.btn_style)
+        self.tma_save_edits_btn.setEnabled(False)
+        self.tma_save_edits_btn.setToolTip(
+            "Save the current cores, orientation and map position without exporting.\n"
+            f"Saved as {EDITS_FILE} in the output folder, they are offered back after the next fit.\n"
+            "Export Cores also saves them there.")
+        self.tma_save_edits_btn.clicked.connect(self.save_tma_edits)
+        edits_file_layout.addWidget(self.tma_save_edits_btn)
+        layout.addLayout(edits_file_layout)
+
         # --- Export ------------------------------------------------------
         # Settings below only affect Export Cores; changing them needs no refit.
         layout.addWidget(create_separator())
@@ -1050,6 +1070,7 @@ class MainWindow(QMainWindow):
 
     def _tma_edit_toggled(self, on):
         self.tma_editor.enabled = bool(on)
+        self.tma_editor.hovered = None      # refresh the hover hint on the next mouse move
         self.image_panel.update()
         if self.tma_pre is not None:
             self._show_tma_result(preserve_view=True)
@@ -1058,9 +1079,21 @@ class MainWindow(QMainWindow):
         self.tma_editor.show_links = bool(on)
         self.image_panel.update()
 
+    def _sync_tma_orientation_combo(self):
+        """Show the preprocessor's orientation in the combo without re-triggering a remap."""
+        if self.tma_pre is None:
+            return
+        idx = self.tma_orientation_combo.findData(self.tma_pre.orientation)
+        if idx >= 0 and idx != self.tma_orientation_combo.currentIndex():
+            self.tma_orientation_combo.blockSignals(True)
+            self.tma_orientation_combo.setCurrentIndex(idx)
+            self.tma_orientation_combo.blockSignals(False)
+
     def _tma_edited(self, full):
         """Editor callback: repaint, and after a completed edit refresh the summary."""
         if full:
+            # setting a map position (or undoing one) can change the orientation
+            self._sync_tma_orientation_combo()
             self._show_tma_result(preserve_view=True)
         else:
             self.image_panel.update()
@@ -1077,12 +1110,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Load Edits", f"Could not load {path}:\n{e}")
             return
         self.tma_editor.selected = None
-        # the saved orientation is reapplied by load_edits; show it in the combo without re-triggering a remap
-        idx = self.tma_orientation_combo.findData(self.tma_pre.orientation)
-        if idx >= 0 and idx != self.tma_orientation_combo.currentIndex():
-            self.tma_orientation_combo.blockSignals(True)
-            self.tma_orientation_combo.setCurrentIndex(idx)
-            self.tma_orientation_combo.blockSignals(False)
+        # the saved orientation is reapplied by load_edits
+        self._sync_tma_orientation_combo()
         self._show_tma_result(preserve_view=True)
         self.tma_status_label.setText(f"Reinstated {n} cores ({self.tma_pre.manual_count()} hand-edited) from {path}. "
                                       + self.tma_status_label.text())
@@ -1095,26 +1124,90 @@ class MainWindow(QMainWindow):
         path = join_path(self.tma_output, EDITS_FILE)
         if not os.path.isfile(path):
             return
+        saved = self._read_saved_edits(path)
+        if saved is None or saved["slide"] != pre.slide_name or not saved["description"]:
+            return
+        if self._ask_tma("TMA Edits Found", f"Earlier edits of this slide were saved: {saved['description']}.",
+                         f"{path}\n\nReinstate them in place of the new fit?", "Reinstate", "Keep new fit"):
+            self.load_tma_edits(path)
+
+    @staticmethod
+    def _read_saved_edits(path):
+        """Summary of an edits file: dict(slide, n_manual, anchor, description),
+        or None when it cannot be read. ``description`` is empty when the file
+        holds no hand edits and no hand-set map position."""
         try:
             import json
             with open(path, encoding="utf-8") as f:
                 saved = json.load(f)
+            n_manual = sum(1 for c in saved.get("cores", []) if c.get("manual") or c.get("override"))
         except Exception:
-            return
-        n_manual = sum(1 for c in saved.get("cores", []) if c.get("manual") or c.get("override"))
-        if saved.get("slide") != pre.slide_name or not n_manual:
-            return
+            return None
+        anchor = saved.get("map_anchor") is not None
+        parts = []
+        if n_manual:
+            parts.append(f"{n_manual} hand-edited core{'s' if n_manual != 1 else ''}")
+        if anchor:
+            parts.append("a map position set by hand")
+        return {"slide": saved.get("slide"), "n_manual": n_manual, "anchor": anchor,
+                "description": " and ".join(parts)}
+
+    def _ask_tma(self, title, text, info, yes_label, no_label):
+        """Two-button question on the TMA page; True when ``yes_label`` is chosen."""
         msg = QMessageBox(self)
-        msg.setWindowTitle("TMA Edits Found")
-        msg.setText(f"An earlier export of this slide saved {n_manual} hand-edited cores.")
-        msg.setInformativeText(f"{path}\n\nReinstate those cores in place of the new fit?")
+        msg.setWindowTitle(title)
+        msg.setText(text)
+        msg.setInformativeText(info)
         msg.setStyleSheet(self.msgbox_style)
-        yes = msg.addButton("Reinstate", QMessageBox.AcceptRole)
-        msg.addButton("Keep new fit", QMessageBox.RejectRole)
+        yes = msg.addButton(yes_label, QMessageBox.AcceptRole)
+        msg.addButton(no_label, QMessageBox.RejectRole)
         self._fit_dialog_buttons(msg)
         msg.exec_()
-        if msg.clickedButton() == yes:
-            self.load_tma_edits(path)
+        return msg.clickedButton() == yes
+
+    def _tma_edits_default_path(self):
+        folder = self.tma_output or (os.path.dirname(self.tma_slide) if self.tma_slide else "")
+        return join_path(folder, EDITS_FILE) if folder else EDITS_FILE
+
+    def open_tma_edits(self):
+        """Load Edits…: reinstate an edits file chosen by the user."""
+        if self.tma_pre is None:
+            return
+        path, _ = QFileDialog.getOpenFileName(self, "Load TMA Edits", self._tma_edits_default_path(),
+                                              "TMA edits (*.json);;All files (*)")
+        if not path:
+            return
+        saved = self._read_saved_edits(path)
+        if saved is None:
+            QMessageBox.warning(self, "Load Edits", f"Could not read {path}.")
+            return
+        if saved["slide"] != self.tma_pre.slide_name and not self._ask_tma(
+                "Load Edits", f"These edits were saved for slide '{saved['slide']}', "
+                              f"not '{self.tma_pre.slide_name}'.",
+                f"{path}\n\nLoad them anyway (for example for a rescan of the same array)?", "Load", "Cancel"):
+            return
+        self.load_tma_edits(path)
+
+    def save_tma_edits(self):
+        """Save Edits…: write the current cores, orientation and map position without exporting."""
+        pre = self.tma_pre
+        if pre is None:
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Save TMA Edits", self._tma_edits_default_path(),
+                                              "TMA edits (*.json)")
+        if not path:
+            return
+        try:
+            folder = os.path.dirname(path)
+            if folder:
+                os.makedirs(folder, exist_ok=True)
+            pre.save_edits(path)
+        except Exception as e:
+            QMessageBox.warning(self, "Save Edits", f"Could not save {path}:\n{e}")
+            return
+        self.tma_status_label.setText(f"Saved {len(pre.cores)} cores ({pre.manual_count()} hand-edited"
+                                      + (", map position set by hand" if pre.map_anchor else "")
+                                      + f") to {path}. " + self.tma_status_label.text())
 
     def select_tma_slide(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -1122,6 +1215,27 @@ class MainWindow(QMainWindow):
             "Slides (*.vsi *.tif *.tiff *.png *.jpg *.jpeg);;All files (*)")
         if not file_path:
             return
+        self.open_tma_slide(file_path)
+
+    TMA_OUTPUT_PARENT_KEY = "tma_output_parent"
+
+    def _tma_default_output(self, slide_path):
+        """Default output folder of a slide: ``<slide name>_cores`` inside the
+        parent of the output folder chosen last (remembered across sessions),
+        or next to the slide until one has been chosen."""
+        parent = QSettings('Cabana', 'CabanaGUI').value(self.TMA_OUTPUT_PARENT_KEY, "")
+        if not parent or not os.path.isdir(parent):
+            parent = os.path.dirname(slide_path)
+        return join_path(parent, sanitize_filename(os.path.splitext(os.path.basename(slide_path))[0]) + "_cores")
+
+    def _set_tma_output(self, folder):
+        self.tma_output = folder
+        self.tma_output_path.setText(folder)
+        self.tma_output_path.setToolTip(folder)
+
+    def open_tma_slide(self, file_path):
+        """Open a slide on the TMA page. The output folder always follows the
+        slide (see :meth:`_tma_default_output`): one folder holds one slide's export."""
         self.tma_slide = file_path
         self.tma_slide_path.setText(file_path)
         self.tma_slide_path.setToolTip(file_path)
@@ -1131,12 +1245,7 @@ class MainWindow(QMainWindow):
         self.tma_reader = None
         self.tma_export_btn.setEnabled(False)
         self.tma_fit_btn.setEnabled(False)
-        if not self.tma_output:
-            default_out = join_path(os.path.dirname(file_path),
-                                    sanitize_filename(os.path.splitext(os.path.basename(file_path))[0]) + "_cores")
-            self.tma_output = default_out
-            self.tma_output_path.setText(default_out)
-            self.tma_output_path.setToolTip(default_out)
+        self._set_tma_output(self._tma_default_output(file_path))
         self._start_tma_preview()
 
     def _start_tma_preview(self):
@@ -1179,9 +1288,9 @@ class MainWindow(QMainWindow):
         folder = QFileDialog.getExistingDirectory(self, "Select TMA Output Folder", start,
                                                   QFileDialog.ShowDirsOnly)
         if folder:
-            self.tma_output = folder
-            self.tma_output_path.setText(folder)
-            self.tma_output_path.setToolTip(folder)
+            self._set_tma_output(folder)
+            # the next slide's default output goes next to this folder
+            QSettings('Cabana', 'CabanaGUI').setValue(self.TMA_OUTPUT_PARENT_KEY, os.path.dirname(folder))
 
     def _tma_options(self):
         return dict(
@@ -1221,7 +1330,7 @@ class MainWindow(QMainWindow):
                   self.tma_offset_spin, self.tma_dmin_spin, self.tma_dmax_spin, self.tma_stain_spin):
             w.setEnabled(not busy)
         fitted = not busy and self.tma_pre is not None
-        for w in (self.tma_edit_cb, self.tma_links_cb):
+        for w in (self.tma_edit_cb, self.tma_links_cb, self.tma_load_edits_btn, self.tma_save_edits_btn):
             w.setEnabled(fitted)
         self.tma_undo_btn.setEnabled(fitted and self.tma_editor.can_undo())
         if busy:
@@ -1302,7 +1411,8 @@ class MainWindow(QMainWindow):
         if pre.matched_orientation:
             others = [o for o in pre.orientation_ties if o != pre.matched_orientation]
             how = {"brain": "chosen by the Brain control", "replicates": "chosen by replicate similarity",
-                   "manual": "set manually", "occupancy": "from missing-core pattern"}.get(pre.orientation_method, "")
+                   "manual": "set manually", "occupancy": "from missing-core pattern",
+                   "anchor": "map position set by hand"}.get(pre.orientation_method, "")
             if pre.orientation_margin is not None and pre.orientation_method in ("brain", "replicates"):
                 how += f", margin {pre.orientation_margin:.0%}"
             msg += f"; orientation {pre.matched_orientation}" + (f" ({how})" if how else "")
@@ -1310,7 +1420,7 @@ class MainWindow(QMainWindow):
                 msg += (f" — UNRESOLVED: {', '.join(pre.orientation_ties)} fit equally well and appearance "
                         f"cannot separate them; confirm a control core against the printed map and set "
                         f"Orientation explicitly. Export is disabled until then.")
-            elif others and pre.orientation_method != "manual":
+            elif others and pre.orientation_method not in ("manual", "anchor"):
                 msg += f" (also tied on occupancy: {', '.join(others)}; verify a control core)"
         self.tma_export_btn.setEnabled(pre.array_number is None or pre.orientation_resolved)
         summary = pre.exclusion_summary()
@@ -1351,6 +1461,8 @@ class MainWindow(QMainWindow):
         if not channels:
             QMessageBox.warning(self, "TMA Export", "Select at least one channel to export.")
             return
+        if not self._confirm_output_slide() or not self._confirm_edits_overwrite():
+            return
         # settings that only affect the crop can be changed without refitting
         self.tma_pre.margin_um = float(self.tma_margin_spin.value())
         self.tma_pre.erode_px = int(self.tma_erode_spin.value())
@@ -1364,6 +1476,43 @@ class MainWindow(QMainWindow):
         self.tma_worker.export_cancelled.connect(self.handle_tma_export_cancelled)
         self.tma_worker.failed.connect(self.handle_tma_failed)
         self.tma_worker.start()
+
+    def _confirm_output_slide(self):
+        """Ask before exporting into a folder that holds another slide's export
+        (identified by the slide name in its edits file)."""
+        path = join_path(self.tma_output, EDITS_FILE)
+        if not os.path.isfile(path):
+            return True
+        saved = self._read_saved_edits(path)
+        if saved is None or not saved["slide"] or saved["slide"] == self.tma_pre.slide_name:
+            return True
+        return self._ask_tma(
+            "Output Folder Holds Another Slide",
+            f"The output folder already holds the export of slide '{saved['slide']}', "
+            f"not '{self.tma_pre.slide_name}'.",
+            f"{self.tma_output}\n\nExporting here would overwrite its cores.csv, overlay and saved edits "
+            f"and mix the two slides' images. Choose Cancel and pick another folder with Select.",
+            "Export Anyway", "Cancel")
+
+    def _confirm_edits_overwrite(self):
+        """Export replaces the output folder's edits file. Ask first when that
+        file holds hand edits of this slide but the cores on screen hold none
+        (e.g. after a refit whose reinstate offer was declined); in every other
+        case the screen is the newer state and is saved without asking."""
+        pre = self.tma_pre
+        path = join_path(self.tma_output, EDITS_FILE)
+        if not os.path.isfile(path) or pre.manual_count() or pre.map_anchor is not None:
+            return True
+        saved = self._read_saved_edits(path)
+        if saved is None or saved["slide"] != pre.slide_name or not saved["description"]:
+            return True
+        return self._ask_tma(
+            "Replace Saved Edits?",
+            f"The output folder holds saved edits of this slide ({saved['description']}), "
+            f"but the cores on screen have no hand edits.",
+            f"{path}\n\nExporting will replace those edits with the unedited fit. "
+            f"Choose Cancel and use Load Edits… to bring them back first.",
+            "Replace", "Cancel")
 
     def cancel_tma(self):
         self.tma_cancel_btn.setEnabled(False)
@@ -2856,7 +3005,7 @@ class MainWindow(QMainWindow):
         for btn in (self.start_open_btn, self.start_params_btn,
                     self.param_btn, self.input_btn, self.output_btn, self.cancel_batch_btn,
                      self.mask_btn, self.mask_clear_btn, self.tma_slide_btn, self.tma_output_btn,
-                     self.tma_cancel_btn, self.tma_undo_btn):
+                     self.tma_cancel_btn, self.tma_undo_btn, self.tma_load_edits_btn, self.tma_save_edits_btn):
             btn.setStyleSheet(self.btn_style)
 
         # Primary buttons

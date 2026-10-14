@@ -615,6 +615,29 @@ def match_orientation(observed, array_number, orientation="auto"):
     return best[0], best[1], best[2], ties
 
 
+def placement_score(observed, array_number, transform):
+    """Occupancy score of one fixed placement of the map, scored like
+    :func:`match_orientation`. ``transform`` is ``(orientation, row offset,
+    col offset)``: scan cell ``(r, c)`` lies on transformed-map cell
+    ``(r + row offset, c + col offset)``. The map may extend past the scan
+    grid."""
+    o, oy, ox = transform
+    occ_t = _transform_grid(occupancy_grid(array_number), o)
+    mh, mw = occ_t.shape
+    score = 0.0
+    for r in range(observed.shape[0]):
+        for c in range(observed.shape[1]):
+            mr, mc = r + oy, c + ox
+            has_map = 0 <= mr < mh and 0 <= mc < mw and occ_t[mr, mc]
+            if observed[r, c] and has_map:
+                score += 1.0
+            elif observed[r, c]:
+                score -= 3.0
+            elif has_map:
+                score -= 0.5
+    return score
+
+
 # ---------------------------------------------------------------------------
 # Preprocessor
 # ---------------------------------------------------------------------------
@@ -704,8 +727,10 @@ class TMAPreprocessor:
         self.matched_orientation = None
         self.match_score = None
         self.orientation_ties = []
-        self.orientation_method = None      # "occupancy", "manual", "brain", "replicates" or "unresolved"
+        self.orientation_method = None      # "occupancy", "manual", "anchor", "brain", "replicates" or "unresolved"
         self.orientation_margin = None      # relative lead of the winner over the runner-up
+        # map position set by hand (see set_map_position): dict(array, cx, cy, row, col, map_row, map_col)
+        self.map_anchor = None
         self._fit_level = None
         self._fit_image = None
         self._sat = None
@@ -891,18 +916,28 @@ class TMAPreprocessor:
         for c in self.cores:
             if c.grid_offset <= MAP_MAX_GRID_OFFSET and self._in_grid(c.row, c.col):
                 observed[c.row, c.col] = True
-        o, lookup, score, ties = match_orientation(observed, self.array_number, self.orientation)
-        self.orientation_ties = ties
-        self.match_score = score
-        if self.orientation != "auto":
-            self.orientation_method, self.orientation_margin = "manual", None
-        elif len(ties) <= 1:
-            self.orientation_method, self.orientation_margin = "occupancy", None
+        if self.orientation == "auto":
+            self.map_anchor = None          # Auto always places the map automatically
+        anchored = self._anchor_transform()
+        if anchored is not None:
+            o, transform = self.orientation, anchored
+            self.orientation_ties = [o]
+            self.match_score = placement_score(observed, self.array_number, transform)
+            self.orientation_method, self.orientation_margin = "anchor", None
         else:
-            o, lookup, method, margin = self._break_tie(observed, ties)
-            self.orientation_method, self.orientation_margin = method, margin
+            o, lookup, score, ties = match_orientation(observed, self.array_number, self.orientation)
+            self.orientation_ties = ties
+            self.match_score = score
+            if self.orientation != "auto":
+                self.orientation_method, self.orientation_margin = "manual", None
+            elif len(ties) <= 1:
+                self.orientation_method, self.orientation_margin = "occupancy", None
+            else:
+                o, lookup, method, margin = self._break_tie(observed, ties)
+                self.orientation_method, self.orientation_margin = method, margin
+            transform = self._transform_from_lookup(o, lookup)
         self.matched_orientation = o
-        self._map_transform = self._transform_from_lookup(o, lookup)
+        self._map_transform = transform
         self._idx_t, self._scan_of_map = None, {}
         if self._map_transform is not None:
             _, oy, ox = self._map_transform
@@ -918,6 +953,54 @@ class TMAPreprocessor:
 
     def _in_grid(self, row, col):
         return 0 <= row < self.grid_shape[0] and 0 <= col < self.grid_shape[1]
+
+    def set_map_position(self, core, map_row, map_col):
+        """Place the map by hand so that ``core`` sits on map cell
+        ``(map_row, map_col)``; every other core is relabelled accordingly.
+
+        Use it when the automatic placement is wrong. The current orientation
+        is kept (and becomes explicit); choosing another explicit orientation
+        afterwards rotates the map about this core, and Auto or another array
+        drops the placement. A hand placement counts as resolved, so it
+        enables export. Returns the orientation used.
+        """
+        if self.array_number is None:
+            raise ValueError("Choose an array map before setting a map position.")
+        if (int(map_row), int(map_col)) not in self.array_map():
+            raise ValueError(f"({map_row}, {map_col}) is not a position of array {self.array_number}.")
+        o = self.orientation if self.orientation != "auto" else self.matched_orientation
+        if o is None:
+            raise ValueError("Match the map (or choose an orientation) before setting a map position.")
+        self.orientation = o
+        self.map_anchor = {"array": int(self.array_number), "cx": float(core.cx), "cy": float(core.cy),
+                           "row": int(core.row), "col": int(core.col),
+                           "map_row": int(map_row), "map_col": int(map_col)}
+        self.map_to_array()
+        return o
+
+    def clear_map_position(self):
+        """Drop a hand-set map position and place the map automatically
+        again (the orientation stays as chosen)."""
+        self.map_anchor = None
+        if self.array_number is not None:
+            self.map_to_array()
+
+    def _anchor_transform(self):
+        """``(orientation, row offset, col offset)`` putting the anchor core on
+        its map cell under ``self.orientation``, or None without a usable
+        anchor (none set, Auto, or set for another array)."""
+        a = self.map_anchor
+        if a is None or self.orientation == "auto":
+            return None
+        if int(a["array"]) != int(self.array_number) or (a["map_row"], a["map_col"]) not in self.array_map():
+            self.map_anchor = None
+            return None
+        cell = self.cell_of(a["cx"], a["cy"]) or (a["row"], a["col"])
+        idx_t = _transform_grid(np.stack(np.meshgrid(np.arange(MAP_ROWS), np.arange(MAP_COLS),
+                                                     indexing="ij"), axis=-1), self.orientation)
+        tr, tc = (int(v) for v in np.argwhere((idx_t[:, :, 0] == a["map_row"])
+                                              & (idx_t[:, :, 1] == a["map_col"]))[0])
+        return self.orientation, tr - cell[0], tc - cell[1]
 
     @staticmethod
     def _transform_from_lookup(orientation, lookup):
@@ -1114,13 +1197,20 @@ class TMAPreprocessor:
         self.apply_filters()
 
     def snapshot(self):
-        """Deep copy of the cores, for undo."""
-        return copy.deepcopy(self.cores)
+        """Deep copy of the cores, the hand-set map position and the
+        orientation, for undo."""
+        return {"cores": copy.deepcopy(self.cores), "map_anchor": copy.deepcopy(self.map_anchor),
+                "orientation": self.orientation}
 
-    def restore(self, cores):
+    def restore(self, state):
         """Reinstate a :meth:`snapshot`."""
-        self.cores = copy.deepcopy(cores)
+        remap = state["map_anchor"] != self.map_anchor or state["orientation"] != self.orientation
+        self.cores = copy.deepcopy(state["cores"])
+        self.map_anchor = copy.deepcopy(state["map_anchor"])
+        self.orientation = state["orientation"]
         self._after_edit(resnap=False)      # keep the snapshot's cells exactly
+        if remap and self.array_number is not None:
+            self.map_to_array()
 
     def grid_links(self):
         """Pairs of cores in neighbouring grid cells (sharing a row or a
@@ -1142,7 +1232,7 @@ class TMAPreprocessor:
         """Write the current cores (geometry and manual flags) as JSON so a
         later session can reinstate hand edits with :meth:`load_edits`."""
         data = {"slide": self.slide_name, "array": self.array_number,
-                "orientation": self.matched_orientation,
+                "orientation": self.matched_orientation, "map_anchor": self.map_anchor,
                 "cores": [{"cx": c.cx, "cy": c.cy, "radius": c.radius, "fill": c.fill,
                            "recovered": c.recovered, "manual": c.manual, "override": c.override}
                           for c in self.cores]}
@@ -1160,9 +1250,22 @@ class TMAPreprocessor:
         saved_array = data.get("array")
         if saved_array is not None and self.array_number is not None and int(saved_array) != int(self.array_number):
             raise ValueError(f"{path} was saved for array {saved_array}, not array {self.array_number}.")
+        anchor = data.get("map_anchor")
+        if anchor is not None:
+            try:
+                anchor = {"array": int(anchor["array"]), "cx": float(anchor["cx"]), "cy": float(anchor["cy"]),
+                          "row": int(anchor["row"]), "col": int(anchor["col"]),
+                          "map_row": int(anchor["map_row"]), "map_col": int(anchor["map_col"])}
+            except (KeyError, TypeError, ValueError):
+                raise ValueError(f"The map position in {path} is invalid: {data.get('map_anchor')}")
+            if not (math.isfinite(anchor["cx"]) and math.isfinite(anchor["cy"])):
+                raise ValueError(f"The map position in {path} is invalid: {data.get('map_anchor')}")
         saved_o = data.get("orientation")
         if saved_o in ORIENTATIONS[1:] and self.orientation == "auto":
             self.orientation = saved_o          # a confirmed orientation must survive the reload
+        if anchor is not None and self.orientation != "auto" \
+                and (self.array_number is None or anchor["array"] == int(self.array_number)):
+            self.map_anchor = anchor            # so must a hand-set map position
         ds = self.reader.level_downsample(self._fit_level)
         h0, w0 = self.reader.level_shape(0)
         cores = []
@@ -1558,7 +1661,9 @@ def main(argv=None):
         print(f"  reinstated {n} cores from {a.edits} ({pre.manual_count()} hand-edited)")
     print(f"{pre.slide_name}: {len(pre.cores)} cores on a {pre.grid_shape[0]}x{pre.grid_shape[1]} grid"
           + (f", orientation {o} (score {pre.match_score:.1f})" if o else ""))
-    if o and pre.orientation_method not in ("manual", "occupancy"):
+    if o and pre.orientation_method == "anchor":
+        print("  map position set by hand (from the edits file)")
+    elif o and pre.orientation_method not in ("manual", "occupancy"):
         m = f" (margin {pre.orientation_margin:.0%})" if pre.orientation_margin is not None else ""
         print(f"  orientation chosen by {pre.orientation_method}{m}")
     if o and not pre.orientation_resolved:
@@ -1572,7 +1677,7 @@ def main(argv=None):
     lost = [p for p, (k, t) in pre.replicate_counts().items() if k == 0]
     if lost:
         print(f"  patients with no remaining core: {', '.join(lost)}")
-    if len(pre.orientation_ties) > 1 and pre.orientation_resolved and pre.orientation_method != "manual":
+    if len(pre.orientation_ties) > 1 and pre.orientation_resolved and pre.orientation_method not in ("manual", "anchor"):
         print(f"  note: {pre.orientation_ties} tied on occupancy; verify a control core on the overlay.")
     os.makedirs(a.out_dir, exist_ok=True)
     if a.fit_only:

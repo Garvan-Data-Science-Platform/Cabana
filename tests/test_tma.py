@@ -737,10 +737,10 @@ class TestEditing:
         pre.move_core(core, core.cx + PITCH_PX, core.cy)
         pre.remove_core(pre.cores[-1])
         pre.restore(before)
-        assert len(pre.cores) == len(before)
+        assert len(pre.cores) == len(before["cores"])
         assert not any(c.manual for c in pre.cores)
         assert [(c.row, c.col, c.map_row, c.map_col) for c in pre.cores] == \
-               [(c.row, c.col, c.map_row, c.map_col) for c in before]
+               [(c.row, c.col, c.map_row, c.map_col) for c in before["cores"]]
         pre.close()
 
     def test_save_and_load_edits(self, tmp_path):
@@ -881,4 +881,152 @@ class TestEditing:
             rows = list(csv.DictReader(f))
         assert sum(int(r["manual"]) for r in rows) == 1
         assert sum(r["flag"] == "missing" for r in rows) == 1
+        pre.close()
+
+
+class TestMapPosition:
+    """Setting a core's map position by hand places the whole map from it."""
+
+    def _pre(self, tmp_path, orientation="90", name="m.png"):
+        from cabana.tma import _transform_grid
+        occ = _transform_grid(occupancy_grid(1), "90").copy()
+        occ[0, 1] = False
+        occ[3, 5] = False
+        img, _ = synthetic_slide(occ, jitter=5)
+        path = str(tmp_path / name)
+        cv2.imwrite(path, img)
+        pre = TMAPreprocessor(path, array_number=1, slide_name="M", pixel_size_um=PX_UM,
+                              core_diameter_um=CORE_UM, fit_pixel_size_um=PX_UM, orientation=orientation)
+        pre.fit()
+        pre.map_to_array()
+        return pre
+
+    @staticmethod
+    def _labels(pre):
+        return {(c.row, c.col): (c.map_row, c.map_col) for c in pre.cores}
+
+    def test_shift_relabels_every_core(self, tmp_path):
+        pre = self._pre(tmp_path)
+        before = self._labels(pre)
+        core = next(c for c in pre.cores if 0 <= c.map_row < 9)
+        delta = pre.map_cell(core.row, core.col + 1)
+        delta = (delta[0] - core.map_row, delta[1] - core.map_col)     # one scan column along the map
+        o = pre.set_map_position(core, core.map_row + delta[0], core.map_col + delta[1])
+        assert o == "90" and pre.orientation == "90"
+        assert pre.orientation_method == "anchor" and pre.orientation_resolved
+        assert pre.orientation_ties == ["90"] and pre.match_score is not None
+        after = self._labels(pre)
+        for cell, (mr, mc) in before.items():
+            nr, nc = mr + delta[0], mc + delta[1]
+            if 0 <= nr < 12 and 0 <= nc < 8:
+                assert after[cell] == (nr, nc)
+        pre.close()
+
+    def test_resolves_unresolved_orientation(self, tmp_path):
+        pre = self._pre(tmp_path, orientation="auto")
+        assert not pre.orientation_resolved                 # identical synthetic cores cannot break the tie
+        core = pre.cores[0]
+        pre.set_map_position(core, core.map_row, core.map_col)
+        assert pre.orientation_resolved and pre.orientation == pre.matched_orientation != "auto"
+        pre.close()
+
+    def test_rotation_keeps_anchor_and_auto_clears_it(self, tmp_path):
+        pre = self._pre(tmp_path)
+        core = next(c for c in pre.cores if pre.core_info(c).is_control)
+        target = (core.map_row, core.map_col)
+        pre.set_map_position(core, *target)
+        pre.orientation = "270"
+        pre.map_to_array()
+        assert pre.orientation_method == "anchor" and (core.map_row, core.map_col) == target
+        pre.orientation = "auto"
+        pre.map_to_array()
+        assert pre.map_anchor is None and pre.orientation_method != "anchor"
+        pre.close()
+
+    def test_other_array_drops_anchor(self, tmp_path):
+        pre = self._pre(tmp_path)
+        pre.set_map_position(pre.cores[0], pre.cores[0].map_row, pre.cores[0].map_col)
+        pre.array_number = 2
+        pre.map_to_array()
+        assert pre.map_anchor is None and pre.orientation_method == "manual"
+        pre.close()
+
+    def test_rejects_without_map_or_unknown_cell(self, tmp_path):
+        pre = self._pre(tmp_path)
+        with pytest.raises(ValueError):
+            pre.set_map_position(pre.cores[0], 20, 0)
+        pre.array_number = None
+        with pytest.raises(ValueError):
+            pre.set_map_position(pre.cores[0], 0, 0)
+        pre.close()
+
+    def test_undo_restores_placement(self, tmp_path):
+        pre = self._pre(tmp_path, orientation="auto")
+        before, labels, o = pre.snapshot(), self._labels(pre), pre.orientation
+        core = next(c for c in pre.cores if 0 <= c.map_row < 9)
+        pre.set_map_position(core, core.map_row + 1, core.map_col)
+        assert self._labels(pre) != labels
+        pre.restore(before)
+        assert pre.map_anchor is None and pre.orientation == o and self._labels(pre) == labels
+        pre.close()
+
+    def test_saved_with_edits(self, tmp_path):
+        from cabana.tma import EDITS_FILE
+        pre = self._pre(tmp_path)
+        core = next(c for c in pre.cores if 0 <= c.map_row < 9)
+        pre.set_map_position(core, core.map_row + 1, core.map_col)
+        labels = self._labels(pre)
+        path = str(tmp_path / EDITS_FILE)
+        pre.save_edits(path)
+        pre2 = self._pre(tmp_path, orientation="auto")
+        pre2.load_edits(path)
+        assert pre2.map_anchor == pre.map_anchor and pre2.orientation_method == "anchor"
+        assert self._labels(pre2) == labels
+        pre.close()
+        pre2.close()
+
+    def test_load_rejects_bad_map_position(self, tmp_path):
+        import json
+        from cabana.tma import EDITS_FILE
+        pre = self._pre(tmp_path)
+        path = str(tmp_path / EDITS_FILE)
+        pre.save_edits(path)
+        with open(path) as f:
+            data = json.load(f)
+        data["map_anchor"] = {"array": 1, "cx": "x"}
+        with open(path, "w") as f:
+            json.dump(data, f)
+        with pytest.raises(ValueError):
+            pre.load_edits(path)
+        pre.close()
+
+    def test_places_map_past_the_grid_edge(self, tmp_path):
+        """TMA 2 case: an empty edge row of the map lies beyond the scanned
+        cores while stray tissue widens the grid. The anchor must still place
+        the map exactly, with the empty row hanging off the grid."""
+        from cabana.tma import _transform_grid
+        o = "270"
+        occ_t = _transform_grid(occupancy_grid(2), o)                       # 8 x 12, one empty column
+        idx_t = _transform_grid(np.stack(np.meshgrid(np.arange(12), np.arange(8), indexing="ij"), axis=-1), o)
+        empty = [k for k in range(occ_t.shape[1]) if not occ_t[:, k].any()]
+        assert empty == [0]                                                  # the empty map row is on the left
+        main = occ_t[:, 1:]                                                  # what the slide shows: 8 x 11
+        scan = np.zeros((8, 15), dtype=bool)
+        scan[:, :11] = main
+        scan[:, 14] = True                                                   # stray tissue three pitches away
+        img, _ = synthetic_slide(scan, jitter=3)
+        path = str(tmp_path / "t2.png")
+        cv2.imwrite(path, img)
+        pre = TMAPreprocessor(path, array_number=2, slide_name="T2", pixel_size_um=PX_UM,
+                              core_diameter_um=CORE_UM, fit_pixel_size_um=PX_UM, orientation=o)
+        pre.fit()
+        pre.map_to_array()
+        truth = lambda c: tuple(int(v) for v in idx_t[c.row, c.col + 1])   # scan col k is map column k + 1
+        corner = next(c for c in pre.cores if (c.row, c.col) == (7, 0))
+        pre.set_map_position(corner, *truth(corner))
+        for c in pre.cores:
+            if c.col < 11:
+                assert (c.map_row, c.map_col) == truth(c), (c.row, c.col)
+            else:
+                assert c.outside_map
         pre.close()

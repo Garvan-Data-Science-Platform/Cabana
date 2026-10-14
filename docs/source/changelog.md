@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+### TMA Dearrayer
+
+- A wrong map placement can be corrected by hand: with **Edit cores** on,
+  right-click a recognisable core (for example a control) and choose
+  **Set map position…** to give it its true position. The whole map is placed
+  from that core, the orientation is kept, and choosing another orientation
+  turns the map about it. A hand-set placement enables Export, is recorded as
+  `orientation_method = anchor`, is saved in `cores_edits.json` and can be
+  undone or cleared. Rotating alone could not fix a map that was shifted by a
+  row, as happened on APGI TMA 2.
+- Hovering a core reminds you that a wrong label can be corrected by
+  right-clicking it.
+- **Save Edits…** saves the cores, orientation and hand-set map position
+  without exporting, and **Load Edits…** reinstates any saved edits file,
+  asking first if it was saved for another slide name.
+- After a fit, the offer to reinstate saved edits also appears when the only
+  saved edit is a hand-set map position.
+- Export asks before replacing saved edits of the slide with a fit that has no
+  hand edits, so a declined reinstate offer no longer loses them silently.
+- Opening a slide always sets the output folder to that slide's own
+  `<slide>_cores` folder. It used to keep the previous slide's folder, so a
+  second slide was exported under the first slide's name. The folder is
+  placed next to the output folder chosen last (remembered between sessions),
+  or beside the slide until one has been chosen, and Export asks before
+  writing into a folder that holds another slide's export.
+
 ## 0.3.3
 
 ### TMA Dearrayer

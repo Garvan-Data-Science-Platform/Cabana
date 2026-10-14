@@ -562,12 +562,28 @@ def _transform_grid(grid, orientation):
     return out
 
 
+def _empty_margins(occ):
+    """Numbers of empty rows at the top and bottom and empty columns at the
+    left and right of the boolean occupancy grid ``occ``."""
+    rows, cols = np.flatnonzero(occ.any(axis=1)), np.flatnonzero(occ.any(axis=0))
+    if not len(rows):
+        return 0, 0, 0, 0
+    return (int(rows[0]), int(occ.shape[0] - 1 - rows[-1]),
+            int(cols[0]), int(occ.shape[1] - 1 - cols[-1]))
+
+
 def match_orientation(observed, array_number, orientation="auto"):
     """Match the observed occupancy grid to the printed map.
 
     ``observed`` is a boolean ``(n_rows, n_cols)`` array of the scan. For each
     candidate orientation the transformed map is compared at every offset that
-    keeps the observed grid inside it. The score rewards cores present in both,
+    keeps the observed grid inside it, or the map inside the observed grid.
+    The map may also hang past an edge of the observed grid by as many rows
+    or columns as it has empty along that edge (see :func:`_empty_margins`):
+    an empty edge row is invisible on the slide, so when stray tissue widens
+    the grid on the opposite side the correct placement puts that row
+    outside the grid (APGI array 2, whose row L is empty). Fully populated
+    maps have no empty margin and are matched exactly as before. The score rewards cores present in both,
     penalises cores present in the scan but absent from the map heavily (they
     cannot exist) and dropped cores lightly (cores fall off sections).
 
@@ -590,8 +606,10 @@ def match_orientation(observed, array_number, orientation="auto"):
         idx_t = _transform_grid(map_idx, o)
         mh, mw = occ_t.shape
         oh, ow = observed.shape
-        for oy in range(min(0, mh - oh), max(0, mh - oh) + 1):
-            for ox in range(min(0, mw - ow), max(0, mw - ow) + 1):
+        top, bottom, left, right = _empty_margins(occ_t)
+        # oy > 0 hangs the map's top past the grid by oy rows, oy < mh - oh its bottom
+        for oy in range(min(0, mh - oh, mh - oh - bottom), max(0, mh - oh, top) + 1):
+            for ox in range(min(0, mw - ow, mw - ow - right), max(0, mw - ow, left) + 1):
                 score = 0.0
                 lookup = np.full((oh, ow, 2), -1, dtype=int)
                 for r in range(oh):

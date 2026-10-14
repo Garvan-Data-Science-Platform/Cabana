@@ -56,7 +56,8 @@ before exporting, and exporting can be repeated into a different folder.
    instantly without a refit (see [Quality filters](#quality-filters)).
 6. **Edit.** *Edit cores* turns on hand correction of the circles on the
    overlay, *Grid lines* shows or hides the lattice and *Undo* reverts the
-   last edit (see [Editing cores by hand](#editing-cores-by-hand)).
+   last edit; **Load Edits…** and **Save Edits…** reinstate or keep hand
+   edits without exporting (see [Editing cores by hand](#editing-cores-by-hand)).
 7. **Export settings.** *Margin* around each circle, *Mask Shrink*, and the
    channels (BF, POL) to write.
 8. **Output Folder** for the export. Opening a slide always sets it to
@@ -241,7 +242,10 @@ covers every position of the printed map.
 
 The scan is typically rotated relative to the printed map. *Auto* compares the
 pattern of missing cores with the map for all eight rotations and mirror
-images. A fully populated array cannot distinguish a rotation from its mirror
+images, sliding the turned map across the fitted grid to find where it sits.
+An edge row or column that is empty on the printed map (row L of arrays 1
+and 2) is allowed to lie outside the fitted grid, so stray tissue beside the
+array cannot push the map out of place. A fully populated array cannot distinguish a rotation from its mirror
 image, so when several orientations tie Cabana breaks the tie by appearance:
 
 1. **Brain control.** Brain tissue is nearly collagen-free, so the core at

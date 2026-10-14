@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### TMA Dearrayer
+
+- *Auto* and an explicitly chosen orientation can now place the map with an
+  empty edge row or column (row L of arrays 1 and 2) outside the fitted grid.
+  Stray tissue beside APGI TMA 2 had widened the grid on the other side, so
+  every label was shifted by a row whatever the orientation; TMA 2 is now
+  placed correctly by *Auto* (270, decided by the Brain control). Fully
+  populated arrays (3 to 8) are matched exactly as before. Re-export TMA 2
+  if it was exported with an earlier version.
+
 ## 0.3.4
 
 ### TMA Dearrayer

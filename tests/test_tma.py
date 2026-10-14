@@ -1030,3 +1030,51 @@ class TestMapPosition:
             else:
                 assert c.outside_map
         pre.close()
+
+
+class TestBoundedOverhang:
+    """The map may hang past the scanned grid only by its empty edge rows/columns."""
+
+    def test_empty_margins(self):
+        from cabana.tma import _empty_margins
+        assert _empty_margins(occupancy_grid(2)) == (0, 1, 0, 0)          # row L of arrays 1 and 2
+        for array in range(3, 9):
+            assert _empty_margins(occupancy_grid(array)) == (0, 0, 0, 0)  # nothing new for full arrays
+        assert _empty_margins(np.zeros((3, 3), bool)) == (0, 0, 0, 0)
+
+    @staticmethod
+    def _tma2_like():
+        """Array 2 at 270 degrees (empty row L on the left, so invisible) with a
+        column of stray tissue three pitches right of the array."""
+        from cabana.tma import _transform_grid
+        occ_t = _transform_grid(occupancy_grid(2), "270")
+        assert not occ_t[:, 0].any()
+        observed = np.zeros((8, 15), dtype=bool)
+        observed[:, :11] = occ_t[:, 1:]
+        observed[:, 14] = True
+        idx_t = _transform_grid(np.stack(np.meshgrid(np.arange(12), np.arange(8), indexing="ij"), axis=-1), "270")
+        return observed, idx_t
+
+    def test_stray_tissue_no_longer_shifts_the_map(self):
+        observed, idx_t = self._tma2_like()
+        o, lookup, score, _ = match_orientation(observed, 2, "270")
+        for r in range(8):
+            for c in range(11):
+                assert tuple(lookup[r, c]) == tuple(idx_t[r, c + 1])       # scan col c is map column c + 1
+        assert (lookup[:, 14] == -1).all()                                 # the stray tissue is off the map
+
+    def test_auto_includes_the_correct_placement(self):
+        observed, _ = self._tma2_like()
+        _, _, best, ties = match_orientation(observed, 2, "auto")
+        _, _, s270, _ = match_orientation(observed, 2, "270")
+        assert "270" in ties and s270 == best
+
+    def test_full_array_unchanged_with_stray_tissue(self):
+        from cabana.tma import _transform_grid
+        occ_t = _transform_grid(occupancy_grid(4), "90")                  # 8 x 12, no empty margin
+        observed = np.zeros((8, 16), dtype=bool)
+        observed[:, :12] = occ_t
+        observed[2:5, 15] = True
+        o, lookup, _, _ = match_orientation(observed, 4, "90")
+        idx_t = _transform_grid(np.stack(np.meshgrid(np.arange(12), np.arange(8), indexing="ij"), axis=-1), "90")
+        assert (lookup[:, :12] == idx_t).all() and (lookup[:, 12:] == -1).all()

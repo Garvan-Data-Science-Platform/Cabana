@@ -183,3 +183,19 @@ class TestEditPersistence:
         assert win.tma_status_label.text().startswith("Reinstated")
         assert {(r, c) for _, r, c, _ in pre2.missing_positions()} == {(3, 5)}
         pre2.close()
+
+
+class TestRefit:
+    def test_refit_keeps_reused_reader_open(self, fitted_gui, app, monkeypatch):
+        """A second Fit Cores reuses the slide reader, so it must not close it:
+        a closed VSI reader fails on the next full-resolution read (export)."""
+        win, pre = fitted_gui
+        reader = pre.reader
+        assert win.tma_reader is reader
+        closed = []
+        monkeypatch.setattr(reader, "close", lambda: closed.append(True))
+        win.run_tma_fit()
+        win.tma_worker.wait(60000)
+        settle(app, 100)
+        assert not closed
+        assert win.tma_pre is not pre and win.tma_pre.reader is reader

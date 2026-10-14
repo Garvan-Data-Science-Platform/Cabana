@@ -1244,7 +1244,10 @@ class MainWindow(QMainWindow):
         if not self.tma_slide:
             return
         if self.tma_pre is not None:
-            self.tma_pre.close()
+            # the refit below reuses this reader (self.tma_reader): closing it
+            # would make later full-resolution reads fail ("seek of closed file")
+            if self.tma_pre.reader is not self.tma_reader:
+                self.tma_pre.close()
             self.tma_pre = None
         options = self._tma_options()
         if self.tma_slide.lower().endswith(".vsi"):

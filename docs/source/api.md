@@ -93,7 +93,7 @@ defaults as the `cabana-tma` command line options (`core_diameter_um`,
   [Image naming](workflow.md#image-naming-for-per-patient-statistics)). Patients
   are identified from the image name: the prefix before `.vsi` (which is how
   both QuPath slide exports and the TMA core export name their files, for
-  example `8010718.vsi - TMA1_BF_A3Annotation (Tumor)_1`), otherwise the
+  example `1734.vsi - TMA1_BF_A4Annotation (Tumor)_1`), otherwise the
   first token of the name.
 - `QuantificationResults_SCORES.csv`: Rigidity and Bundling collagen risk
   scores computed from the per-patient means.

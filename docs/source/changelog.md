@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### TMA Dearrayer
+
+- Exported core images are named by the 4-digit patient ID printed on the
+  ICGC map (for example `1734.vsi - …`) instead of the longer APGI block ID.
+  Replicate numbering and the replicate orientation check group cores by the
+  same patient ID. The block ID is in `cores.csv` in a new `block_id` column,
+  which replaces `icgc_id`. Exports made with earlier versions use block IDs
+  as names and should be re-exported before they are combined with new ones.
+- Running Fit Cores again on the same slide no longer closes the slide file:
+  exporting after a refit used to fail with "seek of closed file".
+
 ## 0.3.2
 
 - The automatic orientation entry on the TMA Dearrayer page is labelled

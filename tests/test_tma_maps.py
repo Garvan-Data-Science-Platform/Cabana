@@ -37,19 +37,20 @@ class TestMapFile:
         for info in load_array_map(array).values():
             if info.empty:
                 continue
-            assert info.tissue or (info.patient_id and info.icgc_id), info
+            assert info.tissue or (info.patient_id and info.block_id), info
 
     def test_spot_checks_against_pdf(self):
         a1 = load_array_map(1)
         assert a1[(0, 0)].tissue == "Liver"
-        assert a1[(0, 3)].patient_id == "8010718" and a1[(0, 3)].icgc_id == "1734"
+        assert a1[(0, 3)].patient_id == "1734" and a1[(0, 3)].block_id == "8010718"
         assert a1[(3, 6)].tissue == "Brain"
         assert a1[(4, 0)].label == "A5" and a1[(4, 0)].sector == 2
         a6 = load_array_map(6)
-        assert a6[(0, 3)].patient_id == "8046501" and a6[(0, 3)].note == "MCN"
+        assert a6[(0, 3)].patient_id == "2144" and a6[(0, 3)].block_id == "8046501"
+        assert a6[(0, 3)].note == "MCN"
         assert a6[(8, 6)].tissue == "Kidney/ muscle"
         a8 = load_array_map(8)
-        assert a8[(0, 0)].label == "D3" and a8[(0, 0)].patient_id == "8070444"
+        assert a8[(0, 0)].label == "D3" and a8[(0, 0)].patient_id == "3804" and a8[(0, 0)].block_id == "8070444"
 
     def test_unknown_array_raises(self):
         with pytest.raises(KeyError):
@@ -64,8 +65,8 @@ class TestNaming:
 
     def test_patient_core_stem(self):
         info = load_array_map(1)[(0, 3)]
-        assert core_stem("TMA1", 0, 3, info, "BF") == "8010718.vsi - TMA1_BF_A4Annotation (Tumor)_1"
-        assert core_stem("TMA1", 0, 3, info, "POL", replicate=3) == "8010718.vsi - TMA1_POL_A4Annotation (Tumor)_3"
+        assert core_stem("TMA1", 0, 3, info, "BF") == "1734.vsi - TMA1_BF_A4Annotation (Tumor)_1"
+        assert core_stem("TMA1", 0, 3, info, "POL", replicate=3) == "1734.vsi - TMA1_POL_A4Annotation (Tumor)_3"
 
     def test_control_core_stem(self):
         info = load_array_map(1)[(0, 0)]
@@ -80,35 +81,45 @@ class TestNaming:
         assert " - APGI-TMA-3-PicRed_BF_A2Annotation" in core_stem("APGI TMA 3 PicRed", 0, 1, info, "BF")
 
     def test_coreinfo_properties(self):
-        info = CoreInfo(1, 1, "B3", "B", 3, "8012191", "2113", "", "", False)
+        info = CoreInfo(1, 1, "B3", "B", 3, "2113", "8012191", "", "", False)
         assert info.row_index == 1 and info.col_index == 2 and info.position == "B3"
-        assert not info.is_control and info.identity() == "8012191_2113"
+        assert not info.is_control and info.identity() == "2113_8012191"
 
 
 class TestMapConsistency:
-    """Every (patient, ICGC sample) pair appears exactly three times per array,
+    """Every (patient, block) pair appears exactly three times per array,
     one core per sector on arrays 3 to 8 (arrays 1 and 2 shuffle patients
     between sectors). Two exceptions are printed in the PDF and verified
-    against its page images: Array 6 patient 8070344 has two samples (3368
-    and 3541), each in triplicate; Array 7 sample 8062699/3290 appears twice
-    because a Kidney control occupies its sector-3 slot."""
+    against its page images: on Array 6 block 8070344 carries two patient
+    IDs (3368 and 3541), each in triplicate; Array 7 patient 3290 (block
+    8062699) appears twice because a Kidney control occupies its sector-3
+    slot."""
 
-    EXCEPTIONS = {(7, "8062699", "3290"): 2}
+    EXCEPTIONS = {(7, "3290", "8062699"): 2}
 
     @pytest.mark.parametrize("array", range(1, 9))
     def test_each_sample_in_triplicate(self, array):
         from collections import Counter
         cells = [c for c in load_array_map(array).values() if not c.empty and c.patient_id]
-        counts = Counter((c.patient_id, c.icgc_id) for c in cells)
-        for (pid, icgc), n in counts.items():
-            assert n == self.EXCEPTIONS.get((array, pid, icgc), 3), (array, pid, icgc, n)
+        counts = Counter((c.patient_id, c.block_id) for c in cells)
+        for (pid, block), n in counts.items():
+            assert n == self.EXCEPTIONS.get((array, pid, block), 3), (array, pid, block, n)
 
     @pytest.mark.parametrize("array", range(3, 9))
     def test_one_core_per_sector_on_later_arrays(self, array):
         from collections import Counter
         cells = [c for c in load_array_map(array).values() if not c.empty and c.patient_id]
-        per_sector = Counter((c.patient_id, c.icgc_id, c.sector) for c in cells)
+        per_sector = Counter((c.patient_id, c.block_id, c.sector) for c in cells)
         assert max(per_sector.values()) == 1
+
+    def test_patient_id_is_four_digits_and_has_one_block(self):
+        blocks = {}
+        for array in range(1, 9):
+            for c in load_array_map(array).values():
+                if c.patient_id:
+                    assert len(c.patient_id) == 4 and len(c.block_id) in (6, 7), c
+                    blocks.setdefault(c.patient_id, set()).add(c.block_id)
+        assert all(len(b) == 1 for b in blocks.values())
 
     def test_control_counts(self):
         for array in range(1, 9):

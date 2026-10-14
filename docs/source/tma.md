@@ -191,7 +191,7 @@ of cores as exported, so reinstating replaces the new fit.
 ## Output naming
 
 ```
-<patientID>.vsi - <slide>_<channel>_<position>Annotation (<class>)_<n>.png   e.g. 8010718.vsi - TMA1_BF_A3Annotation (Tumor)_1.png
+<patientID>.vsi - <slide>_<channel>_<position>Annotation (<class>)_<n>.png   e.g. 1734.vsi - TMA1_BF_A4Annotation (Tumor)_1.png
 <tissue>.vsi - <slide>_<channel>_<position>Annotation (<tissue>)_<n>.png      e.g. Liver.vsi - TMA1_BF_A1Annotation (Liver)_1.png   (control cores)
 <slide>-r<row>c<col>.vsi - <slide>_<channel>_r<row>c<col>Annotation (Unmapped)_1.png   (no array map selected or unmapped cell)
 ```
@@ -203,8 +203,10 @@ the class from the last bracket and the replicate from the trailing number.
 `<class>` is the map note where one exists (for example PNET, MCN), otherwise
 `Tumor`; `<n>` numbers the patient's cores on the slide in row-major order.
 `position` is the flat map position (rows A to L, columns 1 to 8) after the
-printed sector offsets are resolved; the ICGC ID is in `cores.csv`. `cores.csv` records the map label,
-sector, patient ID, ICGC ID, tissue, circle centre and radius (level-0 pixels),
+printed sector offsets are resolved. `<patientID>` is the 4-digit patient ID
+printed under each cell of the ICGC map; the APGI block ID printed above it
+is in `cores.csv`. `cores.csv` records the map label,
+sector, patient ID, block ID, tissue, circle centre and radius (level-0 pixels),
 tissue fill, QC metrics, flag, exclusion reason, export group (`Patients`,
 `Controls` or `Unmapped`), the orientation used together with the rule
 that decided it (`orientation_method`), and whether the core was edited by

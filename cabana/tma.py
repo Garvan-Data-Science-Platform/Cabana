@@ -4,10 +4,10 @@ Fits a circle to every core on a whole-slide scan, snaps the circles to the
 array grid, matches the grid to the printed ICGC/APGI array map, and exports
 one image and one binary mask per core and channel:
 
-    <out>/BF/Patients/Images/8010718.vsi - TMA1_BF_A3Annotation (Tumor)_1.png
-    <out>/BF/Patients/Masks/8010718.vsi - TMA1_BF_A3Annotation (Tumor)_1.png
+    <out>/BF/Patients/Images/1734.vsi - TMA1_BF_A4Annotation (Tumor)_1.png
+    <out>/BF/Patients/Masks/1734.vsi - TMA1_BF_A4Annotation (Tumor)_1.png
     <out>/BF/Controls/Images/Liver.vsi - TMA1_BF_A1Annotation (Liver)_1.png
-    <out>/POL/Patients/Images/8010718.vsi - TMA1_POL_A3Annotation (Tumor)_1.png
+    <out>/POL/Patients/Images/1734.vsi - TMA1_POL_A4Annotation (Tumor)_1.png
     ...
     <out>/cores.csv
     <out>/overlay.png
@@ -1001,7 +1001,7 @@ class TMAPreprocessor:
         lines = [f"Core #{c.index}  {self.position_label(info, c.row, c.col)}"]
         if info is not None and not info.empty:
             if info.patient_id:
-                lines.append(f"Patient {info.patient_id}" + (f"  ICGC {info.icgc_id}" if info.icgc_id else ""))
+                lines.append(f"Patient {info.patient_id}" + (f"  Block {info.block_id}" if info.block_id else ""))
             if info.tissue:
                 lines.append(info.tissue)
             if info.note:
@@ -1401,7 +1401,7 @@ class TMAPreprocessor:
 
     def write_manifest(self, path, channel=None):
         fields = ["stem", "slide", "array", "scan_row", "scan_col", "map_position", "map_label",
-                  "sector", "patient_id", "icgc_id", "tissue", "note", "cx", "cy", "radius_px",
+                  "sector", "patient_id", "block_id", "tissue", "note", "cx", "cy", "radius_px",
                   "fill", "grid_offset", "diameter_um", "stain_frac", "flag", "excluded",
                   "reason", "group", "orientation", "orientation_method", "manual"]
         amap = self.array_map()
@@ -1419,7 +1419,7 @@ class TMAPreprocessor:
                     "map_label": info.label if info else "",
                     "sector": info.sector if info else "",
                     "patient_id": info.patient_id if info else "",
-                    "icgc_id": info.icgc_id if info else "",
+                    "block_id": info.block_id if info else "",
                     "tissue": info.tissue if info else "",
                     "note": info.note if info else "",
                     "cx": round(c.cx, 1), "cy": round(c.cy, 1), "radius_px": round(c.radius, 1),
@@ -1437,7 +1437,7 @@ class TMAPreprocessor:
                     "stem": "", "slide": self.slide_name, "array": self.array_number,
                     "scan_row": row + 1, "scan_col": col + 1,
                     "map_position": info.position, "map_label": info.label, "sector": info.sector,
-                    "patient_id": info.patient_id, "icgc_id": info.icgc_id,
+                    "patient_id": info.patient_id, "block_id": info.block_id,
                     "tissue": info.tissue, "note": info.note,
                     "cx": round(centre[0], 1) if centre else "", "cy": round(centre[1], 1) if centre else "",
                     "radius_px": "", "fill": "", "grid_offset": "", "diameter_um": "", "stain_frac": "",

@@ -7,6 +7,10 @@ by 8 columns (1..8). The PDF labels cells with sector-local names (e.g. the
 second sector starts at column 5), so both the original ``label`` and the
 flat ``row``/``col`` position are stored.
 
+Each patient cell in the PDF prints two numbers: the APGI block ID (6 or 7 digits)
+above the 4-digit patient ID. The patient ID names the exported images and
+groups the replicate cores; the block ID is kept for traceability.
+
 Arrays 1 and 2 have an empty last row (88 cores); arrays 3 to 8 have 96.
 """
 
@@ -31,8 +35,8 @@ class CoreInfo:
     label: str
     row: str          # flat row letter A..L
     col: int          # flat column 1..8
-    patient_id: str
-    icgc_id: str
+    patient_id: str   # 4-digit patient ID; names the exported images
+    block_id: str     # APGI block ID (6 or 7 digits)
     tissue: str       # control tissue name; empty for patient cores
     note: str         # e.g. PNET, MCN
     empty: bool
@@ -54,13 +58,13 @@ class CoreInfo:
         return bool(self.tissue) and not self.patient_id
 
     def identity(self):
-        """Filename-safe identity string: patient and ICGC IDs, or tissue name."""
+        """Filename-safe identity string: patient and block IDs, or tissue name."""
         if self.empty:
             return "empty"
         if self.patient_id:
             ident = self.patient_id
-            if self.icgc_id:
-                ident += f"_{self.icgc_id}"
+            if self.block_id:
+                ident += f"_{self.block_id}"
             return ident
         return sanitize_token(self.tissue)
 
@@ -101,7 +105,7 @@ def load_array_map(array_number):
             continue
         info = CoreInfo(array=int(r["array"]), sector=int(r["sector"]), label=r["label"],
                         row=r["row"], col=int(r["col"]), patient_id=r["patient_id"],
-                        icgc_id=r["icgc_id"], tissue=r["tissue"], note=r["note"],
+                        block_id=r["block_id"], tissue=r["tissue"], note=r["note"],
                         empty=bool(int(r["empty"])))
         cells[(info.row_index, info.col_index)] = info
     if not cells:
@@ -130,7 +134,7 @@ def core_stem(slide, row_index, col_index, info=None, channel=None, replicate=1)
     patient ID from the prefix, the channel from ``_BF_``/``_POL_``, the class
     from the last bracket and the replicate number from the trailing ``_<n>``:
 
-        8010718.vsi - TMA1_BF_A3Annotation (Tumor)_1      patient core
+        1734.vsi - TMA1_BF_A4Annotation (Tumor)_1         patient core
         Liver.vsi - TMA1_BF_A1Annotation (Liver)_1          control core
         TMA1-r2c5.vsi - TMA1_BF_r2c5Annotation (Unmapped)_1 no map entry
 

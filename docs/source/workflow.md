@@ -8,7 +8,7 @@ Once the Cabana GUI is launched, you will see a window split horizontally: the c
 
 ![Start page](media/start.png)
 
-1. **Menu bar.** All commands live here: **File** (open or reload an image, open a TMA slide, quit), **Parameters** (import, export, restore defaults), **Analysis** (choose which page the control panel shows: **TMA**, **Segmentation**, **Fibre Detection**, **Gap Analysis** or **Batch Run**, shortcuts Ctrl/Cmd+1 to 5) and **Help** (about, documentation, issue tracker, version, licence).
+1. **Menu bar.** All commands live here: **File** (open or reload an image, open a TMA slide, generate a TMA map template, quit; quitting asks for confirmation and names any running job or unsaved TMA edits), **Parameters** (import, export, restore defaults), **Analysis** (choose which page the control panel shows: **TMA**, **Segmentation**, **Fibre Detection**, **Gap Analysis** or **Batch Run**, shortcuts Ctrl/Cmd+1 to 5) and **Help** (about, documentation, issue tracker, version, licence).
 2. **Open TMA Slide** opens a whole-slide scan on the TMA Dearrayer page.
 3. **Open Image** loads a single image to tune parameters on; the panel switches to Segmentation automatically. You can also drag an image onto the viewer.
 4. **Import Parameters** loads a saved `Parameters.yml` into the controls.

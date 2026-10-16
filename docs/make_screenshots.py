@@ -121,6 +121,7 @@ def main(argv):
     app = QApplication.instance() or QApplication([])
     from cabana.cabana_gui import MainWindow
     win = MainWindow()          # maximises itself to the 800x600 offscreen screen
+    win.confirm_on_close = False
     win.showNormal()
     win.resize(1500, 980)
     if win.theme_combo.currentText() != "Light":

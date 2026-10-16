@@ -29,13 +29,16 @@ from . import __version__
 
 
 class PageStack(QStackedWidget):
-    """Stacked widget sized by its current page, not its tallest one, and never
-    smaller than that page's natural size: inside a scroll area a short page
-    then shows no empty scroll range and a tall one scrolls instead of being
-    squeezed."""
+    """Stacked widget sized by its current page, not its tallest one. Inside a
+    scroll area a short page then shows no empty scroll range, and a tall one
+    scrolls instead of being squeezed: the minimum height is the height the
+    page needs at its current width (wrapped labels included). The minimum
+    width is the page's own minimum, so a long wrapped label (such as the TMA
+    status line) wraps to the panel instead of widening the page past it."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._last_width = -1
         self.currentChanged.connect(lambda _i: self.updateGeometry())
 
     def sizeHint(self):
@@ -44,7 +47,18 @@ class PageStack(QStackedWidget):
 
     def minimumSizeHint(self):
         page = self.currentWidget()
-        return page.sizeHint() if page is not None else super().minimumSizeHint()
+        if page is None:
+            return super().minimumSizeHint()
+        height = page.sizeHint().height()
+        if page.hasHeightForWidth() and self.width() > 0:
+            height = page.heightForWidth(self.width())
+        return QSize(page.minimumSizeHint().width(), max(height, page.minimumSizeHint().height()))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if event.size().width() != self._last_width:       # wrapped labels change height with width
+            self._last_width = event.size().width()
+            self.updateGeometry()
 
 
 class MainWindow(QMainWindow):
@@ -418,6 +432,39 @@ class MainWindow(QMainWindow):
 
         layout.addStretch()
         self.start_tab.setLayout(layout)
+
+    confirm_on_close = True     # tests and scripts switch the quit confirmation off
+
+    def closeEvent(self, event):
+        """Ask before quitting, so a stray click on the close button or Cmd/Ctrl+Q
+        does not end the session; the question names any work that would be lost."""
+        if not self.confirm_on_close or self._confirm_quit():
+            event.accept()
+        else:
+            event.ignore()
+
+    def _work_at_risk(self):
+        """Plain-language list of running jobs and unsaved edits."""
+        items = []
+        running = [(getattr(self, "batch_worker", None), "a batch run"),
+                   (getattr(self, "tma_worker", None), "a TMA fit or export"),
+                   (getattr(self, "segmentation_worker", None), "segmentation"),
+                   (getattr(self, "detection_worker", None), "fibre detection"),
+                   (getattr(self, "gap_analysis_worker", None), "gap analysis")]
+        for worker, label in running:
+            if worker is not None and worker.isRunning():
+                items.append(f"{label} is still running")
+        if getattr(self, "tma_pre", None) is not None and getattr(self, "_tma_unsaved", False):
+            items.append("hand edits of the TMA cores have not been exported or saved")
+        return items
+
+    def _confirm_quit(self):
+        risks = self._work_at_risk()
+        if risks:
+            info = "If you quit now:\n- " + "\n- ".join(risks)
+        else:
+            info = "Any results not yet saved or exported will be lost."
+        return self._ask_tma("Quit Cabana", "Quit Cabana?", info, "Confirm", "Cancel")
 
     MAP_LOAD_ITEM = "__load_map__"
 
@@ -1159,6 +1206,7 @@ class MainWindow(QMainWindow):
         self.tma_pre = None
         self.tma_reader = None
         self.tma_worker = None
+        self._tma_unsaved = False   # hand edits changed since the last export, save or load
         self.tma_overlay = None
         self._tma_shown_pre = None
         self._tma_editor = None     # created on first use: the image panel does not exist yet
@@ -1203,6 +1251,7 @@ class MainWindow(QMainWindow):
     def _tma_edited(self, full):
         """Editor callback: repaint, and after a completed edit refresh the summary."""
         if full:
+            self._tma_unsaved = True
             # setting a map position (or undoing one) can change the orientation
             self._sync_tma_orientation_combo()
             self._show_tma_result(preserve_view=True)
@@ -1221,6 +1270,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Load Edits", f"Could not load {path}:\n{e}")
             return
         self.tma_editor.selected = None
+        self._tma_unsaved = False
         # the saved orientation is reapplied by load_edits
         self._sync_tma_orientation_combo()
         self._show_tma_result(preserve_view=True)
@@ -1316,6 +1366,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.warning(self, "Save Edits", f"Could not save {path}:\n{e}")
             return
+        self._tma_unsaved = False
         self.tma_status_label.setText(f"Saved {len(pre.cores)} cores ({pre.manual_count()} hand-edited"
                                       + (", map position set by hand" if pre.map_anchor else "")
                                       + f") to {path}. " + self.tma_status_label.text())
@@ -1488,6 +1539,7 @@ class MainWindow(QMainWindow):
 
     def handle_tma_fit_complete(self, pre):
         self.tma_pre = pre
+        self._tma_unsaved = False
         self.tma_reader = pre.reader
         self.tma_editor.reset()
         self.tma_fit_btn.setText("Fit Cores")
@@ -1632,6 +1684,7 @@ class MainWindow(QMainWindow):
             self.tma_worker.cancel()
 
     def handle_tma_export_complete(self, out_dir):
+        self._tma_unsaved = False           # the export wrote cores_edits.json
         self.tma_export_btn.setText("Export Cores")
         self._tma_set_busy(False)
         n = len(self.tma_pre.exportable_cores()) if self.tma_pre else 0  # excludes filtered cores

@@ -523,3 +523,49 @@ class TestPanelScrolls:
         settle(app, 200)
         assert win.pages_scroll.verticalScrollBar().maximum() == 0
         win.close()
+
+
+class TestLongStatusLine:
+    def test_long_status_wraps_instead_of_widening_the_page(self, fitted_gui, app):
+        win, _ = fitted_gui
+        win.show_page(win.pages.indexOf(win.tma_tab))
+        win.tma_status_label.setText("A very long fit summary that keeps going " * 12)
+        settle(app, 200)
+        assert win.pages_scroll.horizontalScrollBar().maximum() == 0     # nothing hidden on the right
+        assert win.tma_tab.width() <= win.pages_scroll.viewport().width()
+        lab = win.tma_status_label
+        assert lab.height() >= lab.heightForWidth(lab.width())           # every wrapped line shown
+
+
+class TestQuitConfirmation:
+    def test_cancel_keeps_the_window_open(self, fitted_gui, app, monkeypatch):
+        win, _ = fitted_gui
+        win.confirm_on_close = True
+        asked = []
+        monkeypatch.setattr(win, "_ask_tma", lambda *a: asked.append(a) or False)
+        win.close()
+        settle(app)
+        assert win.isVisible() and len(asked) == 1
+        title, text, info, yes, no = asked[0]
+        assert text == "Quit Cabana?" and (yes, no) == ("Confirm", "Cancel")
+        monkeypatch.setattr(win, "_ask_tma", lambda *a: True)
+        win.close()
+        settle(app)
+        assert not win.isVisible()
+
+    def test_unsaved_edits_are_named(self, fitted_gui, app, monkeypatch, tmp_path):
+        from PyQt5.QtWidgets import QFileDialog
+        win, pre = fitted_gui
+        assert win._work_at_risk() == []
+        core = pre.cores[0]
+        pre.move_core(core, core.cx + 10, core.cy)
+        win._tma_edited(True)                                            # what the editor calls after an edit
+        assert any("hand edits" in r for r in win._work_at_risk())
+        path = str(tmp_path / "e.json")
+        monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (path, ""))
+        win.save_tma_edits()
+        assert win._work_at_risk() == []
+        win._tma_edited(True)
+        info = []
+        monkeypatch.setattr(win, "_ask_tma", lambda *a: info.append(a[2]) or True)
+        assert win._confirm_quit() and "have not been exported or saved" in info[0]

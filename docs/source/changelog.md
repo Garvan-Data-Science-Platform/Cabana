@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### GUI
+
+- After fitting TMA cores, the long status line no longer widens the side
+  panel's page past the panel, which hid its right edge behind the image
+  panel (a regression in 0.3.6); the line wraps to the panel again.
+- Quitting asks for confirmation (Confirm or Cancel), naming any running job
+  and TMA hand edits not yet exported or saved.
+
 ## 0.3.6
 
 ### TMA Dearrayer

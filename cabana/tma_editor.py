@@ -20,7 +20,8 @@ import numpy as np
 from PyQt5.QtCore import Qt
 from PyQt5.QtCore import QRectF
 from PyQt5.QtGui import QColor, QFont, QPen
-from PyQt5.QtWidgets import QAction, QInputDialog, QMenu
+from PyQt5.QtWidgets import (QAction, QComboBox, QDialog, QDialogButtonBox, QHBoxLayout, QInputDialog,
+                             QLabel, QMenu, QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout)
 
 from .tma import OVERLAY_COLOURS
 
@@ -462,3 +463,98 @@ class TMACoreEditor:
             wx, wy = to_widget(cx, cy)
             painter.drawText(int(wx - fm.horizontalAdvance(text) / 2), int(wy + fm.ascent() / 2), text)
         painter.restore()
+
+
+class MapPreviewDialog(QDialog):
+    """Shows the maps of a TMA map file as coloured grids, with the problems
+    found while reading it, so the user can compare them with the source
+    before using one. :meth:`selected_map` is the map chosen."""
+
+    COLOURS = {"patient": "#c6efce", "control": "#bdd7ee", "unknown": "#ffe699", "empty": "#ededed"}
+
+    def __init__(self, parent, map_file, preselect=None, style=""):
+        super().__init__(parent)
+        import os
+        from .tma_maps import CONTROL_PREFIX, UNKNOWN_TOKEN
+        self._control, self._unknown = CONTROL_PREFIX, UNKNOWN_TOKEN
+        self.map_file = map_file
+        self.setWindowTitle(f"TMA Map: {os.path.basename(map_file.path)}")
+        self.resize(900, 620)
+        if style:
+            self.setStyleSheet(style)
+        layout = QVBoxLayout(self)
+        top = QHBoxLayout()
+        top.addWidget(QLabel("Map:"))
+        self.map_combo = QComboBox()
+        for m in map_file.maps:
+            self.map_combo.addItem(f"{m.name}  ({m.shape[0]} x {m.shape[1]}, {m.n_cores} cores)", m)
+        if preselect is not None and preselect in map_file.maps:
+            self.map_combo.setCurrentIndex(map_file.maps.index(preselect))
+        self.map_combo.currentIndexChanged.connect(self._show)
+        top.addWidget(self.map_combo, 1)
+        layout.addLayout(top)
+        self.table = QTableWidget()
+        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+        layout.addWidget(self.table, 1)
+        legend = " ".join(f"<span style='background:{self.COLOURS[k]}; color:black'>&nbsp;{t}&nbsp;</span>"
+                          for k, t in (("patient", "patient"), ("control", "control"),
+                                       ("unknown", "unknown ID (?)"), ("empty", "no core")))
+        layout.addWidget(QLabel(legend))
+        self.problems = QTextEdit()
+        self.problems.setReadOnly(True)
+        self.problems.setMaximumHeight(130)
+        lines = [f"<span style='color:#c00000'>{p}</span>" if p.level == "error" else str(p)
+                 for p in map_file.problems]
+        if not map_file.maps and not map_file.errors:
+            lines.append("<span style='color:#c00000'>The file holds no usable map.</span>")
+        self.problems.setHtml("<br>".join(lines) if lines else "No problems found.")
+        layout.addWidget(self.problems)
+        hint = QLabel("Compare the grid with the original map before using it: a wrong ID silently puts "
+                      "a core under the wrong patient.")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.buttons.button(QDialogButtonBox.Ok).setText("Use This Map")
+        self.buttons.button(QDialogButtonBox.Ok).setEnabled(map_file.ok)
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        layout.addWidget(self.buttons)
+        self.map_combo.setVisible(len(map_file.maps) > 1)
+        self._show()
+
+    def selected_map(self):
+        return self.map_combo.currentData() if self.map_file.ok else None
+
+    def _show(self, *_):
+        from PyQt5.QtGui import QBrush
+        m = self.map_combo.currentData()
+        self.table.clear()
+        if m is None:
+            self.table.setRowCount(0)
+            self.table.setColumnCount(0)
+            return
+        self.table.setRowCount(m.shape[0])
+        self.table.setColumnCount(m.shape[1])
+        self.table.setVerticalHeaderLabels([str(r) for r in m.row_labels])
+        self.table.setHorizontalHeaderLabels([str(c) for c in m.col_labels])
+        for (r, c), info in m.cells.items():
+            if info.empty:
+                kind, text = "empty", ""
+            elif info.patient_id:
+                kind, text = "patient", info.patient_id
+            elif info.tissue:
+                kind, text = "control", info.tissue
+            else:
+                kind, text = "unknown", self._unknown
+            item = QTableWidgetItem(text)
+            item.setBackground(QBrush(QColor(self.COLOURS[kind])))
+            item.setForeground(QBrush(QColor("black")))
+            details = [info.position]
+            if info.block_id:
+                details.append(f"block {info.block_id}")
+            if info.note:
+                details.append(f"class {info.note}")
+            details += [f"{k}: {v}" for k, v in info.extras]
+            item.setToolTip("\n".join(details))
+            self.table.setItem(r, c, item)
+        self.table.resizeColumnsToContents()

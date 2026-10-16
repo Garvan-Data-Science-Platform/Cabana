@@ -125,3 +125,272 @@ class TestMapConsistency:
         for array in range(1, 9):
             controls = [c for c in load_array_map(array).values() if c.is_control]
             assert 3 <= len(controls) <= 9, (array, len(controls))
+
+
+# ---------------------------------------------------------------------------
+# User map files
+# ---------------------------------------------------------------------------
+
+from cabana.tma_maps import (TMAMap, as_map, builtin_map, describe_map, load_map_file,  # noqa: E402
+                             match_map_to_slide, write_map_list, write_templates)
+
+
+def _write(tmp_path, name, text, encoding="utf-8"):
+    path = tmp_path / name
+    path.write_text(text, encoding=encoding)
+    return str(path)
+
+
+class TestBuiltinMapObject:
+    def test_matches_legacy_loader(self):
+        for n in range(1, 9):
+            m = builtin_map(n)
+            assert m.shape == (MAP_ROWS, MAP_COLS) and m.array == n and m.is_builtin
+            assert (m.occupancy() == occupancy_grid(n)).all()
+            assert m.cells == load_array_map(n)
+
+    def test_as_map(self):
+        assert as_map(None) is None
+        assert as_map(3) is builtin_map(3)
+        m = builtin_map(4)
+        assert as_map(m) is m
+
+    def test_digest_distinguishes_maps(self):
+        assert builtin_map(1).digest() != builtin_map(2).digest()
+        assert builtin_map(1).digest() == builtin_map(1).digest()
+
+
+class TestGridFiles:
+    def test_template(self, tmp_path):
+        (grid,) = write_templates(str(tmp_path))
+        assert os.path.basename(grid) == "tma_map_template.csv"
+        g = load_map_file(grid)
+        assert g.ok and not g.problems and [m.name for m in g.maps] == ["TMA1"]
+        m = g.maps[0]
+        assert m.shape == (12, 12) and m.n_cores == 22                    # ready-labelled 12 x 12 grid
+        assert m.cells[(0, 0)].is_control and m.cells[(0, 0)].tissue == "Liver"
+        assert m.cells[(1, 2)].is_unknown and m.cells[(4, 0)].empty
+        assert m.cells[(0, 1)].patient_id == "1001" and m.cells[(0, 1)].position == "A2"
+        pasted = m.cells[(2, 2)]                                          # a multi-line example cell
+        assert (pasted.patient_id, pasted.block_id, pasted.note) == ("1011", "801011", "PNET")
+        assert m.cells[(2, 0)].tissue == "Lung"
+
+    def test_qupath_grid_with_tabs(self, tmp_path):
+        mf = load_map_file(_write(tmp_path, "slide.qpmap", "\t1\t2\t3\nA\t1599\t\t1734\nB\t?\tctrl:Liver\t2000\n"))
+        assert mf.ok and mf.maps[0].name == "slide"
+        m = mf.maps[0]
+        assert m.shape == (2, 3) and m.cells[(0, 1)].empty and m.cells[(1, 1)].tissue == "Liver"
+
+    def test_grid_without_headers(self, tmp_path):
+        mf = load_map_file(_write(tmp_path, "g.csv", "1599,1734,ctrl:Lung\n,2001,2002\n2003,,2004\n"))
+        m = mf.maps[0]
+        assert m.shape == (3, 3) and m.cells[(1, 0)].empty and m.cells[(0, 0)].patient_id == "1599"
+        assert m.row_labels == ["A", "B", "C"] and m.col_labels == [1, 2, 3]
+
+    def test_header_keeps_empty_edge_row(self, tmp_path):
+        mf = load_map_file(_write(tmp_path, "g.csv", ",1,2\nA,P1,P2\nB,P3,P4\nC,,\n"))
+        assert mf.maps[0].shape == (3, 2) and mf.maps[0].n_cores == 4
+
+    def test_several_maps_and_prefix_warning(self, tmp_path):
+        text = "# comment\nmap,TMA2\n,1,2\nA,P1,P2\n\nmap,TMA3\n,1,2\nA,P3,ctl:Liver\n"
+        mf = load_map_file(_write(tmp_path, "m.csv", text))
+        assert mf.ok and [m.name for m in mf.maps] == ["TMA2", "TMA3"]
+        assert any("ctl:Liver" in p.message for p in mf.warnings)
+        assert mf.maps[1].cells[(0, 1)].patient_id == "ctl:Liver"
+
+    def test_semicolons_and_excel_bom(self, tmp_path):
+        mf = load_map_file(_write(tmp_path, "s.csv", "﻿,1;2\n".replace(",", ";") + "A;P1;ctrl:Liver\n",
+                                  encoding="utf-8"))
+        assert mf.ok and mf.maps[0].cells[(0, 1)].tissue == "Liver"
+
+    def test_numbered_rows_position(self, tmp_path):
+        mf = load_map_file(_write(tmp_path, "n.csv", ",1,2\n1,P1,P2\n2,ctrl:Liver,\n"))
+        assert mf.maps[0].cells[(1, 0)].position == "R2C1"
+
+    @pytest.mark.parametrize("text,needle", [
+        (",1,2\nA,P1,P2,P3\n", "more cells than column labels"),
+        ("map,X\n,1\nA,P1\nmap,X\n,1\nA,P2\n", "appears twice"),
+        (",1,2\nA,ctrl:,P1\n", "names no control tissue"),
+        ("", "holds no map"),
+    ])
+    def test_grid_errors(self, tmp_path, text, needle):
+        mf = load_map_file(_write(tmp_path, "e.csv", text))
+        assert not mf.ok and not mf.maps
+        assert any(needle in p.message for p in mf.errors), [str(p) for p in mf.problems]
+
+
+class TestListFiles:
+    def test_list_with_extras_and_unknown(self, tmp_path):
+        text = "map,row,col,patient_id,tissue,class,block_id,site\nT,A,1,P1,,PNET,B1,head\nT,A,2,,Liver,,,\nT,B,1,,,,,\n"
+        m = load_map_file(_write(tmp_path, "l.csv", text)).maps[0]
+        assert m.cells[(0, 0)].note == "PNET" and m.cells[(0, 0)].block_id == "B1"
+        assert dict(m.cells[(0, 0)].extras) == {"site": "head"} and m.extra_columns() == ["site"]
+        assert m.cells[(1, 0)].is_unknown and m.cells[(1, 1)].empty
+
+    def test_map_column_optional(self, tmp_path):
+        mf = load_map_file(_write(tmp_path, "solo.csv", "row,col,patient_id\nA,1,P1\n"))
+        assert [m.name for m in mf.maps] == ["solo"]
+
+    @pytest.mark.parametrize("text,needle", [
+        ("row,col,patient_id\nA,1,P1\nA,1,P2\n", "twice"),
+        ("row,col,patient_id\nA,1,P1\n2,2,P2\n", "mixes letters and numbers"),
+        ("row,col,patient_id\nA,x1,P1\n", "not a row or column label"),
+        ("row,col,patient_id,status\nA,1,P1,gone\n", "status"),
+    ])
+    def test_list_errors(self, tmp_path, text, needle):
+        mf = load_map_file(_write(tmp_path, "e.csv", text))
+        assert not mf.ok
+        assert any(needle in p.message for p in mf.errors), [str(p) for p in mf.problems]
+
+    def test_warnings(self, tmp_path):
+        rows = "".join(f"A,{k},P1\n" for k in range(1, 5)) + "".join(f"B,{k},P{k + 1}\n" for k in range(1, 5))
+        mf = load_map_file(_write(tmp_path, "w.csv", "row,col,patient_id,tissue\n" + rows + "C,1,P9,Liver\n"))
+        assert mf.ok
+        msgs = " ".join(p.message for p in mf.warnings)
+        assert "P1 appears 4 times" in msgs and "both a patient ID and a tissue" in msgs
+
+    def test_builtin_round_trip_through_list_file(self, tmp_path):
+        path = str(tmp_path / "icgc.csv")
+        write_map_list([builtin_map(1), builtin_map(2)], path)
+        back = load_map_file(path)
+        assert back.ok and [m.name for m in back.maps] == ["ICGC Array 1", "ICGC Array 2"]
+        for m, n in zip(back.maps, (1, 2)):
+            assert m.shape == (12, 8)                                     # empty row L kept
+            assert (m.occupancy() == occupancy_grid(n)).all()
+            for rc, info in load_array_map(n).items():
+                got = m.cells[rc]
+                assert (got.patient_id, got.block_id, got.tissue, got.note) == \
+                       (info.patient_id, info.block_id, info.tissue, info.note)
+
+
+class TestHelpers:
+    def test_match_map_to_slide(self, tmp_path):
+        mf = load_map_file(_write(tmp_path, "m.csv", "map,TMA1\n,1\nA,P1\nmap,TMA12\n,1\nA,P2\n"))
+        assert match_map_to_slide(mf.maps, "APGI TMA 12 PicRed.vsi").name == "TMA12"
+        assert match_map_to_slide(mf.maps, "APGI TMA 1 PicRed.vsi").name == "TMA1"
+        assert match_map_to_slide(mf.maps, "other.vsi") is None
+
+    def test_describe_map(self):
+        text = describe_map(builtin_map(1))
+        assert "Map 'ICGC Array 1': 12 rows x 8 columns, 88 cores" in text and "ctrl:Liver" in text
+
+    def test_unknown_core_stem_and_identity(self):
+        info = CoreInfo("T", 0, "B3", "B", 3, "", "", "", "", False, 1, 2)
+        assert info.is_unknown and info.identity() == "unknown-B3"
+        assert core_stem("S", 1, 2, info, "BF") == "S-B3.vsi - S_BF_B3Annotation (Unknown)_1"
+
+    def test_user_map_fills_missing_cells(self):
+        m = TMAMap("X", {}, (2, 2), ["A", "B"], [1, 2])
+        assert len(m.cells) == 4 and all(i.empty for i in m.cells.values()) and m.n_cores == 0
+
+
+class TestCommentsInSpreadsheets:
+    def test_template_comments_stay_in_one_cell(self):
+        from cabana.tma_maps import GRID_TEMPLATE
+        for text in (GRID_TEMPLATE,):
+            for line in text.splitlines():
+                if line.startswith("#"):
+                    assert not any(d in line for d in ",;\t"), line   # a spreadsheet would split it
+
+    def test_quoted_and_split_comments_are_ignored(self, tmp_path):
+        text = ('"# a comment, quoted by Excel"\n'
+                '# a comment,split,into cells\n'
+                ',1,2\nA,P1,P2\nB,P3,ctrl:Liver\n')
+        mf = load_map_file(_write(tmp_path, "c.csv", text))
+        assert mf.ok and mf.maps[0].shape == (2, 2) and mf.maps[0].n_cores == 4
+
+
+class TestPastedFromPdf:
+    """Cells pasted from a PDF hold several lines; such files must be refused, not misread."""
+
+    PASTED = ('map,TMA6\n,1,2\nA,"A1\nLiver","A2\n3000\n8064399"\n'
+              'B,"B1\n2133\n8032572","B2\n2343\n8053543"\n')
+
+    def test_multiline_grid_cells_are_errors(self, tmp_path):
+        mf = load_map_file(_write(tmp_path, "p.csv", self.PASTED))
+        assert not mf.ok and not mf.maps
+        msgs = [p.message for p in mf.errors]
+        assert any("'A2 / 3000 / 8064399'" in m and "row A, column 2" in m for m in msgs)
+        assert not any("has no cores" in m for m in msgs)                 # no redundant follow-up error
+
+    def test_multiline_cells_keep_line_numbers(self, tmp_path):
+        mf = load_map_file(_write(tmp_path, "p.csv", self.PASTED))
+        b1 = next(p.message for p in mf.errors if "'B1 / 2133 / 8032572'" in p.message)
+        assert b1.startswith("Line 7,")                                   # the A row spans lines 3 to 6
+
+    def test_multiline_list_cells_are_errors(self, tmp_path):
+        mf = load_map_file(_write(tmp_path, "l.csv", 'row,col,patient_id\nA,1,"3000\n8064399"\n'))
+        assert not mf.ok and any("several lines" in p.message for p in mf.errors)
+
+    def test_unlabelled_rows_in_a_labelled_grid(self, tmp_path):
+        mf = load_map_file(_write(tmp_path, "u.csv", ",1,2\nA,P1,P2\n,P3,P4\n"))
+        assert not mf.ok
+        assert any("instead of a row label" in p.message for p in mf.errors)
+
+    def test_too_few_column_labels_says_how_to_fix(self, tmp_path):
+        mf = load_map_file(_write(tmp_path, "c.csv", ",1,2\nA,P1,P2,P3\n"))
+        assert any("add the missing column numbers" in p.message for p in mf.errors)
+
+    def test_quoted_single_line_cells_still_fine(self, tmp_path):
+        mf = load_map_file(_write(tmp_path, "q.csv", ',1,2\nA,"P1","ctrl:Kidney/ muscle"\n'))
+        assert mf.ok and mf.maps[0].cells[(0, 1)].tissue == "Kidney/ muscle"
+
+
+class TestCellLines:
+    """A 'cell lines' row describes pasted cells holding several lines."""
+
+    def _load(self, tmp_path, body, spec="cell lines,position patient block class\n"):
+        return load_map_file(_write(tmp_path, "p.csv", "map,T\n" + spec + body))
+
+    def test_pasted_pdf_cells(self, tmp_path):
+        body = (',1,2,3\nA,"A1\nLiver","A2\n3000\n8064399","A4\n2144\n8046501\n(MCN)"\n'
+                'B,"B1\nKidney/\nmuscle","B2","B3\n?"\n')
+        mf = self._load(tmp_path, body)
+        assert mf.ok, [str(p) for p in mf.problems]
+        c = mf.maps[0].cells
+        assert c[(0, 0)].tissue == "Liver" and c[(0, 0)].is_control
+        assert (c[(0, 1)].patient_id, c[(0, 1)].block_id) == ("3000", "8064399")
+        assert (c[(0, 2)].patient_id, c[(0, 2)].note) == ("2144", "MCN")
+        assert c[(1, 0)].tissue == "Kidney/ muscle"
+        assert c[(1, 1)].patient_id == "B2"                               # single value: read as typed
+        assert any("looks like a printed position" in p.message for p in mf.warnings)
+        assert c[(1, 2)].is_unknown
+
+    def test_lone_position_is_kept_with_a_warning(self, tmp_path):
+        # a pasted empty position arrives as its bare label; it is never dropped silently
+        mf = self._load(tmp_path, ',1,2\nA,"A1\n","A2\n3000"\nB,1,2\n')
+        assert mf.ok and mf.maps[0].cells[(0, 0)].patient_id == "A1" and mf.maps[0].cells[(0, 1)].patient_id == "3000"
+        assert any("'A1' looks like a printed position" in p.message for p in mf.warnings)
+
+    def test_order_without_position(self, tmp_path):
+        mf = self._load(tmp_path, ',1\nA,"8064399\n3000"\nB,7\n', spec="cell lines,block patient\n")
+        assert mf.ok and (mf.maps[0].cells[(0, 0)].patient_id, mf.maps[0].cells[(0, 0)].block_id) == \
+            ("3000", "8064399")
+
+    def test_wrong_order_is_caught(self, tmp_path):
+        mf = self._load(tmp_path, ',1\nA,"3000\n8064399"\n')              # no position line in the cells
+        assert not mf.ok and any("is not a position such as A1" in p.message for p in mf.errors)
+
+    def test_skip_and_extra_lines(self, tmp_path):
+        mf = self._load(tmp_path, ',1\nA,"A1\nx9\n3000\n77\n88"\n', spec="cell lines,position skip patient block\n")
+        assert mf.ok and mf.maps[0].cells[(0, 0)].patient_id == "3000" and mf.maps[0].cells[(0, 0)].block_id == "77"
+        assert any("more lines than" in p.message for p in mf.warnings)
+
+    @pytest.mark.parametrize("spec,needle", [("cell lines,position block\n", "include patient"),
+                                             ("cell lines,position patient id\n", "'id' is not one of them")])
+    def test_bad_spec(self, tmp_path, spec, needle):
+        mf = self._load(tmp_path, ',1\nA,"A1\n3000"\n', spec=spec)
+        assert not mf.ok and any(needle in p.message for p in mf.errors)
+
+    def test_spec_after_header_is_an_error(self, tmp_path):
+        mf = load_map_file(_write(tmp_path, "p.csv", "map,T\n,1\ncell lines,position patient\nA,P1\n"))
+        assert any("must come before the row of column numbers" in p.message for p in mf.errors)
+
+    def test_file_level_spec_applies_to_every_map(self, tmp_path):
+        text = ('cell lines,position patient\nmap,T1\n,1\nA,"A1\n11"\nmap,T2\n,1\nA,"A1\n22"\n')
+        mf = load_map_file(_write(tmp_path, "p.csv", text))
+        assert mf.ok and [m.cells[(0, 0)].patient_id for m in mf.maps] == ["11", "22"]
+
+    def test_without_spec_multiline_mentions_the_option(self, tmp_path):
+        mf = load_map_file(_write(tmp_path, "p.csv", ',1\nA,"A1\n3000"\n'))
+        assert any("cell lines" in p.message for p in mf.errors)

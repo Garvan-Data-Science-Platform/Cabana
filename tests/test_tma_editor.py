@@ -417,3 +417,109 @@ class TestExportIntoOtherSlidesFolder:
             json.dump(data, f)
         assert not win._confirm_output_slide() and len(asked) == 1
         assert "TMA3" in asked[0][1]
+
+
+class TestMapLoader:
+    MAPS = "map,TMA1\n,1,2,3\nA,P1,P2,ctrl:Liver\nB,P3,?,P4\n\nmap,TMA9\n,1,2\nA,P5,P6\nB,P7,P8\nC,P9,\n"
+
+    def _file(self, tmp_path):
+        path = tmp_path / "maps.csv"
+        path.write_text(self.MAPS)
+        return str(path)
+
+    def _choose_load(self, win):
+        combo = win.tma_array_combo
+        combo.setCurrentIndex(combo.findData(win.MAP_LOAD_ITEM))
+
+    def test_load_item_is_last(self, fitted_gui):
+        win, _ = fitted_gui
+        combo = win.tma_array_combo
+        assert combo.itemData(combo.count() - 1) == win.MAP_LOAD_ITEM
+
+    def test_load_select_and_relabel(self, fitted_gui, app, tmp_path, monkeypatch):
+        from PyQt5.QtWidgets import QFileDialog
+        win, pre = fitted_gui
+        path = self._file(tmp_path)
+        seen = {}
+        monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (path, ""))
+        monkeypatch.setattr(win, "_preview_map_file",
+                            lambda mf, pre_sel: seen.update(names=[m.name for m in mf.maps], pre=pre_sel) or pre_sel)
+        self._choose_load(win)
+        settle(app)
+        assert seen["names"] == ["TMA1", "TMA9"] and seen["pre"].name == "TMA1"   # slide is TMA1.png
+        combo = win.tma_array_combo
+        assert combo.currentText() == "TMA1 (maps.csv)" and pre.tma_map.name == "TMA1"
+        assert combo.findText("TMA9 (maps.csv)") >= 0
+        assert combo.itemData(combo.count() - 1) == win.MAP_LOAD_ITEM
+        n = combo.count()
+        self._choose_load(win)                                            # same file again: replaced, not added
+        settle(app)
+        assert combo.count() == n
+
+    def test_cancel_restores_previous_choice(self, fitted_gui, app, tmp_path, monkeypatch):
+        from PyQt5.QtWidgets import QFileDialog
+        win, pre = fitted_gui
+        path = self._file(tmp_path)
+        monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (path, ""))
+        monkeypatch.setattr(win, "_preview_map_file", lambda mf, pre_sel: None)
+        self._choose_load(win)
+        settle(app)
+        assert win.tma_array_combo.currentData() == 1 and pre.array_number == 1
+
+    def test_save_templates(self, fitted_gui, tmp_path, monkeypatch):
+        from PyQt5.QtWidgets import QFileDialog, QMessageBox
+        win, _ = fitted_gui
+        monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(tmp_path / "tpl"))
+        shown = []
+        monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: shown.append(a))
+        win.save_tma_map_templates()
+        assert os.listdir(tmp_path / "tpl") == ["tma_map_template.csv"]
+        assert shown
+
+    def test_preview_dialog(self, app, tmp_path):
+        from cabana.tma_editor import MapPreviewDialog
+        from cabana.tma_maps import load_map_file
+        good = load_map_file(self._file(tmp_path))
+        dlg = MapPreviewDialog(None, good, good.maps[1])
+        assert dlg.selected_map() is good.maps[1] and dlg.table.rowCount() == 3
+        assert dlg.table.item(0, 0).text() == "P5"
+        dlg.map_combo.setCurrentIndex(0)
+        assert dlg.table.item(0, 2).text() == "Liver" and dlg.table.item(1, 1).text() == "?"
+        bad_path = tmp_path / "bad.csv"
+        bad_path.write_text("row,col,patient_id\nA,1,P1\nA,1,P2\n")
+        bad = load_map_file(str(bad_path))
+        dlg = MapPreviewDialog(None, bad)
+        assert dlg.selected_map() is None
+        from PyQt5.QtWidgets import QDialogButtonBox
+        assert not dlg.buttons.button(QDialogButtonBox.Ok).isEnabled()
+        assert "twice" in dlg.problems.toPlainText()
+
+
+def test_template_menu_item_is_named_generate(fitted_gui):
+    win, _ = fitted_gui
+    assert win.save_map_templates_action.text() == "Generate TMA Map &Template…"
+
+
+class TestPanelScrolls:
+    def test_small_window_scrolls_instead_of_squeezing(self, app):
+        from cabana.cabana_gui import MainWindow
+        win = MainWindow()
+        win.showNormal()
+        win.resize(1100, 520)
+        win.show_page(win.pages.indexOf(win.tma_tab))
+        settle(app, 200)
+        page = win.tma_tab
+        assert page.height() >= page.sizeHint().height()                 # natural height kept
+        assert win.pages_scroll.verticalScrollBar().maximum() > 0          # the rest is reached by scrolling
+        assert win.tma_slide_path.height() >= win.tma_slide_path.sizeHint().height()
+        win.close()
+
+    def test_short_page_has_no_scroll_range_in_a_tall_window(self, app):
+        from cabana.cabana_gui import MainWindow
+        win = MainWindow()
+        win.showNormal()
+        win.resize(1500, 980)
+        win.show_page(win.pages.indexOf(win.det_tab))
+        settle(app, 200)
+        assert win.pages_scroll.verticalScrollBar().maximum() == 0
+        win.close()

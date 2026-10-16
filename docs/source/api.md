@@ -73,6 +73,14 @@ if not pre.orientation_resolved:  # tie that neither control nor replicates reso
     pre.orientation = "270"       # set it explicitly after checking a control core
     pre.map_to_array()
 pre.export("cores", channels=["BF", "POL"])
+
+# your own map instead of a built-in array
+from cabana.tma_maps import load_map_file, describe_map
+mf = load_map_file("my_maps.csv")         # grid or one-line-per-core table, .csv/.tsv/.txt/.qpmap
+for problem in mf.problems:
+    print(problem)                        # errors make mf.ok False; warnings flag likely typos
+print(describe_map(mf.maps[0]))           # the map as text, to compare with its source
+pre = TMAPreprocessor("my slide.vsi", tma_map=mf.maps[0])
 pre.close()
 ```
 

@@ -31,8 +31,7 @@ import cv2
 import numpy as np
 from scipy import ndimage as ndi
 
-from .tma_maps import (MAP_COLS, MAP_ROWS, ROW_LETTERS, core_stem, load_array_map,
-                       occupancy_grid)
+from .tma_maps import TMAMap, as_map, core_stem
 from .wsi import open_slide
 
 def write_png_with_resolution(path, bgr, pixel_size_um):
@@ -165,10 +164,13 @@ def _ellipse(diameter_px):
 
 def fit_cores(img_bgr, pixel_size_um, core_diameter_um=1250.0,
               min_component_frac=0.05, debris_frac=0.05, sat_thresh=15, val_ratio=0.965,
-              open_frac=0.1):
+              open_frac=0.1, return_mask=False):
     """Fit a circle to each tissue core in a low-resolution slide image.
 
-    Returns a list of ``(cx, cy, r, fill)`` in pixels of ``img_bgr``.
+    Returns a list of ``(cx, cy, r, fill)`` in pixels of ``img_bgr``; with
+    ``return_mask`` also the cleaned tissue mask (closed and opened, before
+    the per-component filtering), so callers need not rebuild it (see
+    :func:`tissue_footprint`).
 
     Steps (ported from the original prototype): threshold tissue
     (``sat_thresh``, ``val_ratio``; see :func:`tissue_mask`), close gaps of
@@ -194,7 +196,7 @@ def fit_cores(img_bgr, pixel_size_um, core_diameter_um=1250.0,
         closed = cv2.morphologyEx(closed, cv2.MORPH_OPEN, _ellipse(open_frac * core_px))
     lbl, n = ndi.label(closed)
     if n == 0:
-        return []
+        return ([], closed) if return_mask else []
     sizes = ndi.sum(closed, lbl, range(1, n + 1))
     keep = np.nonzero(sizes > min_component_frac * sizes.max())[0] + 1
     # a real core cannot be smaller than a quarter of the expected area
@@ -284,13 +286,15 @@ def fit_cores(img_bgr, pixel_size_um, core_diameter_um=1250.0,
         inside = (xx - cx) ** 2 + (yy - cy) ** 2 <= r ** 2
         fill = float(footprint[inside].sum() / max(1, inside.sum()))
         circles.append((float(cx + ox), float(cy + oy), float(r), fill))
-    return circles
+    return (circles, closed) if return_mask else circles
 
 
 def tissue_footprint(img_bgr, pixel_size_um, core_diameter_um=1250.0, sat_thresh=15, val_ratio=0.965,
                      open_frac=0.1):
     """Cleaned tissue mask (closed, opened, holes filled) as in the first steps
-    of :func:`fit_cores`; the fill grade of a hand-placed core is measured on it."""
+    of :func:`fit_cores`; the fill grade of a hand-placed core is measured on it.
+    :meth:`TMAPreprocessor.fit` builds it from the mask :func:`fit_cores`
+    returns, which avoids repeating the slow closing step."""
     core_px = core_diameter_um / pixel_size_um
     raw = tissue_mask(img_bgr, sat_thresh=sat_thresh, val_ratio=val_ratio)
     closed = cv2.morphologyEx(raw, cv2.MORPH_CLOSE, _ellipse(0.3 * core_px))
@@ -572,7 +576,7 @@ def _empty_margins(occ):
             int(cols[0]), int(occ.shape[1] - 1 - cols[-1]))
 
 
-def match_orientation(observed, array_number, orientation="auto"):
+def match_orientation(observed, tma_map, orientation="auto"):
     """Match the observed occupancy grid to the printed map.
 
     ``observed`` is a boolean ``(n_rows, n_cols)`` array of the scan. For each
@@ -595,10 +599,12 @@ def match_orientation(observed, array_number, orientation="auto"):
     Occupancy alone cannot distinguish a transform from its mirror image when
     the array is fully populated, so ``ties`` is frequently non-empty for
     arrays 3 to 8 and the caller should let the user confirm the orientation.
-    Ties are broken in the order of :data:`ORIENTATIONS`.
+    Ties are broken in the order of :data:`ORIENTATIONS`. ``tma_map`` is a
+    :class:`~cabana.tma_maps.TMAMap` or a built-in ICGC array number.
     """
-    map_occ = occupancy_grid(array_number)
-    map_idx = np.stack(np.meshgrid(np.arange(MAP_ROWS), np.arange(MAP_COLS), indexing="ij"), axis=-1)
+    tma_map = as_map(tma_map)
+    map_occ = tma_map.occupancy()
+    map_idx = tma_map.index_grid()
     candidates = [o for o in ORIENTATIONS[1:]] if orientation == "auto" else [orientation]
     best = None
     for o in candidates:
@@ -633,14 +639,14 @@ def match_orientation(observed, array_number, orientation="auto"):
     return best[0], best[1], best[2], ties
 
 
-def placement_score(observed, array_number, transform):
+def placement_score(observed, tma_map, transform):
     """Occupancy score of one fixed placement of the map, scored like
     :func:`match_orientation`. ``transform`` is ``(orientation, row offset,
     col offset)``: scan cell ``(r, c)`` lies on transformed-map cell
     ``(r + row offset, c + col offset)``. The map may extend past the scan
     grid."""
     o, oy, ox = transform
-    occ_t = _transform_grid(occupancy_grid(array_number), o)
+    occ_t = _transform_grid(as_map(tma_map).occupancy(), o)
     mh, mw = occ_t.shape
     score = 0.0
     for r in range(observed.shape[0]):
@@ -668,8 +674,9 @@ class TMAPreprocessor:
     slide_path : str
         ``.vsi`` slide or a flat whole-slide image.
     array_number : int or None
-        ICGC array number used to look up patient IDs. ``None`` skips ID
-        mapping and names cores by grid position only.
+        Built-in ICGC array number used to look up patient IDs. ``None``
+        (and no ``tma_map``) skips ID mapping and names cores by grid
+        position only.
     slide_name : str or None
         Prefix for output filenames. Defaults to the slide's own name.
     pixel_size_um : float or None
@@ -683,6 +690,9 @@ class TMAPreprocessor:
         out of the analysis.
     fit_pixel_size_um : float
         Resolution at which circle fitting is performed.
+    tma_map : TMAMap, optional
+        A map loaded with :func:`cabana.tma_maps.load_map_file`; takes the
+        place of ``array_number``.
     reader : SlideReader, optional
         An already opened slide; ``slide_path`` is then informational only.
     sat_thresh : int
@@ -717,14 +727,14 @@ class TMAPreprocessor:
                  orientation="auto", reader=None, sat_thresh=15, val_ratio=0.965,
                  recover_faint=True, min_fill=0.03, max_grid_offset=0.35,
                  min_diameter_frac=0.8, max_diameter_frac=1.2,
-                 min_stain_frac=0.02, stain_sat=40):
+                 min_stain_frac=0.02, stain_sat=40, tma_map=None):
         self.reader = reader if reader is not None else open_slide(slide_path, pixel_size_um=pixel_size_um)
         if reader is not None and pixel_size_um:
             self.reader.pixel_size_um = pixel_size_um
         if not self.reader.pixel_size_um:
             raise ValueError("Pixel size is unknown; pass pixel_size_um explicitly.")
         self.slide_path = slide_path
-        self.array_number = array_number
+        self.tma_map = as_map(tma_map if tma_map is not None else array_number)
         self.slide_name = slide_name or self.reader.slide_name
         self.core_diameter_um = core_diameter_um
         self.margin_um = margin_um
@@ -767,8 +777,8 @@ class TMAPreprocessor:
         ds = r.level_downsample(lv)
         img = r.read_level(lv, channel=0)
         px_um = r.pixel_size_um * ds
-        circles = fit_cores(img, px_um, self.core_diameter_um,
-                            sat_thresh=self.sat_thresh, val_ratio=self.val_ratio)
+        circles, tissue = fit_cores(img, px_um, self.core_diameter_um,
+                                    sat_thresh=self.sat_thresh, val_ratio=self.val_ratio, return_mask=True)
         rows, cols, n_rows, n_cols = infer_grid(circles, self.core_diameter_um / px_um)
         # typical core radius on this slide, from cells holding a single circle
         cell_counts = {}
@@ -788,10 +798,34 @@ class TMAPreprocessor:
         self._fit_level, self._fit_image = lv, img
         self._hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         self._sat = self._hsv[:, :, 1]
-        self._footprint = None      # computed on first hand edit (see _refresh_features)
+        # fill grade of hand-edited cores is measured on this (see _refresh_features); finishing the
+        # mask fit_cores built here keeps the first edit from rebuilding it on the GUI thread
+        self._footprint = ndi.binary_fill_holes(tissue > 0).astype(np.uint8)
         self._reset_match()
         self._set_cores(cores, rows, cols, (n_rows, n_cols))
         return self.cores
+
+    @property
+    def array_number(self):
+        """Array number of a built-in map, the name of a loaded map, or None
+        without a map. Assigning a number, a :class:`TMAMap` or None sets the map."""
+        return None if self.tma_map is None else self.tma_map.array
+
+    @array_number.setter
+    def array_number(self, value):
+        self.tma_map = as_map(value)
+
+    def _refers_to_current_map(self, saved):
+        """Whether ``saved`` (an edits file or a map anchor) was written for the
+        current map: by its fingerprint, or by the array number or map name
+        of files written before fingerprints were recorded."""
+        if self.tma_map is None:
+            return False
+        digest = saved.get("map_digest")
+        if digest:
+            return digest == self.tma_map.digest()
+        ref = saved.get("map", saved.get("array"))
+        return ref in (None, "") or str(ref) in (str(self.tma_map.array), self.tma_map.name)
 
     def _reset_match(self):
         """Forget a previous map match; cores are unmapped until map_to_array runs."""
@@ -926,7 +960,7 @@ class TMAPreprocessor:
         for c in self.cores:
             c.map_row = c.map_col = -1
             c.outside_map = False
-        if self.array_number is None or not self.cores:
+        if self.tma_map is None or not self.cores:
             self._reset_match()
             self.apply_filters()
             return None
@@ -940,10 +974,10 @@ class TMAPreprocessor:
         if anchored is not None:
             o, transform = self.orientation, anchored
             self.orientation_ties = [o]
-            self.match_score = placement_score(observed, self.array_number, transform)
+            self.match_score = placement_score(observed, self.tma_map, transform)
             self.orientation_method, self.orientation_margin = "anchor", None
         else:
-            o, lookup, score, ties = match_orientation(observed, self.array_number, self.orientation)
+            o, lookup, score, ties = match_orientation(observed, self.tma_map, self.orientation)
             self.orientation_ties = ties
             self.match_score = score
             if self.orientation != "auto":
@@ -959,8 +993,7 @@ class TMAPreprocessor:
         self._idx_t, self._scan_of_map = None, {}
         if self._map_transform is not None:
             _, oy, ox = self._map_transform
-            self._idx_t = _transform_grid(np.stack(np.meshgrid(np.arange(MAP_ROWS), np.arange(MAP_COLS),
-                                                               indexing="ij"), axis=-1), o)
+            self._idx_t = _transform_grid(self.tma_map.index_grid(), o)
             for tr in range(self._idx_t.shape[0]):
                 for tc in range(self._idx_t.shape[1]):
                     self._scan_of_map[(int(self._idx_t[tr, tc, 0]), int(self._idx_t[tr, tc, 1]))] = (tr - oy, tc - ox)
@@ -982,15 +1015,16 @@ class TMAPreprocessor:
         drops the placement. A hand placement counts as resolved, so it
         enables export. Returns the orientation used.
         """
-        if self.array_number is None:
+        if self.tma_map is None:
             raise ValueError("Choose an array map before setting a map position.")
         if (int(map_row), int(map_col)) not in self.array_map():
-            raise ValueError(f"({map_row}, {map_col}) is not a position of array {self.array_number}.")
+            raise ValueError(f"({map_row}, {map_col}) is not a position of map {self.tma_map.name}.")
         o = self.orientation if self.orientation != "auto" else self.matched_orientation
         if o is None:
             raise ValueError("Match the map (or choose an orientation) before setting a map position.")
         self.orientation = o
-        self.map_anchor = {"array": int(self.array_number), "cx": float(core.cx), "cy": float(core.cy),
+        self.map_anchor = {"map": self.tma_map.name, "map_digest": self.tma_map.digest(),
+                           "cx": float(core.cx), "cy": float(core.cy),
                            "row": int(core.row), "col": int(core.col),
                            "map_row": int(map_row), "map_col": int(map_col)}
         self.map_to_array()
@@ -1000,7 +1034,7 @@ class TMAPreprocessor:
         """Drop a hand-set map position and place the map automatically
         again (the orientation stays as chosen)."""
         self.map_anchor = None
-        if self.array_number is not None:
+        if self.tma_map is not None:
             self.map_to_array()
 
     def _anchor_transform(self):
@@ -1010,18 +1044,16 @@ class TMAPreprocessor:
         a = self.map_anchor
         if a is None or self.orientation == "auto":
             return None
-        if int(a["array"]) != int(self.array_number) or (a["map_row"], a["map_col"]) not in self.array_map():
+        if not self._refers_to_current_map(a) or (a["map_row"], a["map_col"]) not in self.array_map():
             self.map_anchor = None
             return None
         cell = self.cell_of(a["cx"], a["cy"]) or (a["row"], a["col"])
-        idx_t = _transform_grid(np.stack(np.meshgrid(np.arange(MAP_ROWS), np.arange(MAP_COLS),
-                                                     indexing="ij"), axis=-1), self.orientation)
+        idx_t = _transform_grid(self.tma_map.index_grid(), self.orientation)
         tr, tc = (int(v) for v in np.argwhere((idx_t[:, :, 0] == a["map_row"])
                                               & (idx_t[:, :, 1] == a["map_col"]))[0])
         return self.orientation, tr - cell[0], tc - cell[1]
 
-    @staticmethod
-    def _transform_from_lookup(orientation, lookup):
+    def _transform_from_lookup(self, orientation, lookup):
         """``(orientation, row offset, col offset)`` placing the transformed map
         on the scan grid, recovered from one matched cell of ``lookup``; None
         when no scan cell lies on the map."""
@@ -1029,8 +1061,7 @@ class TMAPreprocessor:
         if not len(hits):
             return None
         r, c = (int(v) for v in hits[0])
-        idx_t = _transform_grid(np.stack(np.meshgrid(np.arange(MAP_ROWS), np.arange(MAP_COLS),
-                                                     indexing="ij"), axis=-1), orientation)
+        idx_t = _transform_grid(self.tma_map.index_grid(), orientation)
         tr, tc = (int(v) for v in np.argwhere((idx_t[:, :, 0] == lookup[r, c, 0])
                                               & (idx_t[:, :, 1] == lookup[r, c, 1]))[0])
         return orientation, tr - r, tc - c
@@ -1250,6 +1281,8 @@ class TMAPreprocessor:
         """Write the current cores (geometry and manual flags) as JSON so a
         later session can reinstate hand edits with :meth:`load_edits`."""
         data = {"slide": self.slide_name, "array": self.array_number,
+                "map": self.tma_map.name if self.tma_map is not None else None,
+                "map_digest": self.tma_map.digest() if self.tma_map is not None else None,
                 "orientation": self.matched_orientation, "map_anchor": self.map_anchor,
                 "cores": [{"cx": c.cx, "cy": c.cy, "radius": c.radius, "fill": c.fill,
                            "recovered": c.recovered, "manual": c.manual, "override": c.override}
@@ -1265,16 +1298,18 @@ class TMAPreprocessor:
             raise RuntimeError("Call fit() first")
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
-        saved_array = data.get("array")
-        if saved_array is not None and self.array_number is not None and int(saved_array) != int(self.array_number):
-            raise ValueError(f"{path} was saved for array {saved_array}, not array {self.array_number}.")
+        saved_map = data.get("map") or data.get("array")
+        if saved_map is not None and self.tma_map is not None and not self._refers_to_current_map(data):
+            raise ValueError(f"{path} was saved for map {saved_map}, not {self.tma_map.name}.")
         anchor = data.get("map_anchor")
         if anchor is not None:
             try:
-                anchor = {"array": int(anchor["array"]), "cx": float(anchor["cx"]), "cy": float(anchor["cy"]),
+                anchor = {"map": str(anchor.get("map", anchor.get("array", ""))),
+                          "map_digest": str(anchor.get("map_digest") or ""),
+                          "cx": float(anchor["cx"]), "cy": float(anchor["cy"]),
                           "row": int(anchor["row"]), "col": int(anchor["col"]),
                           "map_row": int(anchor["map_row"]), "map_col": int(anchor["map_col"])}
-            except (KeyError, TypeError, ValueError):
+            except (AttributeError, KeyError, TypeError, ValueError):
                 raise ValueError(f"The map position in {path} is invalid: {data.get('map_anchor')}")
             if not (math.isfinite(anchor["cx"]) and math.isfinite(anchor["cy"])):
                 raise ValueError(f"The map position in {path} is invalid: {data.get('map_anchor')}")
@@ -1282,7 +1317,7 @@ class TMAPreprocessor:
         if saved_o in ORIENTATIONS[1:] and self.orientation == "auto":
             self.orientation = saved_o          # a confirmed orientation must survive the reload
         if anchor is not None and self.orientation != "auto" \
-                and (self.array_number is None or anchor["array"] == int(self.array_number)):
+                and (self.tma_map is None or self._refers_to_current_map(anchor)):
             self.map_anchor = anchor            # so must a hand-set map position
         ds = self.reader.level_downsample(self._fit_level)
         h0, w0 = self.reader.level_shape(0)
@@ -1312,7 +1347,7 @@ class TMAPreprocessor:
         return self.orientation_method not in (None, "unresolved")
 
     def _lookup_for(self, observed, orientation):
-        return match_orientation(observed, self.array_number, orientation)[1]
+        return match_orientation(observed, self.tma_map, orientation)[1]
 
     def _brain_stain(self, lookup, amap):
         """Stained fraction of the tissue at the map's Brain position(s), or
@@ -1322,7 +1357,7 @@ class TMAPreprocessor:
         core has a tiny stained fraction of its disc whatever its tissue."""
         vals = [c.stain_frac / max(c.fill, 1e-6) for c in self.cores
                 if self._in_grid(c.row, c.col) and lookup[c.row, c.col][0] >= 0
-                and amap[tuple(int(v) for v in lookup[c.row, c.col])].tissue == "Brain"
+                and amap[tuple(int(v) for v in lookup[c.row, c.col])].tissue.strip().lower() == "brain"
                 and c.fill >= BRAIN_MIN_FILL]
         return float(np.mean(vals)) if vals else None
 
@@ -1434,7 +1469,7 @@ class TMAPreprocessor:
                 if not c.excluded and (not c.outside_map or c.override == "include")]
 
     def array_map(self):
-        return load_array_map(self.array_number) if self.array_number is not None else {}
+        return self.tma_map.cells if self.tma_map is not None else {}
 
     def core_info(self, core):
         if core.map_row < 0:
@@ -1508,9 +1543,10 @@ class TMAPreprocessor:
         return True
 
     def core_group(self, core):
-        """``Patients``, ``Controls`` or ``Unmapped`` for export foldering."""
+        """``Patients``, ``Controls`` or ``Unmapped`` (no map entry, or a core
+        the map lists without an identity) for export foldering."""
         info = self.core_info(core)
-        if info is None or info.empty:
+        if info is None or info.empty or info.is_unknown:
             return "Unmapped"
         return "Controls" if info.is_control else "Patients"
 
@@ -1525,6 +1561,8 @@ class TMAPreprocessor:
                   "sector", "patient_id", "block_id", "tissue", "note", "cx", "cy", "radius_px",
                   "fill", "grid_offset", "diameter_um", "stain_frac", "flag", "excluded",
                   "reason", "group", "orientation", "orientation_method", "manual"]
+        extra = self.tma_map.extra_columns() if self.tma_map is not None else []
+        fields += [k for k in extra if k not in fields]
         amap = self.array_map()
         with open(path, "w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=fields)
@@ -1551,6 +1589,7 @@ class TMAPreprocessor:
                     "orientation": self.matched_orientation or "",
                     "orientation_method": self.orientation_method or "",
                     "manual": int(bool(c.manual or c.override)),
+                    **{k: v for k, v in (info.extras if info else ()) if k in fields},
                 })
             # one row per map position without a core, so the manifest covers the whole array
             for info, row, col, centre in self.missing_positions():
@@ -1563,10 +1602,12 @@ class TMAPreprocessor:
                     "cx": round(centre[0], 1) if centre else "", "cy": round(centre[1], 1) if centre else "",
                     "radius_px": "", "fill": "", "grid_offset": "", "diameter_um": "", "stain_frac": "",
                     "flag": "missing", "excluded": 1, "reason": "missing",
-                    "group": "Controls" if info.is_control else "Patients",
+                    "group": ("Controls" if info.is_control else
+                              "Unmapped" if info.is_unknown else "Patients"),
                     "orientation": self.matched_orientation or "",
                     "orientation_method": self.orientation_method or "",
                     "manual": 0,
+                    **{k: v for k, v in info.extras if k in fields},
                 })
 
     def draw_overlay(self):
@@ -1629,14 +1670,78 @@ class TMAPreprocessor:
 # CLI
 # ---------------------------------------------------------------------------
 
+def map_main(argv):
+    """``cabana-tma map check|convert|template``: work with TMA map files."""
+    import argparse
+    from .tma_maps import describe_map, load_map_file, write_map_list, write_templates
+    p = argparse.ArgumentParser(prog="cabana-tma map", description="Check, convert or create TMA map files.")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    c = sub.add_parser("check", help="read a map file, list its problems and draw each map as text")
+    c.add_argument("file")
+    v = sub.add_parser("convert", help="write a map file (any accepted layout) in the list layout")
+    v.add_argument("file")
+    v.add_argument("out", help="output .csv")
+    t = sub.add_parser("template", help="write the map template into a folder")
+    t.add_argument("folder")
+    a = p.parse_args(argv)
+    if a.cmd == "template":
+        for path in write_templates(a.folder):
+            print(path)
+        return 0
+    mf = load_map_file(a.file)
+    for problem in mf.problems:
+        print(problem, file=sys.stderr if problem.level == "error" else sys.stdout)
+    if not mf.ok:
+        return 1
+    if a.cmd == "check":
+        for m in mf.maps:
+            print(describe_map(m) + "\n")
+    else:
+        write_map_list(mf.maps, a.out)
+        print(f"wrote {len(mf.maps)} map(s) to {a.out}")
+    return 0
+
+
+def _cli_map(a):
+    """The map chosen on the command line: ``--array`` or ``--map``/``--map-name``."""
+    if a.map is None:
+        return a.array
+    from .tma_maps import load_map_file, match_map_to_slide
+    mf = load_map_file(a.map)
+    for problem in mf.problems:
+        print(problem, file=sys.stderr)
+    if not mf.ok:
+        raise SystemExit(f"cannot use map file {a.map}")
+    if a.map_name:
+        chosen = next((m for m in mf.maps if m.name == a.map_name), None)
+        if chosen is None:
+            raise SystemExit(f"no map named {a.map_name!r} in {a.map}; it has {[m.name for m in mf.maps]}")
+        return chosen
+    if len(mf.maps) == 1:
+        return mf.maps[0]
+    chosen = match_map_to_slide(mf.maps, a.slide_name or os.path.basename(a.slide))
+    if chosen is None:
+        raise SystemExit(f"{a.map} holds several maps {[m.name for m in mf.maps]}; pick one with --map-name")
+    print(f"  using map {chosen.name!r} (its name appears in the slide name)")
+    return chosen
+
+
 def main(argv=None):
     import argparse
     from tqdm import tqdm
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv and argv[0] == "map":
+        return map_main(argv[1:])
     p = argparse.ArgumentParser(prog="cabana-tma",
-                                description="Fit TMA cores and export per-core images and masks.")
+                                description="Fit TMA cores and export per-core images and masks. "
+                                            "'cabana-tma map ...' checks, converts or creates map files.")
     p.add_argument("slide", help=".vsi slide or whole-slide TIFF/PNG")
     p.add_argument("out_dir", help="output folder (<channel>/<Patients|Controls|Unmapped>/{Images,Masks}, cores.csv, overlay.png)")
-    p.add_argument("--array", type=int, default=None, help="ICGC array number for patient-ID lookup")
+    p.add_argument("--array", type=int, default=None, help="built-in ICGC array number for patient-ID lookup")
+    p.add_argument("--map", default=None, help="map file (.csv/.tsv/.txt/.qpmap, grid or list layout) "
+                                                "for patient-ID lookup, instead of --array")
+    p.add_argument("--map-name", default=None, help="which map of a file holding several "
+                                                     "(default: the one named in the slide name)")
     p.add_argument("--slide-name", default=None, help="filename prefix (default: slide name)")
     p.add_argument("--pixel-size", type=float, default=None, help="µm per pixel if not in metadata")
     p.add_argument("--core-diameter", type=float, default=1250.0, help="nominal core diameter in µm (default 1250)")
@@ -1662,8 +1767,10 @@ def main(argv=None):
                    help="QC: saturation above which a pixel counts as stained (default 40)")
     p.add_argument("--fit-only", action="store_true", help="write cores.csv and overlay.png only")
     a = p.parse_args(argv)
+    if a.map is not None and a.array is not None:
+        p.error("use either --array or --map, not both")
 
-    pre = TMAPreprocessor(a.slide, array_number=a.array, slide_name=a.slide_name,
+    pre = TMAPreprocessor(a.slide, tma_map=as_map(_cli_map(a)), slide_name=a.slide_name,
                           pixel_size_um=a.pixel_size, core_diameter_um=a.core_diameter,
                           margin_um=a.margin, erode_px=a.erode, orientation=a.orientation,
                           sat_thresh=a.sat_thresh, val_ratio=a.val_ratio,

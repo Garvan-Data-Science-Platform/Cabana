@@ -1078,3 +1078,218 @@ class TestBoundedOverhang:
         o, lookup, _, _ = match_orientation(observed, 4, "90")
         idx_t = _transform_grid(np.stack(np.meshgrid(np.arange(12), np.arange(8), indexing="ij"), axis=-1), "90")
         assert (lookup[:, :12] == idx_t).all() and (lookup[:, 12:] == -1).all()
+
+
+USER_MAP = """map,row,col,patient_id,tissue,class,site
+X,A,1,,Liver,,
+X,A,2,P1,,,head
+X,A,3,P2,,PNET,tail
+X,A,4,P3,,,
+X,A,5,P4,,,
+X,A,6,,Brain,,
+X,B,1,P5,,,
+X,B,2,P6,,,
+X,B,3,,,,
+X,B,4,P7,,,
+X,B,5,P8,,,
+X,C,1,P1,,,
+X,C,2,P2,,,
+X,C,3,P3,,,
+X,C,5,P5,,,
+X,D,2,P7,,,
+X,D,3,P8,,,
+X,D,6,,Kidney,,
+"""
+
+
+class TestUserMap:
+    """A loaded map of any size names, groups and exports the cores."""
+
+    def _setup(self, tmp_path):
+        from cabana.tma_maps import load_map_file
+        path = tmp_path / "x_map.csv"
+        path.write_text(USER_MAP)
+        m = load_map_file(str(path)).maps[0]
+        img, _ = synthetic_slide(m.occupancy(), jitter=4)
+        slide = str(tmp_path / "X.png")
+        cv2.imwrite(slide, img)
+        return m, slide, str(path)
+
+    def _pre(self, m, slide, orientation="0"):
+        pre = TMAPreprocessor(slide, tma_map=m, slide_name="X", pixel_size_um=PX_UM, core_diameter_um=CORE_UM,
+                              fit_pixel_size_um=PX_UM, orientation=orientation, margin_um=40, erode_px=2)
+        pre.fit()
+        pre.map_to_array()
+        return pre
+
+    def test_labels_groups_and_names(self, tmp_path):
+        m, slide, _ = self._setup(tmp_path)
+        pre = self._pre(m, slide)
+        assert pre.array_number == "X" and pre.tma_map is m
+        assert len(pre.cores) == m.n_cores
+        for c in pre.cores:
+            assert (c.map_row, c.map_col) == (c.row, c.col)               # orientation 0, no offset
+        by_pos = {pre.core_info(c).position: c for c in pre.cores}
+        assert pre.core_group(by_pos["A1"]) == "Controls"
+        assert pre.core_group(by_pos["B3"]) == "Unmapped"                 # core of unknown identity
+        assert pre.core_stem(by_pos["B3"], "BF") == "X-B3.vsi - X_BF_B3Annotation (Unknown)_1"
+        assert pre.core_stem(by_pos["A3"], "BF") == "P2.vsi - X_BF_A3Annotation (PNET)_1"
+        assert pre.core_stem(by_pos["C2"], "BF") == "P2.vsi - X_BF_C2Annotation (Tumor)_2"
+        pre.close()
+
+    def test_export_and_manifest_extras(self, tmp_path):
+        m, slide, _ = self._setup(tmp_path)
+        pre = self._pre(m, slide)
+        out = tmp_path / "out"
+        assert pre.export(str(out), channels=["BF"])
+        assert sorted(p.name for p in (out / "BF").iterdir()) == ["Controls", "Patients", "Unmapped"]
+        with open(out / "cores.csv", newline="") as f:
+            rows = list(csv.DictReader(f))
+        assert {r["array"] for r in rows} == {"X"} and "site" in rows[0]
+        site = {r["map_position"]: r["site"] for r in rows}
+        assert site["A2"] == "head" and site["A3"] == "tail" and site["B1"] == ""
+        pre.close()
+
+    def test_auto_orientation_with_brain_rule_case_insensitive(self, tmp_path):
+        from cabana.tma_maps import load_map_file
+        path = tmp_path / "x_map.csv"
+        path.write_text(USER_MAP.replace(",Brain,", ",brain ,"))
+        m = load_map_file(str(path)).maps[0]
+        assert m.cells[(0, 5)].tissue == "brain"                         # stripped, case kept
+        img, _ = synthetic_slide(m.occupancy(), jitter=4)
+        slide = str(tmp_path / "X.png")
+        cv2.imwrite(slide, img)
+        pre = self._pre(m, slide, orientation="auto")
+        assert pre.matched_orientation == "0"                            # asymmetric map: occupancy decides
+        pre.close()
+
+    def test_edits_record_the_map(self, tmp_path):
+        from cabana.tma import EDITS_FILE
+        from cabana.tma_maps import load_map_file
+        m, slide, _ = self._setup(tmp_path)
+        pre = self._pre(m, slide)
+        path = str(tmp_path / EDITS_FILE)
+        pre.save_edits(path)
+        pre.load_edits(path)                                             # same map: fine
+        other = tmp_path / "y.csv"
+        other.write_text(USER_MAP.replace("P1", "Q1"))
+        pre.tma_map = load_map_file(str(other)).maps[0]
+        with pytest.raises(ValueError, match="saved for map X"):
+            pre.load_edits(path)
+        pre.close()
+
+    def test_map_position_on_user_map(self, tmp_path):
+        m, slide, _ = self._setup(tmp_path)
+        pre = self._pre(m, slide)
+        core = next(c for c in pre.cores if pre.core_info(c).position == "B1")
+        pre.set_map_position(core, 0, 0)                                 # shift the map up by one row
+        assert pre.core_info(core).position == "A1" and pre.orientation_method == "anchor"
+        assert pre.map_anchor["map"] == "X" and pre.map_anchor["map_digest"] == m.digest()
+        pre.close()
+
+
+class TestCli:
+    def test_map_commands(self, tmp_path, capsys):
+        from cabana.tma import main
+        assert main(["map", "template", str(tmp_path / "t")]) == 0
+        grid = str(tmp_path / "t" / "tma_map_template.csv")
+        assert main(["map", "check", grid]) == 0
+        assert "Map 'TMA1': 12 rows x 12 columns, 22 cores" in capsys.readouterr().out
+        out = str(tmp_path / "list.csv")
+        assert main(["map", "convert", grid, out]) == 0 and os.path.isfile(out)
+        bad = tmp_path / "bad.csv"
+        bad.write_text("row,col,patient_id\nA,1,P1\nA,1,P2\n")
+        assert main(["map", "check", str(bad)]) == 1
+
+    def test_fit_with_map_file(self, tmp_path, capsys):
+        from cabana.tma import main
+        path = tmp_path / "maps.csv"
+        path.write_text(USER_MAP + "".join(USER_MAP.replace("X,", "Other,").splitlines(True)[1:]))
+        from cabana.tma_maps import load_map_file
+        m = load_map_file(str(path)).maps[0]
+        img, _ = synthetic_slide(m.occupancy(), jitter=4)
+        slide = str(tmp_path / "slide X.png")
+        cv2.imwrite(slide, img)
+        out = tmp_path / "out"
+        rc = main([slide, str(out), "--map", str(path), "--pixel-size", str(PX_UM), "--core-diameter",
+                   str(CORE_UM), "--orientation", "0", "--fit-only"])
+        assert rc in (None, 0)
+        text = capsys.readouterr().out
+        assert "using map 'X'" in text                                   # picked by the slide name
+        with open(out / "cores.csv", newline="") as f:
+            assert {r["array"] for r in csv.DictReader(f)} == {"X"}
+        with pytest.raises(SystemExit):
+            main([slide, str(out), "--map", str(path), "--map-name", "Nope", "--pixel-size", str(PX_UM)])
+
+
+class TestFootprintFromFit:
+    """The tissue mask for hand-edited cores comes from the fit, not the first edit."""
+
+    def _pre(self, tmp_path):
+        from cabana.tma import _transform_grid
+        occ = _transform_grid(occupancy_grid(1), "90").copy()
+        img, _ = synthetic_slide(occ, jitter=5)
+        cv2.circle(img, (200, 200), 30, (190, 150, 230), -1)         # debris, so the mask is not trivial
+        path = str(tmp_path / "f.png")
+        cv2.imwrite(path, img)
+        pre = TMAPreprocessor(path, array_number=1, slide_name="F", pixel_size_um=PX_UM,
+                              core_diameter_um=CORE_UM, fit_pixel_size_um=PX_UM, orientation="90")
+        pre.fit()
+        pre.map_to_array()
+        return pre
+
+    def test_fit_cores_mask_is_optional(self):
+        img, _ = synthetic_slide(np.ones((2, 2), dtype=bool))
+        circles = fit_cores(img, PX_UM, CORE_UM)
+        circles2, mask = fit_cores(img, PX_UM, CORE_UM, return_mask=True)
+        assert circles == circles2 and mask.shape == img.shape[:2] and mask.any()
+        empty = np.full((400, 400, 3), 245, dtype=np.uint8)
+        assert fit_cores(empty, PX_UM, CORE_UM, return_mask=True)[0] == []
+
+    def test_mask_equals_separately_built_footprint(self, tmp_path):
+        from cabana.tma import tissue_footprint
+        pre = self._pre(tmp_path)
+        ds = pre.reader.level_downsample(pre._fit_level)
+        expected = tissue_footprint(pre._fit_image, pre.reader.pixel_size_um * ds, pre.core_diameter_um,
+                                    pre.sat_thresh, pre.val_ratio)
+        assert pre._footprint is not None and (pre._footprint == expected).all()
+        pre.close()
+
+    def test_first_edit_does_not_rebuild_the_mask(self, tmp_path, monkeypatch):
+        import cabana.tma as tma
+        pre = self._pre(tmp_path)
+        monkeypatch.setattr(tma, "tissue_footprint", lambda *a, **k: pytest.fail("mask rebuilt on edit"))
+        core = pre.cores[0]
+        pre.move_core(core, core.cx + 20, core.cy)
+        assert core.manual and 0.0 < core.fill <= 1.0
+        pre.close()
+
+
+class TestTemplateSizedMap:
+    def test_unused_template_rows_and_columns_do_no_harm(self, tmp_path):
+        """A map typed into the 12 x 12 template has empty rows and columns
+        around it; matching must place it exactly as the trimmed map."""
+        from cabana.tma_maps import load_map_file
+        rows = [",".join([""] + [str(c) for c in range(1, 13)])]
+        core = USER_MAP.splitlines()[1:]
+        grid = {}
+        for line in core:
+            _, r, c, pid, tissue, *_ = line.split(",")
+            grid[(r, int(c))] = pid or (f"ctrl:{tissue}" if tissue else "?")
+        for r in "ABCDEFGHIJKL":
+            rows.append(",".join([r] + [grid.get((r, c), "") for c in range(1, 13)]))
+        path = tmp_path / "padded.csv"
+        path.write_text("map,X\n" + "\n".join(rows) + "\n")
+        m = load_map_file(str(path)).maps[0]
+        assert m.shape == (12, 12)
+        img, _ = synthetic_slide(m.occupancy()[:4, :6], jitter=4)       # the slide shows only the real array
+        slide = str(tmp_path / "X.png")
+        cv2.imwrite(slide, img)
+        for orientation in ("0", "auto"):
+            pre = TMAPreprocessor(slide, tma_map=m, slide_name="X", pixel_size_um=PX_UM, core_diameter_um=CORE_UM,
+                                  fit_pixel_size_um=PX_UM, orientation=orientation)
+            pre.fit()
+            pre.map_to_array()
+            assert pre.matched_orientation == "0"
+            assert all((c.map_row, c.map_col) == (c.row, c.col) for c in pre.cores)
+            pre.close()

@@ -14,8 +14,8 @@ step lives on the **TMA Dearrayer** page of the GUI and in the `cabana-tma` comm
    panel and the pixel size and available channels are filled in.
 2. **Fit cores**: tissue is thresholded on a low-resolution level, a circle is
    fitted to every core, the circles are snapped to the array grid, and the
-   grid is matched to the printed ICGC/APGI array map (arrays 1 to 8 are
-   bundled). A numbered overlay is shown: green circles will be exported,
+   grid is matched to the array map: one of the bundled ICGC/APGI arrays 1 to 8,
+   or your own map loaded from a file (see [Array maps](#array-maps)). A numbered overlay is shown: green circles will be exported,
    purple were recovered at empty grid positions (also exported), grey with a
    cross were excluded by the quality filters, and grey lie outside the printed
    map; neither grey kind is exported. Thin lines join cores in neighbouring
@@ -29,7 +29,8 @@ visible across gaps. Circles can be corrected by hand (see
    fitted circle, shrunk by *Mask Shrink*, black in the corners) to
    `<channel>/<group>/Masks/`. Channels are `BF` and `POL`; groups are
    `Patients`, `Controls` (Liver, Brain, … from the map) and `Unmapped` (cores
-   without a map entry, e.g. when no array map is chosen). A `cores.csv`
+   without a map entry, e.g. when no array map is chosen, and cores the map
+   lists without an identity). A `cores.csv`
    manifest, `overlay.png` and `cores_edits.json` (the cores as exported,
    so hand edits can be reinstated later) are written alongside.
 
@@ -43,7 +44,8 @@ before exporting, and exporting can be repeated into a different folder.
 1. **Open** the slide (`.vsi`, or a whole-slide TIFF/PNG, in which case enter the
    pixel size). A preview appears in the viewer.
 2. **Array Map.** Choose the printed ICGC/APGI array (1 to 8) for patient IDs,
-   or *None* to name cores by grid position only. Leave **Orientation** on
+   *Load map file…* for your own map (see [Array maps](#array-maps)), or *None*
+   to name cores by grid position only. Leave **Orientation** on
    *Auto* unless you need to force one (see [Orientation](#orientation)).
    Changing either after a fit relabels the cores instantly; no refit.
 3. **Fit settings.** *Core Ø* is the nominal core diameter and sets the scale
@@ -217,6 +219,7 @@ or chosen by *Auto*. On reinstating it is applied when **Orientation** is
 ```
 <patientID>.vsi - <slide>_<channel>_<position>Annotation (<class>)_<n>.png   e.g. 1734.vsi - TMA1_BF_A4Annotation (Tumor)_1.png
 <tissue>.vsi - <slide>_<channel>_<position>Annotation (<tissue>)_<n>.png      e.g. Liver.vsi - TMA1_BF_A1Annotation (Liver)_1.png   (control cores)
+<slide>-<position>.vsi - <slide>_<channel>_<position>Annotation (Unknown)_1.png   e.g. TMA1-B3.vsi - TMA1_BF_B3Annotation (Unknown)_1.png   (core the map marks ?)
 <slide>-r<row>c<col>.vsi - <slide>_<channel>_r<row>c<col>Annotation (Unmapped)_1.png   (no array map selected or unmapped cell)
 ```
 
@@ -224,12 +227,16 @@ The names follow the pattern of the QuPath slide exports Cabana was built
 around, so that the per-patient statistics and scores of a batch run identify
 the patient from the prefix before `.vsi`, the channel from `_BF_`/`_POL_`,
 the class from the last bracket and the replicate from the trailing number.
-`<class>` is the map note where one exists (for example PNET, MCN), otherwise
-`Tumor`; `<n>` numbers the patient's cores on the slide in row-major order.
-`position` is the flat map position (rows A to L, columns 1 to 8) after the
-printed sector offsets are resolved. `<patientID>` is the 4-digit patient ID
-printed under each cell of the ICGC map; the APGI block ID printed above it
-is in `cores.csv`. `cores.csv` records the map label,
+`<class>` is the map's class for the core where one exists (for example PNET,
+MCN), otherwise `Tumor`; `<n>` numbers the patient's cores on the slide in
+row-major order. `position` is the position on the map: for the built-in
+arrays the flat position (rows A to L, columns 1 to 8) after the printed
+sector offsets are resolved, for your own maps the row letter and column
+number of the cell (`R<row>C<col>` when rows are numbered). For the built-in
+arrays `<patientID>` is the 4-digit patient ID printed under each cell of the
+ICGC map, and the APGI block ID printed above it is in `cores.csv`. Cores your
+map marks `?` go to `Unmapped`, named by slide and position. Extra columns of
+a map file are added to `cores.csv`. `cores.csv` records the map label,
 sector, patient ID, block ID, tissue, circle centre and radius (level-0 pixels),
 tissue fill, QC metrics, flag, exclusion reason, export group (`Patients`,
 `Controls` or `Unmapped`), the orientation used together with the rule
@@ -299,6 +306,98 @@ with the other edits. **Clear map position** in the same menu, choosing
 *Auto*, or choosing another array returns to the automatic placement, and
 **Undo** reverts it like any other edit.
 
+## Array maps
+
+The map tells Cabana which patient or control tissue sits at each position of
+the array. The eight ICGC/APGI arrays are built in. For any other TMA, write
+the map into the template and choose **Load map file…** under **Array Map**.
+
+### Filling in the template
+
+**File > Generate TMA Map Template…** (or `cabana-tma map template FOLDER`) writes
+`tma_map_template.csv`. Open it in Excel or another spreadsheet program: it is
+a grid with row letters A to L and column numbers 1 to 12 ready, and an
+example map to replace. Add letters or numbers if your array is larger; rows
+and columns you leave unused do no harm.
+
+Each cell is one position on the array, where it physically sits:
+
+| Cell | Meaning |
+|---|---|
+| blank | no core at this position |
+| `?` | a core whose ID is unknown |
+| `ctrl:<tissue>`, e.g. `ctrl:Liver` | a control core |
+| anything else | the patient ID that names the core's images |
+
+```
+map,TMA1
+cell lines,position patient block class
+,1,2,3,4,5,6
+A,ctrl:Liver,1001,1002,1003,1004,ctrl:Brain
+B,1005,1006,?,1007,1008,1009
+```
+
+Several maps can share a file: start each with a row holding `map` in the
+first cell and the map's name in the second. Name each map as it appears in
+the slide file names (for example `TMA3` for `APGI TMA 3 PicRed.vsi`) and the
+right map is preselected when you load the file.
+
+### Pasting from a PDF or another table
+
+Cells pasted from a PDF table usually hold several lines, for example the
+printed position, the patient ID and a block ID. The **cell lines** row under
+the `map` row names those lines in order, using `position`, `patient`,
+`block`, `class` and `skip`. The template's row, `position patient block
+class`, reads a pasted cell `A2 / 3000 / 8064399` as patient 3000 with block
+8064399. A line in brackets such as `(MCN)` is the annotation class, and a
+cell with no digits after its position, such as `A1 / Liver`, is a control.
+Change the row to match your source, or delete it if you type one value per
+cell. A cell holding a single value is always read as in the table above.
+
+Two things to fix after pasting:
+
+1. **Place the cells where they sit on the array.** Many printed maps restart
+   their labels in each sector (the ICGC maps print A1 to D8 three times).
+   Paste each sector under the previous one and give its rows the following
+   letters (E to H, I to L, …); Cabana takes the position from the grid, not
+   from the printed label.
+2. **Check every row has its letter and every column its number.** A row
+   without its letter, or more cells than column numbers, makes the file
+   unusable, with a message that says which line to fix.
+
+### Checking the map
+
+On loading, Cabana shows each map as a coloured grid (patients, controls,
+unknown cores, empty positions) with any problems. Errors make the file
+unusable: a position listed twice, a row without its label, too few column
+numbers, a pasted cell whose lines do not match the cell lines row, or a
+multi-line cell without a cell lines row. Warnings flag likely typing
+errors, such as a prefix other than `ctrl:`, a patient listed more than three
+times, or a cell holding only something like `A1`. **Compare the grid with
+the original map before choosing Use This Map**: a wrong ID silently puts a
+core under the wrong patient.
+
+`cabana-tma map check FILE` prints the same check as text.
+
+### Other file types
+
+Files may be comma-, semicolon- or tab-separated (`.csv`, `.tsv`, `.txt`), and
+lines starting with `#` are ignored. A QuPath `.qpmap` grid loads as it is;
+add `ctrl:` in front of its control tissues and use `?` where a core has no
+ID. Cabana does not read PDFs or images of maps: paste their tables into the
+template as above.
+
+A table with one line per core is also accepted, for maps exported from a
+database: columns `row` and `col` (required), `patient_id`, `tissue`, `class`,
+`block_id`, `map` (for several maps in one file) and `status` (`empty` for a
+position without a core); positions not listed have no core and other columns
+are copied to `cores.csv`. `cabana-tma map convert FILE OUT.csv` writes any
+accepted file in this form.
+
+The saved edits (`cores_edits.json`) record which map they were made with, by
+name and by a fingerprint of its contents, so they are never reinstated on a
+different map.
+
 ## Using the export in Cabana
 
 Each group folder is a self-contained batch input: `BF/Patients/Images/` is
@@ -328,6 +427,10 @@ cabana-tma "APGI TMA 1 PicRed.vsi" out/TMA1 --array 1 --slide-name TMA1
 cabana-tma slide.tif out/slide --pixel-size 0.5 --fit-only        # cores.csv + overlay only
 cabana-tma slide.vsi out/x --array 4 --orientation 90+flip --channels BF
 cabana-tma slide.vsi out/x --array 4 --edits out/x/cores_edits.json  # reinstate hand edits
+cabana-tma slide.vsi out/x --map my_maps.csv --map-name TMA7         # your own map
+cabana-tma map template maps/            # write the map template
+cabana-tma map check my_maps.csv         # list problems and draw each map as text
+cabana-tma map convert my_maps.qpmap my_maps.csv   # rewrite in the list layout
 ```
 
 Run `cabana-tma --help` for all options (core diameter, crop margin, mask
@@ -339,6 +442,10 @@ shrink, channel selection).
 from cabana import TMAPreprocessor
 
 pre = TMAPreprocessor("APGI TMA 1 PicRed.vsi", array_number=1, slide_name="TMA1")
+# or your own map:
+#   from cabana.tma_maps import load_map_file
+#   mf = load_map_file("my_maps.csv"); assert mf.ok, mf.problems
+#   pre = TMAPreprocessor("slide.vsi", tma_map=mf.maps[0])
 pre.fit()                      # list of Core objects with centre, radius, grid position
 pre.map_to_array()             # orientation, sets map positions; pre.orientation_ties lists ambiguities
 pre.missing_positions()        # map positions without a core, with the lattice-predicted centre

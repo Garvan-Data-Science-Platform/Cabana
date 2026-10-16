@@ -47,7 +47,9 @@ python -m cabana        # or: cabana-gui
 Tissue micro-array slides can also be cut into per-core images from the command line:
 
 ```bash
-cabana-tma "APGI TMA 1 PicRed.vsi" out/TMA1 --array 1
+cabana-tma "APGI TMA 1 PicRed.vsi" out/TMA1 --array 1        # built-in ICGC/APGI array
+cabana-tma "my slide.vsi" out/mine --map my_maps.csv           # your own map
+cabana-tma map template maps/                                  # a template to type or paste a map into
 ```
 
 Alternatively, you can import CABANA in your Python code for customized analysis (see the [Python API](https://cabana.readthedocs.io/en/latest/api.html) page):

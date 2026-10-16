@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+### TMA Dearrayer
+
+- Your own TMA maps: **Array Map > Load map file…** reads a map laid out like
+  the printed array (`ctrl:<tissue>` for controls, `?` for a core with unknown
+  ID, blank for no core), from `.csv`, `.tsv`, `.txt` or QuPath `.qpmap`
+  files, with several maps per file. Tables with one line per core are also
+  accepted. A preview shows each map as a coloured grid with any problems
+  before it is used. **File > Generate TMA Map Template…** writes a ready-labelled
+  12 x 12 grid to type or paste into; its **cell lines** row lets cells pasted
+  from a PDF, holding a position, patient ID, block ID and class on separate
+  lines, be read directly. Maps may have any number of rows and columns; the
+  built-in ICGC/APGI arrays are unchanged.
+- Cores a map lists without an identity are exported to `Unmapped` as
+  `<slide>-<position>.vsi - …Annotation (Unknown)_1`. Extra map columns are
+  copied to `cores.csv`. The Brain control is recognised regardless of case.
+- Saved edits record the map's name and a fingerprint of its contents.
+- Command line: `--map FILE` and `--map-name NAME`, and
+  `cabana-tma map check|convert|template`.
+- Cells holding several lines without a cell lines row are refused with a
+  message naming the cell, instead of being misread as a grid of fragments.
+  A labelled grid must give every row its label.
+- The first hand edit no longer freezes the window for a few seconds: the
+  tissue mask used to measure edited cores is now kept from Fit Cores
+  instead of being rebuilt on the first edit.
+
+### GUI
+
+- On a short screen the side panel scrolls instead of squeezing its text
+  boxes, spin boxes and buttons below their natural height.
+
 ## 0.3.5
 
 ### TMA Dearrayer

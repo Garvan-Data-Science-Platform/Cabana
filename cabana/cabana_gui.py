@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QSpinBox,
                              QPushButton, QFileDialog, QSizePolicy, QColorDialog,
                              QMessageBox, QGroupBox, QComboBox, QWidget,
                              QStatusBar, QLineEdit, QDoubleSpinBox, QStackedWidget, QGridLayout,
-                             QAction, QActionGroup)
+                             QAction, QActionGroup, QDialog, QScrollArea, QFrame)
 from PyQt5.QtGui import QIcon, QPalette, QFont, QKeySequence
 from PyQt5.QtCore import QSettings, QUrl
 from PyQt5.QtGui import QDesktopServices
@@ -23,8 +23,28 @@ from .ui import *
 from .themes import THEMES, DEFAULT_THEME
 from .tma import ORIENTATIONS, EDITS_FILE
 from .tma_editor import TMACoreEditor
-from .tma_maps import available_arrays
+from .tma_maps import MAP_FILE_FILTER, available_arrays, load_map_file, match_map_to_slide, write_templates
+from .tma_editor import MapPreviewDialog
 from . import __version__
+
+
+class PageStack(QStackedWidget):
+    """Stacked widget sized by its current page, not its tallest one, and never
+    smaller than that page's natural size: inside a scroll area a short page
+    then shows no empty scroll range and a tall one scrolls instead of being
+    squeezed."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.currentChanged.connect(lambda _i: self.updateGeometry())
+
+    def sizeHint(self):
+        page = self.currentWidget()
+        return page.sizeHint() if page is not None else super().sizeHint()
+
+    def minimumSizeHint(self):
+        page = self.currentWidget()
+        return page.sizeHint() if page is not None else super().minimumSizeHint()
 
 
 class MainWindow(QMainWindow):
@@ -87,9 +107,18 @@ class MainWindow(QMainWindow):
         self.dock_inner_layout.setSpacing(6)
         self.dock_layout.addLayout(self.dock_inner_layout, 1)
 
-        # Analysis pages live in a stacked widget selected from the Analysis menu.
-        self.pages = QStackedWidget()
+        # Analysis pages live in a stacked widget selected from the Analysis menu,
+        # inside a scroll area so a short screen scrolls the page instead of
+        # squeezing its widgets below their natural height.
+        self.pages = PageStack()
         self.pages.setStyleSheet(self.page_stack_style)
+        self.pages_scroll = QScrollArea()
+        self.pages_scroll.setWidgetResizable(True)
+        self.pages_scroll.setFrameShape(QFrame.NoFrame)
+        self.pages_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.pages_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.pages_scroll.setStyleSheet("QScrollArea { background: transparent; }")
+        self.pages_scroll.viewport().setAutoFillBackground(False)
 
         # Create pages
         self.start_tab = QWidget()
@@ -116,12 +145,10 @@ class MainWindow(QMainWindow):
             index = self.pages.addWidget(page)
             self._page_titles.append(title)
             action.triggered.connect(lambda _checked=False, i=index: self.show_page(i))
-        self.dock_inner_layout.addWidget(self.pages)
+        self.pages_scroll.setWidget(self.pages)
+        self.dock_inner_layout.addWidget(self.pages_scroll, 1)
         self._share_hints_with_labels()
         self.show_page(0)
-
-        # Add a spacer to push content to the top
-        self.dock_inner_layout.addStretch()
 
         # Progress status (which batch / stage / image), shown during Batch Run
         self.progress_label = QLabel("")
@@ -259,6 +286,11 @@ class MainWindow(QMainWindow):
         self.open_slide_action.setStatusTip("Choose a whole-slide TMA scan on the TMA Dearrayer page")
         self.open_slide_action.triggered.connect(self._open_tma_slide_from_menu)
         file_menu.addAction(self.open_slide_action)
+        self.save_map_templates_action = QAction("Generate TMA Map &Template…", self)
+        self.save_map_templates_action.setStatusTip(
+            "Write a map template to type or paste your own TMA map into")
+        self.save_map_templates_action.triggered.connect(self.save_tma_map_templates)
+        file_menu.addAction(self.save_map_templates_action)
 
         file_menu.addSeparator()
         quit_action = QAction("&Quit", self)
@@ -386,6 +418,80 @@ class MainWindow(QMainWindow):
 
         layout.addStretch()
         self.start_tab.setLayout(layout)
+
+    MAP_LOAD_ITEM = "__load_map__"
+
+    def _tma_selected_map(self):
+        """The array combo's map: None, a built-in array number or a loaded TMAMap."""
+        data = self.tma_array_combo.currentData()
+        return None if data == self.MAP_LOAD_ITEM else data
+
+    def _tma_array_selected(self, index):
+        """Array combo changed: 'Load map file…' loads a map, anything else relabels."""
+        combo = self.tma_array_combo
+        if combo.itemData(index) == self.MAP_LOAD_ITEM:
+            chosen = self.load_tma_map_file()
+            target = self._tma_array_prev
+            if chosen is not None:
+                target = next(i for i in range(combo.count()) if combo.itemData(i) is chosen)
+            combo.blockSignals(True)
+            combo.setCurrentIndex(target)
+            combo.blockSignals(False)
+            if chosen is None:
+                return
+        self._tma_array_prev = combo.currentIndex()
+        self._tma_map_changed()
+
+    def load_tma_map_file(self, path=None):
+        """Read a map file, show it for checking and add its maps to the array
+        combo. Returns the map chosen in the preview, or None."""
+        if path is None:
+            start = os.path.dirname(self.tma_slide) if self.tma_slide else ""
+            path, _ = QFileDialog.getOpenFileName(self, "Load TMA Map", start, MAP_FILE_FILTER)
+            if not path:
+                return None
+        map_file = load_map_file(path)
+        slide = os.path.basename(self.tma_slide) if self.tma_slide else ""
+        chosen = self._preview_map_file(map_file, match_map_to_slide(map_file.maps, slide))
+        if chosen is None:
+            return None
+        self._add_tma_maps(map_file.maps)
+        return chosen
+
+    def _preview_map_file(self, map_file, preselect):
+        """Show the map file for checking; the chosen map, or None if cancelled."""
+        dlg = MapPreviewDialog(self, map_file, preselect, style=self.msgbox_style.replace("QMessageBox", "QDialog"))
+        return dlg.selected_map() if dlg.exec_() == QDialog.Accepted else None
+
+    def _add_tma_maps(self, maps):
+        """Add loaded maps to the array combo before 'Load map file…', replacing
+        a map of the same name from the same file."""
+        combo = self.tma_array_combo
+        combo.blockSignals(True)
+        current = combo.currentData()
+        for m in maps:
+            for i in reversed(range(combo.count())):
+                d = combo.itemData(i)
+                if hasattr(d, "name") and d.name == m.name and d.source == m.source:
+                    combo.removeItem(i)
+            combo.insertItem(combo.findData(self.MAP_LOAD_ITEM), f"{m.name} ({m.source})", m)
+        idx = next((i for i in range(combo.count()) if combo.itemData(i) is current), 0)
+        combo.setCurrentIndex(idx)
+        combo.blockSignals(False)
+
+    def save_tma_map_templates(self):
+        folder = QFileDialog.getExistingDirectory(self, "Generate TMA Map Template: Choose a Folder", "", QFileDialog.ShowDirsOnly)
+        if not folder:
+            return
+        try:
+            paths = write_templates(folder)
+        except OSError as e:
+            QMessageBox.warning(self, "TMA Map Template", f"Could not write the template:\n{e}")
+            return
+        QMessageBox.information(self, "TMA Map Template",
+                                "Wrote:\n" + "\n".join(paths) +
+                                "\n\nOpen it in a spreadsheet, type or paste your map into the grid (the notes at "
+                                "the top explain how), save it as CSV, then choose 'Load map file…' under Array Map.")
 
     def _open_tma_slide_from_menu(self):
         self.show_page(self.pages.indexOf(self.tma_tab))
@@ -747,8 +853,13 @@ class MainWindow(QMainWindow):
         self.tma_array_combo.addItem("None (grid position only)", None)
         for n in available_arrays():
             self.tma_array_combo.addItem(f"ICGC Array {n}", n)
+        self.tma_array_combo.addItem("Load map file…", self.MAP_LOAD_ITEM)
+        self._tma_array_prev = 0
         self.tma_array_combo.setStyleSheet(self.combo_style)
-        self.tma_array_combo.setToolTip("Printed ICGC/APGI array map used to name cores by patient ID.")
+        self.tma_array_combo.setToolTip(
+            "Array map used to name cores by patient ID: a built-in ICGC/APGI array, or your own\n"
+            "map loaded with 'Load map file…' (.csv/.tsv/.txt/.qpmap);\n"
+            "File > Generate TMA Map Template… writes a template to type or paste a map into.")
         map_layout.addWidget(self.tma_array_combo, 1)
         layout.addLayout(map_layout)
 
@@ -766,7 +877,7 @@ class MainWindow(QMainWindow):
             "so check the control cores (named on the overlay) against the printed map and\n"
             "pick the orientation explicitly if needed. Changing it relabels instantly, no refit.")
         self.tma_orientation_combo.currentIndexChanged.connect(self._tma_map_changed)
-        self.tma_array_combo.currentIndexChanged.connect(self._tma_map_changed)
+        self.tma_array_combo.currentIndexChanged.connect(self._tma_array_selected)
         orient_layout.addWidget(self.tma_orientation_combo, 1)
         layout.addLayout(orient_layout)
 
@@ -1063,7 +1174,7 @@ class MainWindow(QMainWindow):
         pre = self.tma_pre
         if pre is None or (self.tma_worker is not None and self.tma_worker.isRunning()):
             return
-        pre.array_number = self.tma_array_combo.currentData()
+        pre.array_number = self._tma_selected_map()
         pre.orientation = self.tma_orientation_combo.currentData()
         pre.map_to_array()
         self._show_tma_result(preserve_view=True)
@@ -1294,7 +1405,7 @@ class MainWindow(QMainWindow):
 
     def _tma_options(self):
         return dict(
-            array_number=self.tma_array_combo.currentData(),
+            array_number=self._tma_selected_map(),
             pixel_size_um=float(self.tma_pixel_size_spin.value()) if self.tma_pixel_size_spin.value() > 0 else None,
             core_diameter_um=float(self.tma_core_diameter_spin.value()),
             margin_um=float(self.tma_margin_spin.value()),

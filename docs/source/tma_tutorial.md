@@ -12,7 +12,11 @@ described in detail on the [TMA preprocessing](tma.md) page.
    Open TMA Slide**). Choose the `.vsi` file. A preview appears within a few
    seconds and the status line reports the slide size, pixel size and the
    channels found (`BF`, `POL`).
-2. Set **Array Map** to the slide's array. Leave **Orientation** on *Auto*.
+2. Set **Array Map** to the slide's array. For a TMA that is not one of the
+   built-in ICGC/APGI arrays, choose **Load map file…** and pick your map (see
+   [Array maps](tma.md#array-maps); **File > Generate TMA Map Template…** writes
+   a template to type or paste it into). Check the map in the preview and
+   click **Use This Map**. Leave **Orientation** on *Auto*.
 3. Leave the fit settings at their defaults on a first pass (**Core Ø**
    1250 µm, **Sensitivity** 15, **Recover faint** on) and click **Fit Cores**.
    Fitting takes 5 to 60 seconds depending on the machine.
@@ -52,10 +56,10 @@ APGI_TMA_4_PicRed_cores/
   overlay.png             the annotated overlay
   cores_edits.json        the cores as exported; a later refit offers to reinstate hand edits from it
   BF/
-    Patients/  Images/    8010718.vsi - TMA4_BF_A3Annotation (Tumor)_1.png …
-               Masks/     8010718.vsi - TMA4_BF_A3Annotation (Tumor)_1.png … (white disc = analyse)
+    Patients/  Images/    2119.vsi - TMA4_BF_A3Annotation (Tumor)_1.png …
+               Masks/     2119.vsi - TMA4_BF_A3Annotation (Tumor)_1.png … (white disc = analyse)
     Controls/  Images/, Masks/   Liver.vsi - TMA4_BF_A1Annotation (Liver)_1.png …
-    Unmapped/  Images/, Masks/   cores in cells the map does not have
+    Unmapped/  Images/, Masks/   cores in cells the map does not have, or marks ?
   POL/  (same layout)
 ```
 
@@ -65,13 +69,13 @@ APGI_TMA_4_PicRed_cores/
    Fibre Detection and Gap Analysis pages on it as described in the
    [workflow](workflow.md). Bright-field cores use **Dark Line** on; polarised
    cores use it off.
-2. Export the parameters with **Parameters > Export Parameters**, then open
-   the file in a text editor and set two values the GUI does not expose:
-   - `Segmentation: Max Size: 6000`, so that a 4000 to 5000 px core is
-     analysed as one image instead of being split into blocks.
-   - `Segmentation: Patch Size: 1024`, so that the segmentation network sees
-     the tissue at a useful resolution rather than the whole core shrunk to
-     512 px.
+2. Set **Patch Size** on the Segmentation page to 1024 px, so that the
+   segmentation network sees the tissue at a useful resolution rather than the
+   whole core shrunk to 512 px.
+3. Export the parameters with **Parameters > Export Parameters**, then open
+   the file in a text editor and set `Segmentation: Max Size: 6000`, which the
+   GUI does not expose, so that a 4000 to 5000 px core is analysed as one
+   image instead of being split into blocks.
 
 ## 3. Run the batch
 
@@ -111,6 +115,7 @@ In the output folder:
 
 ```bash
 cabana-tma "APGI TMA 4 PicRed.vsi" cores --array 4 --slide-name TMA4
+cabana-tma "my slide.vsi" cores --map my_maps.csv     # your own map file
 # then, in Python:
 from cabana import BatchProcessor
 BatchProcessor(param_file="Parameters_BF.yml",

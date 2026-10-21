@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased
+
+### GUI
+
+- The side panel's scroll bar is drawn in its own slim column beside the
+  page, with a gap, instead of as an overlay on the page's right edge next
+  to the splitter; it appears only when the page shown does not fit. Short
+  pages such as Start no longer scroll just because the TMA Dearrayer page
+  is taller.
+- Quitting asks for confirmation only when a job is running or TMA hand
+  edits are unsaved; otherwise the window closes at once.
+
+### TMA
+
+- Slides printed as several blocks whose spacing is not a whole number of
+  grid pitches are handled: a block sitting out of step with the rest of the
+  array (e.g. the bottom-right quadrant of the neuroblastoma TMA, 0.4 pitch
+  off) gets its own offset, so its missing-core placeholders no longer
+  overlap real cores and its cores pass the grid-offset check. With a map,
+  such a block also moves by one cell when that fits the map better, which
+  fixes patient IDs that were one column off.
+- The faint-core pass no longer adds a core where its disc would overlap an
+  already fitted core.
+- *Core Ø* has an *Auto* tick box, on by default: the core diameter is
+  measured from the slide at every fit (median of the well-formed cores,
+  refitting once with it) and shown in the box; untick it to type a value.
+  `cabana-tma --core-diameter` defaults to `auto`, and `TMAPreprocessor`'s
+  `core_diameter_um` to None (measure). `cores.csv` records the value used
+  and its source. Previously Core Ø defaulted to 1250 µm, which excluded
+  every core of arrays with smaller cores.
+- Fixed a crash in the circle fit when debris pieces of different sizes were
+  dropped from an oversized circle.
+- With *Edit cores* on, clicking a core only selects it: a press must drag at
+  least 4 screen pixels to move or resize the core. Previously every click
+  marked the core hand-edited and added an undo step.
+
 ## 0.3.7
 
 ### GUI

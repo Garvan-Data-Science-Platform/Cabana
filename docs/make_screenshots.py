@@ -234,7 +234,7 @@ def main(argv):
             grab(win, "tma.png", [
                 (1, rect_of(win, win.tma_slide_btn), "right"),
                 (2, rect_of(win, win.tma_array_combo), "left"),
-                (3, union(win, (win.tma_core_diameter_spin, win.tma_sat_spin, win.tma_recover_cb))),
+                (3, union(win, (win.tma_core_auto_cb, win.tma_core_diameter_spin, win.tma_sat_spin, win.tma_recover_cb))),
                 (4, rect_of(win, win.tma_fit_btn)),
                 (5, union(win, (win.tma_offset_spin, win.tma_stain_spin, win.tma_dmin_spin, win.tma_dmax_spin))),
                 (6, union(win, (win.tma_edit_cb, win.tma_links_cb, win.tma_undo_btn,

@@ -18,12 +18,13 @@ described in detail on the [TMA preprocessing](tma.md) page.
    a template to type or paste it into). Check the map in the preview and
    click **Use This Map**. Leave **Orientation** on *Auto*.
 3. Leave the fit settings at their defaults on a first pass (**Core Ø**
-   1250 µm, **Sensitivity** 15, **Recover faint** on) and click **Fit Cores**.
+   *Auto*, **Sensitivity** 15, **Recover faint** on) and click **Fit Cores**.
+   With *Auto* the measured core diameter appears in the Core Ø box.
    Fitting takes 5 to 60 seconds depending on the machine.
 4. Read the status line under the settings. It reports the number of cores,
    the grid size, how many will be exported, the orientation and which rule
-   chose it, how many cores each filter removed, the median fitted diameter
-   and any patient left without a core. Check the overlay: green circles are
+   chose it, how many cores each filter removed, the Core Ø used and any
+   patient left without a core. Check the overlay: green circles are
    exported, purple were recovered at empty grid positions, grey with a cross
    were excluded by the filters, plain grey lie outside the printed map, and
    dashed circles mark map positions that hold no core. Each core is
@@ -34,8 +35,9 @@ described in detail on the [TMA preprocessing](tma.md) page.
      **Orientation** until their names land on the right tissue; the labels
      update instantly, no refit. Export is disabled until the orientation is
      resolved.
-   - If the median fitted diameter differs from **Core Ø** by more than 10 %
-     the status line says so; set Core Ø to the reported value and refit.
+   - With a typed **Core Ø**, the status line warns when the median fitted
+     diameter differs from it by more than 10 %; tick *Auto* or set Core Ø to
+     the reported value and refit.
    - Torn or partial cores fit a smaller circle; lower **Min Ø** (for example
      70 %) to keep them. Filter changes apply instantly without a refit.
    - For the odd circle the fit got wrong, tick **Edit cores**: drag a circle

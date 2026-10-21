@@ -47,6 +47,7 @@ class TMACoreEditor:
     HANDLE_PX = 7           # size of the resize handle on the selected circle
     RIM_PX = 3.0            # screen width of a core's ring
     MAX_UNDO = 50
+    DRAG_PX = 4             # screen pixels the pointer must travel before a press edits; less only selects
     LABEL_MIN_RADIUS_PX = 10
 
     def __init__(self, panel, get_pre, on_change):
@@ -58,6 +59,8 @@ class TMACoreEditor:
         self.selected = None
         self.hovered = None
         self._drag = None           # ("move", dx, dy) or ("resize",)
+        self._press_pos = None      # widget position of the press that started _drag
+        self._dragging = False      # the pointer has moved DRAG_PX since the press
         self._undo = []
 
     # -- geometry --------------------------------------------------------------
@@ -151,11 +154,19 @@ class TMACoreEditor:
             self._drag = ("resize",)
         else:
             self._drag = ("move", core.cx - ix * ds, core.cy - iy * ds)
+        self._press_pos, self._dragging = (event.x(), event.y()), False
         self.on_change(False)
         return True
 
+    def _past_threshold(self, event):
+        """Whether the pointer is now at least DRAG_PX from the press."""
+        if not self._dragging and self._press_pos is not None:
+            self._dragging = np.hypot(event.x() - self._press_pos[0],
+                                      event.y() - self._press_pos[1]) >= self.DRAG_PX
+        return self._dragging
+
     def move(self, ix, iy, event):
-        if self._drag is None or self.selected is None:
+        if self._drag is None or self.selected is None or not self._past_threshold(event):
             return
         core, ds = self.selected, self._ds()
         if self._drag[0] == "move":
@@ -166,6 +177,13 @@ class TMACoreEditor:
 
     def release(self, ix, iy, event):
         if self._drag is None or self.selected is None:
+            return
+        if not self._past_threshold(event):
+            # a click: the core stays selected but is not edited
+            self._drag = None
+            if self._undo:
+                self._undo.pop()            # the snapshot taken at the press
+            self.on_change(False)
             return
         self.move(ix, iy, event)            # final position, even if no move event arrived
         pre, core = self.get_pre(), self.selected

@@ -150,6 +150,24 @@ class TestEditingGestures:
         settle(app)
         assert len(pre.cores) == n + 1
 
+    def test_click_without_drag_only_selects(self, fitted_gui, app):
+        win, pre = fitted_gui
+        panel = win.image_panel
+        win.tma_edit_cb.setChecked(True)
+        settle(app)
+        core = next(c for c in pre.cores if (c.row, c.col) == (1, 1))
+        before = (core.cx, core.cy, core.radius)
+        p = _widget_point(win, pre, core.cx, core.cy)
+        for dx in (0, 2):                   # a click, and a jitter below DRAG_PX
+            QTest.mousePress(panel, Qt.LeftButton, Qt.NoModifier, p)
+            QTest.mouseMove(panel, p + QPoint(dx, 0))
+            QTest.mouseRelease(panel, Qt.LeftButton, Qt.NoModifier, p + QPoint(dx, 0))
+            settle(app)
+            assert win.tma_editor.selected is core
+            assert (core.cx, core.cy, core.radius) == before and not core.manual
+            assert pre.manual_count() == 0 and not win.tma_editor.can_undo()
+            assert not win._tma_unsaved and "hand-edited" not in win.tma_status_label.text()
+
     def test_editing_disabled_lets_clicks_pan(self, fitted_gui, app):
         win, pre = fitted_gui
         panel = win.image_panel
@@ -510,8 +528,25 @@ class TestPanelScrolls:
         settle(app, 200)
         page = win.tma_tab
         assert page.height() >= page.sizeHint().height()                 # natural height kept
-        assert win.pages_scroll.verticalScrollBar().maximum() > 0          # the rest is reached by scrolling
+        bar = win.pages_scroll.verticalScrollBar()
+        assert bar.maximum() > 0 and bar.isVisible()                       # the rest is reached by scrolling
         assert win.tma_slide_path.height() >= win.tma_slide_path.sizeHint().height()
+        # the bar has its own column: it never covers the page's right edge
+        page_right = page.mapTo(win.pages_scroll, page.rect().topRight()).x()
+        bar_left = bar.mapTo(win.pages_scroll, bar.rect().topLeft()).x()
+        assert page_right < bar_left and bar.width() >= 12
+        win.close()
+
+    def test_no_bar_when_the_page_fits(self, app):
+        from cabana.cabana_gui import MainWindow
+        win = MainWindow()
+        win.showNormal()
+        win.resize(1500, 980)
+        win.show_page(win.pages.indexOf(win.tma_tab))
+        settle(app, 200)
+        bar = win.pages_scroll.verticalScrollBar()
+        assert bar.maximum() == 0 and not bar.isVisible()
+        assert win.pages.width() == win.pages_scroll.viewport().width()     # no reserved column either
         win.close()
 
     def test_short_page_has_no_scroll_range_in_a_tall_window(self, app):
@@ -538,17 +573,31 @@ class TestLongStatusLine:
 
 
 class TestQuitConfirmation:
-    def test_cancel_keeps_the_window_open(self, fitted_gui, app, monkeypatch):
-        win, _ = fitted_gui
+    def test_asks_only_when_work_is_at_risk(self, fitted_gui, app, monkeypatch):
+        win, pre = fitted_gui
         win.confirm_on_close = True
         asked = []
         monkeypatch.setattr(win, "_ask_tma", lambda *a: asked.append(a) or False)
+        core = pre.cores[0]
+        pre.move_core(core, core.cx + 10, core.cy)
+        win._tma_edited(True)                                            # unsaved edit: at risk
         win.close()
         settle(app)
         assert win.isVisible() and len(asked) == 1
         title, text, info, yes, no = asked[0]
-        assert text == "Quit Cabana?" and (yes, no) == ("Confirm", "Cancel")
+        assert text == "Quit Cabana?" and (yes, no) == ("Confirm", "Cancel") and "hand edits" in info
         monkeypatch.setattr(win, "_ask_tma", lambda *a: True)
+        win.close()
+        settle(app)
+        assert not win.isVisible()
+
+    def test_closes_silently_when_nothing_is_at_risk(self, app, monkeypatch):
+        from cabana.cabana_gui import MainWindow
+        win = MainWindow()
+        win.confirm_on_close = True
+        win.show()
+        settle(app)
+        monkeypatch.setattr(win, "_ask_tma", lambda *a: pytest.fail("no question expected"))
         win.close()
         settle(app)
         assert not win.isVisible()
@@ -569,3 +618,52 @@ class TestQuitConfirmation:
         info = []
         monkeypatch.setattr(win, "_ask_tma", lambda *a: info.append(a[2]) or True)
         assert win._confirm_quit() and "have not been exported or saved" in info[0]
+
+
+def test_short_pages_do_not_inherit_the_tallest_pages_height(app):
+    """QStackedLayout's minimum is the tallest page; the Start page must not
+    scroll because the TMA page would."""
+    from cabana.cabana_gui import MainWindow
+    win = MainWindow()
+    win.showNormal()
+    win.resize(1470, 780)                                   # shorter than the TMA page needs
+    win.show_page(win.pages.indexOf(win.tma_tab))
+    settle(app, 150)
+    assert win.pages_scroll.verticalScrollBar().maximum() > 0
+    win.show_page(0)                                        # Start page
+    settle(app, 150)
+    bar = win.pages_scroll.verticalScrollBar()
+    assert bar.maximum() == 0 and not bar.isVisible()
+    assert win.pages.height() <= win.pages_scroll.viewport().height()
+    win.close()
+
+
+class TestCoreDiameterAuto:
+    def test_auto_tick_box(self, fitted_gui, tmp_path, monkeypatch):
+        win, _ = fitted_gui
+        spin, cb = win.tma_core_diameter_spin, win.tma_core_auto_cb
+        assert cb.isChecked() and not spin.isEnabled()
+        assert win._tma_options()["core_diameter_um"] is None
+        # a measured fit fills the box
+        pre = TMAPreprocessor(win.tma_slide, array_number=1, slide_name="TMA1", pixel_size_um=PX_UM,
+                              fit_pixel_size_um=PX_UM, orientation="90")
+        pre.fit()
+        pre.map_to_array()
+        win.handle_tma_fit_complete(pre)
+        assert spin.value() == round(pre.core_diameter_um) and not spin.isEnabled()
+        assert str(pre.core_diameter_count) in spin.toolTip()
+        assert "(auto)" in win.tma_status_label.text()
+        # unticking starts the typed value from the measured one
+        cb.setChecked(False)
+        assert spin.isEnabled() and spin.value() == round(pre.core_diameter_um)
+        spin.setValue(900)
+        assert win._tma_options()["core_diameter_um"] == 900.0
+        cb.setChecked(True)
+        assert not spin.isEnabled() and spin.value() == round(pre.core_diameter_um)
+        # another slide is measured afresh
+        monkeypatch.setattr(win, "_start_tma_preview", lambda: None)
+        win.open_tma_slide(str(tmp_path / "other.png"))
+        assert spin.value() == 0 and spin.text() == "—"
+        cb.setChecked(False)
+        assert spin.value() == 1000 and spin.text() != "—"
+        pre.close()

@@ -397,6 +397,34 @@ def generate_group_box_style():
     """
 
 
+def generate_scroll_area_style():
+    """Stylesheet for the scroll area around the analysis pages. Styling the
+    scroll bars makes Qt draw them as ordinary bars in their own column
+    (never as macOS transient overlays on top of the content), slim, without
+    arrows, and with a small gap between the page and the bar."""
+    handle = color_to_stylesheet(COLORS['text_dim'])
+    hover = color_to_stylesheet(COLORS['highlight'])
+    return f"""
+        QScrollArea {{ background: transparent; border: none; }}
+        QScrollBar:vertical {{
+            background: transparent; width: 12px; margin: 0 0 0 4px; border: none;
+        }}
+        QScrollBar::handle:vertical {{
+            background: {handle}; min-height: 24px; border-radius: 4px;
+        }}
+        QScrollBar::handle:vertical:hover {{ background: {hover}; }}
+        QScrollBar:horizontal {{
+            background: transparent; height: 12px; margin: 4px 0 0 0; border: none;
+        }}
+        QScrollBar::handle:horizontal {{
+            background: {handle}; min-width: 24px; border-radius: 4px;
+        }}
+        QScrollBar::handle:horizontal:hover {{ background: {hover}; }}
+        QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
+        QScrollBar::add-page, QScrollBar::sub-page {{ background: none; }}
+    """
+
+
 def generate_page_stack_style():
     """Stylesheet for the QStackedWidget holding the analysis pages; matches
     the former tab pane (thin border, surface background)."""

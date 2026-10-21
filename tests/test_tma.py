@@ -1293,3 +1293,144 @@ class TestTemplateSizedMap:
             assert pre.matched_orientation == "0"
             assert all((c.map_row, c.map_col) == (c.row, c.col) for c in pre.cores)
             pre.close()
+
+
+class TestOutOfStepBlock:
+    """Two printed blocks whose gap is not a whole number of pitches: the
+    right block sits 0.6 pitch out of step with the slide lattice, which
+    rounds its cores one column too far."""
+
+    SHIFT = 0.6
+
+    def _setup(self, tmp_path, n_cols, sep, drop):
+        """Map of 4 x ``n_cols`` patients (column ``sep`` empty when not None);
+        the slide shifts columns right of the block boundary by SHIFT pitches
+        and lacks the cores in ``drop``."""
+        from cabana.tma_maps import load_map_file
+        boundary = sep if sep is not None else n_cols // 2
+        lines = ["map,X", ",".join([""] + [str(c + 1) for c in range(n_cols)])]
+        for r in range(4):
+            cells = ["" if c == sep else f"P{r}{c:02d}" for c in range(n_cols)]
+            lines.append(",".join(["ABCD"[r]] + cells))
+        path = tmp_path / "blocks.csv"
+        path.write_text("\n".join(lines) + "\n")
+        m = load_map_file(str(path)).maps[0]
+        img = np.full((6 * PITCH_PX, (n_cols + 3) * PITCH_PX, 3), 245, dtype=np.uint8)
+        rng = np.random.default_rng(1)
+        truth = {}
+        for r in range(4):
+            for c in range(n_cols):
+                x = (c + 1 + (self.SHIFT if c >= boundary else 0)) * PITCH_PX
+                y = (r + 1) * PITCH_PX
+                truth[(r, c)] = (x, y)
+                if c == sep or (r, c) in drop:
+                    continue
+                cv2.circle(img, (int(x + rng.integers(-4, 5)), int(y + rng.integers(-4, 5))),
+                           int(RADIUS_PX), (190, 150, 230), -1)
+        slide = str(tmp_path / "X.png")
+        cv2.imwrite(slide, img)
+        return m, slide, truth
+
+    def _pre(self, slide, m):
+        pre = TMAPreprocessor(slide, tma_map=m, slide_name="X", pixel_size_um=PX_UM, core_diameter_um=CORE_UM,
+                              fit_pixel_size_um=PX_UM, orientation="auto")
+        pre.fit()
+        pre.map_to_array()
+        return pre
+
+    @pytest.mark.parametrize("n_cols, sep", [(10, 5), (9, None)], ids=["empty-separator", "full-map"])
+    def test_map_labels_every_core_of_the_shifted_block(self, tmp_path, n_cols, sep):
+        drop = {(1, 6), (2, 1)}             # one lost core at the shifted block's edge, one in the other
+        m, slide, truth = self._setup(tmp_path, n_cols, sep, drop)
+        pre = self._pre(slide, m)
+        assert pre.matched_orientation == "0"
+        assert len(pre.cores) == 4 * n_cols - (sep is not None) * 4 - len(drop)
+        for c in pre.cores:
+            (mr, mc), (x, y) = min(truth.items(), key=lambda t: np.hypot(t[1][0] - c.cx, t[1][1] - c.cy))
+            assert (c.map_row, c.map_col) == (mr, mc)
+            assert not c.outside_map and not c.recovered and c.reason == ""
+            assert c.grid_offset < 0.1
+        missing = {(info.r, info.c): centre for info, _, _, centre in pre.missing_positions()}
+        assert set(missing) == drop
+        for cell, (x, y) in missing.items():
+            assert np.hypot(x - truth[cell][0], y - truth[cell][1]) < 0.1 * PITCH_PX
+        pre.close()
+
+    @pytest.mark.parametrize("n_cols, sep", [(10, 5), (9, None)], ids=["empty-separator", "full-map"])
+    def test_without_map_placeholders_keep_clear_of_cores(self, tmp_path, n_cols, sep):
+        m, slide, _ = self._setup(tmp_path, n_cols, sep, {(1, 6), (2, 1)})
+        pre = self._pre(slide, None)
+        assert all(c.grid_offset < 0.1 and c.reason == "" and not c.recovered for c in pre.cores)
+        for _, _, _, (x, y) in pre.empty_positions():
+            assert min(np.hypot(c.cx - x, c.cy - y) for c in pre.cores) > 0.9 * PITCH_PX
+        pre.close()
+
+    def test_moving_a_core_keeps_its_block_cell(self, tmp_path):
+        m, slide, _ = self._setup(tmp_path, 10, 5, set())
+        pre = self._pre(slide, m)
+        core = next(c for c in pre.cores if (c.map_row, c.map_col) == (2, 7))
+        pre.move_core(core, core.cx + 0.2 * PITCH_PX, core.cy - 0.1 * PITCH_PX)
+        assert (core.map_row, core.map_col) == (2, 7) and core.reason == ""
+        pre.close()
+
+    def test_blocks_in_step_get_no_offset(self, tmp_path):
+        self.SHIFT = 1.0                    # gap of a whole number of pitches
+        m, slide, _ = self._setup(tmp_path, 10, 5, set())
+        pre = self._pre(slide, m)
+        assert pre._cell_offsets == {}
+        pre.close()
+
+
+class TestAutoDiameter:
+    """core_diameter_um=None measures the core diameter from the slide."""
+
+    def _slide(self, tmp_path, diameter_um, pitch_px):
+        occ = np.ones((4, 6), bool)
+        occ[1, 2] = occ[3, 4] = False
+        img, _ = synthetic_slide(occ, pitch=pitch_px, radius=diameter_um / PX_UM / 2, jitter=4)
+        path = str(tmp_path / "X.png")
+        cv2.imwrite(path, img)
+        return path, int(occ.sum())
+
+    @pytest.mark.parametrize("diameter_um, pitch_px", [(600.0, 300), (1000.0, 400), (2000.0, 700)])
+    def test_measures_small_and_large_cores(self, tmp_path, diameter_um, pitch_px):
+        path, n = self._slide(tmp_path, diameter_um, pitch_px)
+        pre = TMAPreprocessor(path, pixel_size_um=PX_UM, fit_pixel_size_um=PX_UM)
+        pre.fit()
+        pre.map_to_array()
+        assert pre.core_diameter_auto and pre.core_diameter_count == n
+        assert abs(pre.core_diameter_um - diameter_um) < 0.05 * diameter_um
+        assert len(pre.cores) == n and pre.grid_shape == (4, 6)
+        assert not pre.exclusion_summary()
+        pre.close()
+
+    def test_typed_value_is_kept(self, tmp_path):
+        path, _ = self._slide(tmp_path, 600.0, 300)
+        pre = TMAPreprocessor(path, pixel_size_um=PX_UM, fit_pixel_size_um=PX_UM, core_diameter_um=1000.0)
+        pre.fit()
+        pre.map_to_array()
+        assert not pre.core_diameter_auto and pre.core_diameter_um == 1000.0
+        assert pre.exclusion_summary().get("diameter")          # 600 µm cores fail a 1000 µm Core Ø
+        pre.close()
+
+    def test_manifest_records_the_setting(self, tmp_path):
+        path, _ = self._slide(tmp_path, 600.0, 300)
+        for value, source in ((None, "auto"), (650.0, "manual")):
+            pre = TMAPreprocessor(path, pixel_size_um=PX_UM, fit_pixel_size_um=PX_UM, core_diameter_um=value)
+            pre.fit()
+            pre.map_to_array()
+            out = tmp_path / f"{source}.csv"
+            pre.write_manifest(str(out))
+            rows = list(csv.DictReader(open(out, encoding="utf-8")))
+            assert {r["core_diameter_source"] for r in rows} == {source}
+            assert {float(r["core_diameter_um"]) for r in rows} == {round(pre.core_diameter_um, 1)}
+            pre.close()
+
+    def test_cli_value(self):
+        import argparse
+        from cabana.tma import _diameter_arg
+        assert _diameter_arg("auto") is None and _diameter_arg(" AUTO ") is None
+        assert _diameter_arg("700") == 700.0
+        for bad in ("0", "-5", "big"):
+            with pytest.raises(argparse.ArgumentTypeError):
+                _diameter_arg(bad)

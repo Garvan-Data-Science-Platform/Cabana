@@ -14,14 +14,14 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QSpinBox,
                              QPushButton, QFileDialog, QSizePolicy, QColorDialog,
                              QMessageBox, QGroupBox, QComboBox, QWidget,
                              QStatusBar, QLineEdit, QDoubleSpinBox, QStackedWidget, QGridLayout,
-                             QAction, QActionGroup, QDialog, QScrollArea, QFrame)
+                             QAction, QActionGroup, QDialog, QScrollArea, QFrame, QLayout)
 from PyQt5.QtGui import QIcon, QPalette, QFont, QKeySequence
 from PyQt5.QtCore import QSettings, QUrl
 from PyQt5.QtGui import QDesktopServices
 
 from .ui import *
 from .themes import THEMES, DEFAULT_THEME
-from .tma import ORIENTATIONS, EDITS_FILE
+from .tma import AUTO_START_DIAMETER_UM, ORIENTATIONS, EDITS_FILE
 from .tma_editor import TMACoreEditor
 from .tma_maps import MAP_FILE_FILTER, available_arrays, load_map_file, match_map_to_slide, write_templates
 from .tma_editor import MapPreviewDialog
@@ -39,20 +39,46 @@ class PageStack(QStackedWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._last_width = -1
+        # QStackedLayout would otherwise set this widget's minimum height to
+        # the tallest page of all, so every page would scroll like the tallest
+        self.layout().setSizeConstraint(QLayout.SetNoConstraint)
         self.currentChanged.connect(lambda _i: self.updateGeometry())
 
     def sizeHint(self):
         page = self.currentWidget()
         return page.sizeHint() if page is not None else super().sizeHint()
 
+    # QStackedLayout answers height-for-width with the maximum over all pages;
+    # answer for the current page only, or a short page scrolls like the tallest
+    def hasHeightForWidth(self):
+        page = self.currentWidget()
+        return page is not None and page.hasHeightForWidth()
+
+    def _frame(self):
+        """Width and height this widget adds around its page (border and margins)."""
+        inner = self.layout().contentsRect()
+        if inner.isValid():
+            return max(0, self.width() - inner.width()), max(0, self.height() - inner.height())
+        m = self.contentsMargins()
+        return m.left() + m.right(), m.top() + m.bottom()
+
+    def heightForWidth(self, width):
+        page = self.currentWidget()
+        if page is None:
+            return super().heightForWidth(width)
+        fw, fh = self._frame()
+        inner = page.heightForWidth(width - fw) if page.hasHeightForWidth() else page.sizeHint().height()
+        return inner + fh
+
     def minimumSizeHint(self):
         page = self.currentWidget()
         if page is None:
             return super().minimumSizeHint()
+        fw, fh = self._frame()
         height = page.sizeHint().height()
         if page.hasHeightForWidth() and self.width() > 0:
-            height = page.heightForWidth(self.width())
-        return QSize(page.minimumSizeHint().width(), max(height, page.minimumSizeHint().height()))
+            height = page.heightForWidth(self.width() - fw)
+        return QSize(page.minimumSizeHint().width() + fw, max(height, page.minimumSizeHint().height()) + fh)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -131,7 +157,7 @@ class MainWindow(QMainWindow):
         self.pages_scroll.setFrameShape(QFrame.NoFrame)
         self.pages_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.pages_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.pages_scroll.setStyleSheet("QScrollArea { background: transparent; }")
+        self.pages_scroll.setStyleSheet(self.scroll_area_style)
         self.pages_scroll.viewport().setAutoFillBackground(False)
 
         # Create pages
@@ -436,8 +462,8 @@ class MainWindow(QMainWindow):
     confirm_on_close = True     # tests and scripts switch the quit confirmation off
 
     def closeEvent(self, event):
-        """Ask before quitting, so a stray click on the close button or Cmd/Ctrl+Q
-        does not end the session; the question names any work that would be lost."""
+        """Ask before quitting when work would be lost (a running job, unsaved
+        TMA edits); otherwise close at once."""
         if not self.confirm_on_close or self._confirm_quit():
             event.accept()
         else:
@@ -459,12 +485,12 @@ class MainWindow(QMainWindow):
         return items
 
     def _confirm_quit(self):
+        """True when quitting may go ahead: nothing is at risk, or the user confirmed."""
         risks = self._work_at_risk()
-        if risks:
-            info = "If you quit now:\n- " + "\n- ".join(risks)
-        else:
-            info = "Any results not yet saved or exported will be lost."
-        return self._ask_tma("Quit Cabana", "Quit Cabana?", info, "Confirm", "Cancel")
+        if not risks:
+            return True
+        return self._ask_tma("Quit Cabana", "Quit Cabana?", "If you quit now:\n- " + "\n- ".join(risks),
+                             "Confirm", "Cancel")
 
     MAP_LOAD_ITEM = "__load_map__"
 
@@ -632,6 +658,7 @@ class MainWindow(QMainWindow):
 
         # Page stack / combo box / menu bar / page title styles
         self.page_stack_style = generate_page_stack_style()
+        self.scroll_area_style = generate_scroll_area_style()
         self.combo_style = generate_combo_style()
         self.menubar_style = generate_menubar_style()
         self.page_title_style = (
@@ -947,14 +974,28 @@ class MainWindow(QMainWindow):
         geo.addWidget(self.tma_pixel_size_spin, 0, 1)
 
         geo.addWidget(QLabel("Core Ø:"), 0, 2)
+        self.tma_core_auto_cb = QCheckBox("Auto")
+        self.tma_core_auto_cb.setChecked(True)
+        self.tma_core_auto_cb.setStyleSheet(self.checkbox_style)
+        self.tma_core_auto_cb.setToolTip(
+            "Measure the core diameter from the slide at every fit (median of the well-formed cores).\n"
+            "Untick to type it in; the box then starts from the measured value.")
         self.tma_core_diameter_spin = QSpinBox()
-        self.tma_core_diameter_spin.setRange(100, 5000)
+        self.tma_core_diameter_spin.setRange(0, 5000)
+        self.tma_core_diameter_spin.setSpecialValueText("—")     # shown at 0: Auto, not measured yet
         self.tma_core_diameter_spin.setSingleStep(50)
-        self.tma_core_diameter_spin.setValue(1250)
+        self.tma_core_diameter_spin.setValue(0)
         self.tma_core_diameter_spin.setSuffix(" µm")
         self.tma_core_diameter_spin.setStyleSheet(self.spinner_style)
-        self.tma_core_diameter_spin.setToolTip("Nominal core diameter.")
-        geo.addWidget(self.tma_core_diameter_spin, 0, 3)
+        self.tma_core_diameter_spin.setEnabled(False)
+        self._set_tma_core_tooltip()
+        self.tma_core_auto_cb.toggled.connect(self._tma_core_auto_toggled)
+        core_layout = QHBoxLayout()
+        core_layout.setContentsMargins(0, 0, 0, 0)
+        core_layout.setSpacing(6)
+        core_layout.addWidget(self.tma_core_auto_cb)
+        core_layout.addWidget(self.tma_core_diameter_spin, 1)
+        geo.addLayout(core_layout, 0, 3)
 
         geo.addWidget(QLabel("Sensitivity:"), 1, 0)
         self.tma_sat_spin = QSpinBox()
@@ -1405,6 +1446,7 @@ class MainWindow(QMainWindow):
             self.tma_pre.close()
         self.tma_pre = None
         self.tma_reader = None
+        self._show_tma_core_diameter()      # each array may use another needle: measure afresh
         self.tma_export_btn.setEnabled(False)
         self.tma_fit_btn.setEnabled(False)
         self._set_tma_output(self._tma_default_output(file_path))
@@ -1454,11 +1496,49 @@ class MainWindow(QMainWindow):
             # the next slide's default output goes next to this folder
             QSettings('Cabana', 'CabanaGUI').setValue(self.TMA_OUTPUT_PARENT_KEY, os.path.dirname(folder))
 
+    def _measured_core_diameter(self):
+        """Core diameter measured by the last fit, or None (no fit, or typed in)."""
+        pre = getattr(self, "tma_pre", None)       # the tooltip is set before the TMA state exists
+        return pre.core_diameter_um if pre is not None and pre.core_diameter_auto else None
+
+    def _set_tma_core_tooltip(self):
+        spin = self.tma_core_diameter_spin
+        if not self.tma_core_auto_cb.isChecked():
+            spin.setToolTip("Core diameter used by the fit and the Min Ø / Max Ø filters.")
+        elif self._measured_core_diameter():
+            spin.setToolTip(f"Measured: median of {self.tma_pre.core_diameter_count} well-formed cores.")
+        else:
+            spin.setToolTip("Measured from the slide when the cores are fitted.")
+
+    def _show_tma_core_diameter(self):
+        """With Auto, show the measured diameter (— before a fit)."""
+        if self.tma_core_auto_cb.isChecked():
+            measured = self._measured_core_diameter()
+            self.tma_core_diameter_spin.setValue(int(round(measured)) if measured else 0)
+        self._set_tma_core_tooltip()
+
+    def _tma_core_auto_toggled(self, auto):
+        """Auto measures the diameter at the next fit; unticking starts the
+        typed value from the measured one."""
+        spin = self.tma_core_diameter_spin
+        if auto:
+            spin.setMinimum(0)
+            spin.setSpecialValueText("—")
+            self._show_tma_core_diameter()
+        else:
+            start = spin.value() or int(AUTO_START_DIAMETER_UM)
+            spin.setSpecialValueText("")
+            spin.setMinimum(100)
+            spin.setValue(max(100, start))
+            self._set_tma_core_tooltip()
+        busy = self.tma_worker is not None and self.tma_worker.isRunning()
+        spin.setEnabled(not auto and not busy)
+
     def _tma_options(self):
         return dict(
             array_number=self._tma_selected_map(),
             pixel_size_um=float(self.tma_pixel_size_spin.value()) if self.tma_pixel_size_spin.value() > 0 else None,
-            core_diameter_um=float(self.tma_core_diameter_spin.value()),
+            core_diameter_um=None if self.tma_core_auto_cb.isChecked() else float(self.tma_core_diameter_spin.value()),
             margin_um=float(self.tma_margin_spin.value()),
             erode_px=int(self.tma_erode_spin.value()),
             orientation=self.tma_orientation_combo.currentData(),
@@ -1487,10 +1567,11 @@ class MainWindow(QMainWindow):
 
     def _tma_set_busy(self, busy):
         for w in (self.tma_slide_btn, self.tma_output_btn, self.tma_array_combo,
-                  self.tma_orientation_combo, self.tma_pixel_size_spin, self.tma_core_diameter_spin,
+                  self.tma_orientation_combo, self.tma_pixel_size_spin, self.tma_core_auto_cb,
                   self.tma_margin_spin, self.tma_erode_spin, self.tma_sat_spin, self.tma_recover_cb,
                   self.tma_offset_spin, self.tma_dmin_spin, self.tma_dmax_spin, self.tma_stain_spin):
             w.setEnabled(not busy)
+        self.tma_core_diameter_spin.setEnabled(not busy and not self.tma_core_auto_cb.isChecked())
         fitted = not busy and self.tma_pre is not None
         for w in (self.tma_edit_cb, self.tma_links_cb, self.tma_load_edits_btn, self.tma_save_edits_btn):
             w.setEnabled(fitted)
@@ -1551,6 +1632,7 @@ class MainWindow(QMainWindow):
             available = name in reader.channels
             cb.setEnabled(available)
             cb.setChecked(available)
+        self._show_tma_core_diameter()
         self._show_tma_result(preserve_view=False)
         self.status_file_label.setText(f"  {os.path.basename(self.tma_slide)}")
         self.status_dims_label.setText(f"{reader.level_shape(0)[1]} x {reader.level_shape(0)[0]}  ")
@@ -1599,12 +1681,14 @@ class MainWindow(QMainWindow):
         if n_manual:
             msg += f"; {n_manual} hand-edited"
         diams = [c.diameter_um for c in pre.cores if not c.outside_map]
-        if diams:
+        if pre.core_diameter_auto:
+            msg += f"; Core Ø {pre.core_diameter_um:.0f} µm (auto)"
+        elif diams:
             med = float(np.median(diams))
             msg += f"; median Ø {med:.0f} µm"
             if abs(med - pre.core_diameter_um) > 0.1 * pre.core_diameter_um:
                 msg += (f" — WARNING: Core Ø is {pre.core_diameter_um:.0f} µm, so the diameter filter "
-                        f"is misjudging cores; set Core Ø to ~{round(med, -1):.0f} and refit")
+                        f"is misjudging cores; set Core Ø to ~{round(med, -1):.0f} or tick Auto, and refit")
         lost = [p for p, (k, t) in pre.replicate_counts().items() if k == 0]
         if lost:
             msg += f"; no core left for patient{'s' if len(lost) > 1 else ''} {', '.join(lost)}"
@@ -3177,8 +3261,9 @@ class MainWindow(QMainWindow):
                     self.tma_fit_btn, self.tma_export_btn, self.start_slide_btn):
             btn.setStyleSheet(self.primary_btn_style)
 
-        # Page stack
+        # Page stack and its scroll area
         self.pages.setStyleSheet(self.page_stack_style)
+        self.pages_scroll.setStyleSheet(self.scroll_area_style)
 
         # Progress bar
         self.progress_bar.setStyleSheet(self.progressbar_style)
@@ -3197,7 +3282,7 @@ class MainWindow(QMainWindow):
         # Checkboxes
         for cb in (self.white_bg_cb, self.toggle_img_cb, self.dark_line_cb,
                    self.extend_line_cb, self.overlay_fibres_cb, self.overlay_gaps_cb,
-                   self.stats_cb, self.scores_cb, self.tma_recover_cb,
+                   self.stats_cb, self.scores_cb, self.tma_recover_cb, self.tma_core_auto_cb,
                    self.tma_edit_cb, self.tma_links_cb, *self.tma_channel_cbs.values()):
             cb.setStyleSheet(self.checkbox_style)
 

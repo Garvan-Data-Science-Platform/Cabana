@@ -30,6 +30,8 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 from scipy import ndimage as ndi
+from scipy.sparse import csr_matrix
+from scipy.sparse.csgraph import connected_components
 
 from .tma_maps import TMAMap, as_map, core_stem
 from .wsi import open_slide
@@ -68,6 +70,24 @@ OVERLAY_COLOURS = {"ok": (0, 180, 0), "recovered": (200, 0, 200), "outside_map":
 # Circles within this many pitches of a lattice line count as on the grid when
 # the grid extent is set (see infer_grid).
 ON_LATTICE = 0.35
+
+# A slide may hold several printed blocks whose spacing is not a whole number
+# of pitches, so one block sits out of step with the slide's lattice. Cores
+# closer than BLOCK_GAP pitches form one block; a block of at least
+# BLOCK_MIN_CORES cores whose median offset from the lattice exceeds
+# BLOCK_MIN_SHIFT pitches gets its own offset (see TMAPreprocessor._fit_blocks).
+BLOCK_GAP = 1.5
+BLOCK_MIN_CORES = 4
+BLOCK_MIN_SHIFT = 0.25
+
+# Automatic core diameter (core_diameter_um=None): a first fit from this
+# starting value accepts circles from 0.2 to AUTO_MAX_FRAC of it (0.2 to 3 mm),
+# the median diameter of the well-formed circles is taken as the core
+# diameter, and the fit is repeated with it when it differs by more than
+# AUTO_REFIT_TOL.
+AUTO_START_DIAMETER_UM = 1000.0
+AUTO_MAX_FRAC = 3.0
+AUTO_REFIT_TOL = 0.1
 
 # Snapshot of the cores written next to cores.csv; hand edits can be reinstated from it.
 EDITS_FILE = "cores_edits.json"
@@ -164,7 +184,7 @@ def _ellipse(diameter_px):
 
 def fit_cores(img_bgr, pixel_size_um, core_diameter_um=1250.0,
               min_component_frac=0.05, debris_frac=0.05, sat_thresh=15, val_ratio=0.965,
-              open_frac=0.1, return_mask=False):
+              open_frac=0.1, return_mask=False, size_range=(0.2, 1.5)):
     """Fit a circle to each tissue core in a low-resolution slide image.
 
     Returns a list of ``(cx, cy, r, fill)`` in pixels of ``img_bgr``; with
@@ -187,7 +207,8 @@ def fit_cores(img_bgr, pixel_size_um, core_diameter_um=1250.0,
     thin attachments when it is itself too large), neighbouring pieces are
     added nearest first only while the circle stays within that bound, so
     fragments of a broken core are kept and outlying debris is not. Circles
-    larger than 1.5 or smaller than 0.2 nominal cores are rejected.
+    outside ``size_range`` (default 0.2 to 1.5 nominal core diameters) are
+    rejected.
     """
     core_px = core_diameter_um / pixel_size_um
     raw = tissue_mask(img_bgr, sat_thresh=sat_thresh, val_ratio=val_ratio)
@@ -241,7 +262,8 @@ def fit_cores(img_bgr, pixel_size_um, core_diameter_um=1250.0,
 
     # first pass: circle around all kept pieces (original behaviour)
     first = [enclosing([p[1] for p in pieces]) for _, _, pieces, _ in comps]
-    radii = [r for _, _, r in first if 0.2 * core_px / 2 <= r <= 1.5 * core_px / 2]
+    lo, hi = size_range[0] * core_px / 2, size_range[1] * core_px / 2
+    radii = [r for _, _, r in first if lo <= r <= hi]
     r_ref = float(np.median(radii)) if radii else core_px / 2
     bound = 1.1 * r_ref
 
@@ -276,11 +298,11 @@ def fit_cores(img_bgr, pixel_size_um, core_diameter_um=1250.0,
                     ncx, ncy, nr = enclosing(chosen + [q])
                     if nr <= bound:
                         chosen.append(q)
-                        rest.remove(q)
+                        rest = [x for x in rest if x is not q]   # list.remove compares arrays by value
                         cx, cy, r = ncx, ncy, nr
                         changed = True
                         break
-        if r > 1.5 * core_px / 2 or r < 0.2 * core_px / 2:
+        if r > hi or r < lo:
             continue   # merged neighbours or debris
         yy, xx = np.ogrid[:footprint.shape[0], :footprint.shape[1]]
         inside = (xx - cx) ** 2 + (yy - cy) ** 2 <= r ** 2
@@ -340,6 +362,41 @@ def fit_lattice(circles, rows, cols):
     return coef_x, coef_y, pitch
 
 
+def fit_block_lattice(pts, cells, groups):
+    """Lattice through several blocks of centres sharing pitch and rotation,
+    each block with its own origin: ``(x, y) = a_b + b*col + c*row``.
+    ``pts`` are centres, ``cells`` their ``(row, col)``, ``groups`` index
+    arrays, one per block. Outliers (residual above three times the median,
+    at least 0.05 pitch) are dropped and the fit repeated, as in
+    :func:`fit_lattice`. Returns ``((coef_x, coef_y, pitch), shifts)``: the
+    lattice of the largest block and each block's ``(row, col)`` shift from
+    it in pitches; None when the cells do not fix the pitch."""
+    idx = np.concatenate(groups)
+    block = np.concatenate([np.full(len(g), k) for k, g in enumerate(groups)])
+    onehot = (block[:, None] == np.arange(len(groups))[None, :]).astype(float)
+    A = np.hstack([onehot, cells[idx, 1:2], cells[idx, 0:1]])
+    if np.linalg.matrix_rank(A) < A.shape[1]:
+        return None
+    keep = np.ones(len(idx), bool)
+    for _ in range(4):
+        cx_, *_ = np.linalg.lstsq(A[keep], pts[idx[keep], 0], rcond=None)
+        cy_, *_ = np.linalg.lstsq(A[keep], pts[idx[keep], 1], rcond=None)
+        res = np.hypot(A @ cx_ - pts[idx, 0], A @ cy_ - pts[idx, 1])
+        pitch = 0.5 * (np.hypot(cx_[-2], cy_[-2]) + np.hypot(cx_[-1], cy_[-1]))
+        new_keep = res < max(3.0 * float(np.median(res[keep])), 0.05 * pitch)
+        if np.linalg.matrix_rank(A[new_keep]) < A.shape[1] or np.array_equal(new_keep, keep):
+            break
+        keep = new_keep
+    ref = int(np.argmax([len(g) for g in groups]))
+    step = np.array([[cx_[-2], cx_[-1]], [cy_[-2], cy_[-1]]])       # columns: d/dcol, d/drow
+    shifts = []
+    for k in range(len(groups)):
+        dcol, drow = np.linalg.solve(step, [cx_[k] - cx_[ref], cy_[k] - cy_[ref]])
+        shifts.append((float(drow), float(dcol)))
+    lattice = (np.array([cx_[ref], cx_[-2], cx_[-1]]), np.array([cy_[ref], cy_[-2], cy_[-1]]), float(pitch))
+    return lattice, shifts
+
+
 def stain_fraction(sat, cx, cy, r, sat_thresh):
     """Fraction of the disc (fit-level pixels) whose saturation exceeds ``sat_thresh``."""
     h, w = sat.shape
@@ -361,7 +418,9 @@ def recover_faint_cores(img_bgr, circles, rows, cols, n_rows, n_cols, pixel_size
     expected disc is tested with a more permissive tissue threshold (half the
     saturation threshold, twice the brightness margin); when at least
     ``min_fill`` of the disc is tissue a core is added at the tissue centroid
-    with the median radius. Returns ``(circles, rows, cols, recovered_flags)``.
+    with the median radius. Cells whose disc would overlap a fitted core
+    are skipped (a block out of step with the lattice puts empty cells next
+    to cores). Returns ``(circles, rows, cols, recovered_flags)``.
     """
     n = len(circles)
     if n < 3 or n_rows * n_cols <= n:
@@ -376,6 +435,7 @@ def recover_faint_cores(img_bgr, circles, rows, cols, n_rows, n_cols, pixel_size
     permissive = tissue_mask(img_bgr, sat_thresh=sat_thresh, val_ratio=val_ratio, permissive=True)
     h, w = permissive.shape
     occupied = {(int(r), int(c)) for r, c in zip(rows, cols)}
+    found = np.array([c[:3] for c in circles], float)
     out_c, out_r, out_k, flags = list(circles), list(rows), list(cols), [False] * n
     for r in range(n_rows):
         for c in range(n_cols):
@@ -385,6 +445,8 @@ def recover_faint_cores(img_bgr, circles, rows, cols, n_rows, n_cols, pixel_size
             cy = coef_y[0] + coef_y[1] * c + coef_y[2] * r
             if not (r_med <= cx < w - r_med and r_med <= cy < h - r_med):
                 continue
+            if (np.hypot(found[:, 0] - cx, found[:, 1] - cy) < r_med + found[:, 2]).any():
+                continue    # the disc reaches into a fitted core and would pick up its tissue
             y0, y1 = int(cy - r_med), int(cy + r_med) + 1
             x0, x1 = int(cx - r_med), int(cx + r_med) + 1
             win = permissive[y0:y1, x0:x1]
@@ -439,6 +501,15 @@ def well_formed(circles, min_fill=0.3, radius_tol=0.2):
     r_med = float(np.median(r))
     good = np.nonzero((fill >= min_fill) & (np.abs(r - r_med) <= radius_tol * r_med))[0]
     return good if len(good) >= 3 else np.arange(len(circles))
+
+
+def measure_core_diameter(circles, pixel_size_um):
+    """Median diameter in µm of the well-formed circles (see
+    :func:`well_formed`) and their number; ``(None, 0)`` without circles."""
+    if not circles:
+        return None, 0
+    good = well_formed(circles)
+    return float(2 * np.median([circles[i][2] for i in good]) * pixel_size_um), int(len(good))
 
 
 def estimate_rotation(points, core_diameter_px):
@@ -681,8 +752,11 @@ class TMAPreprocessor:
         Prefix for output filenames. Defaults to the slide's own name.
     pixel_size_um : float or None
         Override for slides without calibration metadata.
-    core_diameter_um : float
-        Nominal core diameter.
+    core_diameter_um : float or None
+        Core diameter in µm. ``None`` (the default) measures it from the slide
+        on every :meth:`fit` (see :data:`AUTO_START_DIAMETER_UM`); afterwards
+        ``core_diameter_um`` holds the value used and ``core_diameter_auto``
+        tells whether it was measured.
     margin_um : float
         Extra border around the fitted circle in the crop.
     erode_px : int
@@ -723,7 +797,7 @@ class TMAPreprocessor:
     """
 
     def __init__(self, slide_path, array_number=None, slide_name=None, pixel_size_um=None,
-                 core_diameter_um=1250.0, margin_um=30.0, erode_px=8, fit_pixel_size_um=5.0,
+                 core_diameter_um=None, margin_um=30.0, erode_px=8, fit_pixel_size_um=5.0,
                  orientation="auto", reader=None, sat_thresh=15, val_ratio=0.965,
                  recover_faint=True, min_fill=0.03, max_grid_offset=0.35,
                  min_diameter_frac=0.8, max_diameter_frac=1.2,
@@ -736,7 +810,9 @@ class TMAPreprocessor:
         self.slide_path = slide_path
         self.tma_map = as_map(tma_map if tma_map is not None else array_number)
         self.slide_name = slide_name or self.reader.slide_name
-        self.core_diameter_um = core_diameter_um
+        self.core_diameter_auto = core_diameter_um is None
+        self.core_diameter_um = None if core_diameter_um is None else float(core_diameter_um)
+        self.core_diameter_count = 0        # well-formed circles behind a measured diameter
         self.margin_um = margin_um
         self.erode_px = erode_px
         self.fit_pixel_size_um = fit_pixel_size_um
@@ -766,6 +842,7 @@ class TMAPreprocessor:
         self._pitch_px = None
         self._footprint = None
         self._lattice = None            # (coef_x, coef_y, pitch) at fit level, see fit_lattice
+        self._cell_offsets = {}         # scan cell -> lattice offset at fit level, see _fit_blocks
         self._map_transform = None      # (orientation, row offset, col offset) of the map on the scan
         self._idx_t = None              # map (row, col) of every transformed-map cell, cached per match
         self._scan_of_map = {}          # map (row, col) -> scan (row, col), cached per match
@@ -777,8 +854,19 @@ class TMAPreprocessor:
         ds = r.level_downsample(lv)
         img = r.read_level(lv, channel=0)
         px_um = r.pixel_size_um * ds
-        circles, tissue = fit_cores(img, px_um, self.core_diameter_um,
-                                    sat_thresh=self.sat_thresh, val_ratio=self.val_ratio, return_mask=True)
+        if self.core_diameter_auto:
+            start = AUTO_START_DIAMETER_UM
+            circles, tissue = fit_cores(img, px_um, start, sat_thresh=self.sat_thresh, val_ratio=self.val_ratio,
+                                        return_mask=True, size_range=(0.2, AUTO_MAX_FRAC))
+            measured, _ = measure_core_diameter(circles, px_um)
+            if measured is not None and abs(measured - start) > AUTO_REFIT_TOL * start:
+                circles, tissue = fit_cores(img, px_um, measured, sat_thresh=self.sat_thresh,
+                                            val_ratio=self.val_ratio, return_mask=True)
+            measured, self.core_diameter_count = measure_core_diameter(circles, px_um)
+            self.core_diameter_um = measured if measured is not None else start
+        else:
+            circles, tissue = fit_cores(img, px_um, self.core_diameter_um,
+                                        sat_thresh=self.sat_thresh, val_ratio=self.val_ratio, return_mask=True)
         rows, cols, n_rows, n_cols = infer_grid(circles, self.core_diameter_um / px_um)
         # typical core radius on this slide, from cells holding a single circle
         cell_counts = {}
@@ -847,6 +935,7 @@ class TMAPreprocessor:
         self.cores = cores
         self.grid_shape = tuple(int(v) for v in grid_shape)
         self._lattice, self._pitch_px = None, None
+        self._cell_offsets = {}
         if len(cores) >= 3:
             circles = [(c.cx / ds, c.cy / ds, c.radius / ds, c.fill) for c in cores]
             coef_x, coef_y, pitch = fit_lattice(circles, rows, cols)
@@ -873,10 +962,147 @@ class TMAPreprocessor:
             c.grid_offset = float(np.hypot(c.cx / ds - px, c.cy / ds - py) / max(self._lattice[2], 1e-6))
 
     def _lattice_point(self, row, col):
-        """Lattice position of grid cell ``(row, col)`` at fit level."""
+        """Lattice position of grid cell ``(row, col)`` at fit level, including
+        the offset of the block the cell belongs to."""
         coef_x, coef_y, _ = self._lattice
-        return (coef_x[0] + coef_x[1] * col + coef_x[2] * row,
-                coef_y[0] + coef_y[1] * col + coef_y[2] * row)
+        ox, oy = self._offset_at(row, col)
+        return (coef_x[0] + coef_x[1] * col + coef_x[2] * row + ox,
+                coef_y[0] + coef_y[1] * col + coef_y[2] * row + oy)
+
+    def _lattice_frac(self, x, y, offset=(0.0, 0.0), lattice=None):
+        """Fractional ``(row, col)`` of fit-level point ``(x, y)`` on the lattice
+        (``self._lattice`` unless given) shifted by ``offset``; None when the
+        lattice is degenerate."""
+        coef_x, coef_y, _ = self._lattice if lattice is None else lattice
+        A = np.array([[coef_x[1], coef_x[2]], [coef_y[1], coef_y[2]]], float)
+        b = np.array([x - coef_x[0] - offset[0], y - coef_y[0] - offset[1]], float)
+        try:
+            col, row = np.linalg.solve(A, b)
+        except np.linalg.LinAlgError:
+            return None
+        return float(row), float(col)
+
+    def _offset_at(self, row, col):
+        """Lattice offset of the block holding cell ``(row, col)``: that of the
+        nearest cell occupied when the blocks were fitted (ties prefer no
+        offset); zero when every block is in step."""
+        if not self._cell_offsets:
+            return 0.0, 0.0
+        off = self._cell_offsets.get((row, col))
+        if off is None:
+            cell = min(self._cell_offsets, key=lambda k: ((k[0] - row) ** 2 + (k[1] - col) ** 2,
+                                                          np.hypot(*self._cell_offsets[k])))
+            off = self._cell_offsets[cell]
+        return off
+
+    def _fit_blocks(self):
+        """Find printed blocks that sit out of step with the lattice.
+
+        Cores closer than :data:`BLOCK_GAP` pitches are linked into blocks.
+        The blocks of at least :data:`BLOCK_MIN_CORES` cores share pitch and
+        rotation but each gets its own position (see :func:`fit_block_lattice`;
+        one lattice through all cores would absorb a shift into a wrong pitch).
+        A block more than :data:`BLOCK_MIN_SHIFT` pitches in rows or columns
+        from the largest block is out of step (its gap to the next block is
+        not a whole number of pitches); when there is one, the lattice of the
+        largest block becomes the slide lattice. Returns ``[(members, (row
+        shift, col shift)), ...]`` for the out-of-step blocks; a slide whose
+        blocks all share one lattice is left unchanged."""
+        if self._lattice is None or len(self.cores) < 2 * BLOCK_MIN_CORES:
+            return []
+        ds = self.reader.level_downsample(self._fit_level)
+        pts = np.array([[c.cx / ds, c.cy / ds] for c in self.cores], float)
+        cells = np.array([[c.row, c.col] for c in self.cores], float)
+        d = np.sqrt(((pts[:, None, :] - pts[None, :, :]) ** 2).sum(-1))
+        n, labels = connected_components(csr_matrix(d < BLOCK_GAP * self._lattice[2]), directed=False)
+        groups = [g for g in (np.flatnonzero(labels == b) for b in range(n)) if len(g) >= BLOCK_MIN_CORES]
+        if len(groups) < 2:
+            return []
+        lattice = self._lattice
+        for _ in range(2):
+            # index each block on its own phase: a block about half a pitch off
+            # the lattice would otherwise round its cores to two different phases
+            for g in groups:
+                frac = [self._lattice_frac(x, y, lattice=lattice) for x, y in pts[g]]
+                if any(f is None for f in frac):
+                    return []
+                frac = np.array(frac)
+                ang = 2 * np.pi * frac
+                phase = np.arctan2(np.sin(ang).mean(axis=0), np.cos(ang).mean(axis=0)) / (2 * np.pi)
+                cells[g] = np.round(frac - phase)
+            fit = fit_block_lattice(pts, cells, groups)
+            if fit is None:
+                return []
+            lattice, shifts = fit
+        blocks = []
+        for g, sh in zip(groups, shifts):
+            if max(abs(sh[0]), abs(sh[1])) > BLOCK_MIN_SHIFT:
+                members = [self.cores[i] for i in g]
+                for c, (r, k) in zip(members, cells[g]):
+                    c.row, c.col = int(r), int(k)
+                blocks.append((members, sh))
+        if blocks:
+            self._lattice, self._pitch_px = lattice, lattice[2] * ds
+        return blocks
+
+    def _set_block_offsets(self, blocks):
+        """Give each out-of-step block the median offset of its cores from
+        their lattice cells and refresh every core's grid offset."""
+        self._cell_offsets = {}
+        if blocks:
+            ds = self.reader.level_downsample(self._fit_level)
+            self._cell_offsets = {(c.row, c.col): (0.0, 0.0) for c in self.cores}
+            for members, _ in blocks:
+                base = [self._lattice_point(c.row, c.col) for c in members]   # no offsets yet
+                ox = float(np.median([c.cx / ds - p[0] for c, p in zip(members, base)]))
+                oy = float(np.median([c.cy / ds - p[1] for c, p in zip(members, base)]))
+                for c in members:
+                    self._cell_offsets[(c.row, c.col)] = (ox, oy)
+        for c in self.cores:
+            self._refresh_geometry(c)
+
+    def _observed(self):
+        """Boolean occupancy of the scan grid used by the map match."""
+        observed = np.zeros(self.grid_shape, dtype=bool)
+        for c in self.cores:
+            if c.grid_offset <= MAP_MAX_GRID_OFFSET and self._in_grid(c.row, c.col):
+                observed[c.row, c.col] = True
+        return observed
+
+    def _shift_blocks(self, blocks):
+        """Move each out-of-step block by one cell towards the side its cores
+        lean to, in rows and/or columns, when that fits the map better.
+
+        Rounding a block that sits about half a pitch off the lattice can put
+        all its cores one cell too far; the map match alone cannot fix that
+        because it moves the whole map. A move must keep the block inside
+        the grid and off cells held by other cores. Returns True if any
+        block moved."""
+        moved = False
+        for members, (mr, mc) in blocks:
+            steps_r = [0] + ([int(np.sign(mr))] if abs(mr) > BLOCK_MIN_SHIFT else [])
+            steps_c = [0] + ([int(np.sign(mc))] if abs(mc) > BLOCK_MIN_SHIFT else [])
+            others = {(c.row, c.col) for c in self.cores if not any(c is m for m in members)}
+            best, best_score = (0, 0), match_orientation(self._observed(), self.tma_map, self.orientation)[2]
+            for dr in steps_r:
+                for dc in steps_c:
+                    if (dr, dc) == (0, 0):
+                        continue
+                    cells = [(c.row + dr, c.col + dc) for c in members if self._in_grid(c.row, c.col)]
+                    if any(not self._in_grid(*k) or k in others for k in cells):
+                        continue
+                    for c in members:
+                        c.row, c.col = c.row + dr, c.col + dc
+                    score = match_orientation(self._observed(), self.tma_map, self.orientation)[2]
+                    for c in members:
+                        c.row, c.col = c.row - dr, c.col - dc
+                    if score > best_score + 1e-9:
+                        best, best_score = (dr, dc), score
+            if best != (0, 0):
+                for c in members:
+                    c.row, c.col = c.row + best[0], c.col + best[1]
+                moved = True
+        return moved
 
     def predict_centre(self, row, col):
         """Level-0 centre of grid cell ``(row, col)`` from the fitted lattice,
@@ -887,21 +1113,24 @@ class TMAPreprocessor:
         px, py = self._lattice_point(row, col)
         return float(px * ds), float(py * ds)
 
-    def cell_of(self, cx, cy):
+    def cell_of(self, cx, cy, ignore=None):
         """Grid cell ``(row, col)`` nearest to the level-0 point, from the
-        lattice (``None`` without one). Cells outside the fitted grid are
+        lattice (``None`` without one), on the offset of the block of the
+        nearest core other than ``ignore``. Cells outside the fitted grid are
         allowed, e.g. a core added in a column the fit did not see."""
         if self._lattice is None:
             return None
         ds = self.reader.level_downsample(self._fit_level)
-        coef_x, coef_y, _ = self._lattice
-        A = np.array([[coef_x[1], coef_x[2]], [coef_y[1], coef_y[2]]], float)
-        b = np.array([cx / ds - coef_x[0], cy / ds - coef_y[0]], float)
-        try:
-            col, row = np.linalg.solve(A, b)
-        except np.linalg.LinAlgError:
+        offset = (0.0, 0.0)
+        others = [c for c in self.cores if c is not ignore]
+        if self._cell_offsets and others:
+            # the point takes the offset of the block of the nearest other core
+            near = min(others, key=lambda c: (c.cx - cx) ** 2 + (c.cy - cy) ** 2)
+            offset = self._offset_at(near.row, near.col)
+        frac = self._lattice_frac(cx / ds, cy / ds, offset)
+        if frac is None:
             return None
-        return int(round(row)), int(round(col))
+        return int(round(frac[0])), int(round(frac[1]))
 
     # -- stage 2: map -------------------------------------------------------
     def update_stain(self):
@@ -956,18 +1185,22 @@ class TMAPreprocessor:
         Only objects further than :data:`MAP_MAX_GRID_OFFSET` pitches from
         the lattice are left out of the occupancy used for the orientation
         match; the QC filters run afterwards and cannot change the IDs.
+        Blocks out of step with the lattice get their own offset first, and
+        with a map they may move by one cell (see :meth:`_shift_blocks`).
         """
         for c in self.cores:
             c.map_row = c.map_col = -1
             c.outside_map = False
+        blocks = self._fit_blocks()
+        self._set_block_offsets(blocks)
+        if blocks and self.tma_map is not None and self._shift_blocks(blocks):
+            self._set_block_offsets(blocks)
+        self._renumber()
         if self.tma_map is None or not self.cores:
             self._reset_match()
             self.apply_filters()
             return None
-        observed = np.zeros(self.grid_shape, dtype=bool)
-        for c in self.cores:
-            if c.grid_offset <= MAP_MAX_GRID_OFFSET and self._in_grid(c.row, c.col):
-                observed[c.row, c.col] = True
+        observed = self._observed()
         if self.orientation == "auto":
             self.map_anchor = None          # Auto always places the map automatically
         anchored = self._anchor_transform()
@@ -1111,15 +1344,22 @@ class TMAPreprocessor:
     def empty_positions(self):
         """Positions without a core, as ``(info, row, col, centre)``: the map
         positions (see :meth:`missing_positions`) when an array map is matched,
-        otherwise the empty cells of the fitted grid with ``info`` None."""
+        otherwise the empty cells of the fitted grid with ``info`` None. With
+        an out-of-step block, a grid cell in the gap before it may have no
+        room for a core; cells closer than 0.75 pitch to a core are left out."""
         if self.array_number is not None and self._map_transform is not None:
             return self.missing_positions()
         taken = {(c.row, c.col) for c in self.cores}
         out = []
         for row in range(self.grid_shape[0]):
             for col in range(self.grid_shape[1]):
-                if (row, col) not in taken:
-                    out.append((None, row, col, self.predict_centre(row, col)))
+                if (row, col) in taken:
+                    continue
+                centre = self.predict_centre(row, col)
+                if self._cell_offsets and centre is not None and any(
+                        np.hypot(c.cx - centre[0], c.cy - centre[1]) < 0.75 * self._pitch_px for c in self.cores):
+                    continue
+                out.append((None, row, col, centre))
         return out
 
     @staticmethod
@@ -1196,7 +1436,7 @@ class TMAPreprocessor:
         QC filters. The lattice and orientation themselves are left as fitted."""
         targets = [core] if core is not None else list(self.cores)
         for c in targets:
-            cell = self.cell_of(c.cx, c.cy) if resnap else None
+            cell = self.cell_of(c.cx, c.cy, ignore=c) if resnap else None
             if cell is not None:
                 c.row, c.col = cell
             self._refresh_geometry(c)
@@ -1249,7 +1489,7 @@ class TMAPreprocessor:
         """Deep copy of the cores, the hand-set map position and the
         orientation, for undo."""
         return {"cores": copy.deepcopy(self.cores), "map_anchor": copy.deepcopy(self.map_anchor),
-                "orientation": self.orientation}
+                "orientation": self.orientation, "cell_offsets": dict(self._cell_offsets)}
 
     def restore(self, state):
         """Reinstate a :meth:`snapshot`."""
@@ -1257,6 +1497,7 @@ class TMAPreprocessor:
         self.cores = copy.deepcopy(state["cores"])
         self.map_anchor = copy.deepcopy(state["map_anchor"])
         self.orientation = state["orientation"]
+        self._cell_offsets = dict(state.get("cell_offsets", {}))
         self._after_edit(resnap=False)      # keep the snapshot's cells exactly
         if remap and self.array_number is not None:
             self.map_to_array()
@@ -1335,10 +1576,7 @@ class TMAPreprocessor:
         px_um = self.reader.pixel_size_um * ds
         rows, cols, n_rows, n_cols = infer_grid(circles, self.core_diameter_um / px_um)
         self._set_cores(cores, rows, cols, (n_rows, n_cols))
-        if self.array_number is not None:
-            self.map_to_array()
-        else:
-            self.apply_filters()
+        self.map_to_array()
         return len(cores)
 
     @property
@@ -1560,10 +1798,14 @@ class TMAPreprocessor:
         fields = ["stem", "slide", "array", "scan_row", "scan_col", "map_position", "map_label",
                   "sector", "patient_id", "block_id", "tissue", "note", "cx", "cy", "radius_px",
                   "fill", "grid_offset", "diameter_um", "stain_frac", "flag", "excluded",
-                  "reason", "group", "orientation", "orientation_method", "manual"]
+                  "reason", "group", "orientation", "orientation_method", "manual",
+                  "core_diameter_um", "core_diameter_source"]
         extra = self.tma_map.extra_columns() if self.tma_map is not None else []
         fields += [k for k in extra if k not in fields]
         amap = self.array_map()
+        # the Core Ø the diameter filter used, and whether it was measured or typed in
+        setting = {"core_diameter_um": round(self.core_diameter_um, 1) if self.core_diameter_um else "",
+                   "core_diameter_source": "auto" if self.core_diameter_auto else "manual"}
         with open(path, "w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=fields)
             w.writeheader()
@@ -1589,6 +1831,7 @@ class TMAPreprocessor:
                     "orientation": self.matched_orientation or "",
                     "orientation_method": self.orientation_method or "",
                     "manual": int(bool(c.manual or c.override)),
+                    **setting,
                     **{k: v for k, v in (info.extras if info else ()) if k in fields},
                 })
             # one row per map position without a core, so the manifest covers the whole array
@@ -1607,6 +1850,7 @@ class TMAPreprocessor:
                     "orientation": self.matched_orientation or "",
                     "orientation_method": self.orientation_method or "",
                     "manual": 0,
+                    **setting,
                     **{k: v for k, v in info.extras if k in fields},
                 })
 
@@ -1726,6 +1970,20 @@ def _cli_map(a):
     return chosen
 
 
+def _diameter_arg(text):
+    """``--core-diameter`` value: a positive number of µm, or ``auto`` (None)."""
+    import argparse
+    if text.strip().lower() == "auto":
+        return None
+    try:
+        value = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected a number of µm or 'auto', got {text!r}")
+    if value <= 0:
+        raise argparse.ArgumentTypeError("the core diameter must be positive")
+    return value
+
+
 def main(argv=None):
     import argparse
     from tqdm import tqdm
@@ -1744,7 +2002,8 @@ def main(argv=None):
                                                      "(default: the one named in the slide name)")
     p.add_argument("--slide-name", default=None, help="filename prefix (default: slide name)")
     p.add_argument("--pixel-size", type=float, default=None, help="µm per pixel if not in metadata")
-    p.add_argument("--core-diameter", type=float, default=1250.0, help="nominal core diameter in µm (default 1250)")
+    p.add_argument("--core-diameter", type=_diameter_arg, default=None, metavar="UM|auto",
+                   help="core diameter in µm, or 'auto' to measure it from the slide (default auto)")
     p.add_argument("--margin", type=float, default=30.0, help="crop margin around the circle in µm (default 30)")
     p.add_argument("--erode", type=int, default=8, help="mask shrink in pixels")
     p.add_argument("--orientation", choices=ORIENTATIONS, default="auto")
@@ -1786,6 +2045,8 @@ def main(argv=None):
         print(f"  reinstated {n} cores from {a.edits} ({pre.manual_count()} hand-edited)")
     print(f"{pre.slide_name}: {len(pre.cores)} cores on a {pre.grid_shape[0]}x{pre.grid_shape[1]} grid"
           + (f", orientation {o} (score {pre.match_score:.1f})" if o else ""))
+    print(f"  core diameter {pre.core_diameter_um:.0f} µm"
+          + (f" (auto, median of {pre.core_diameter_count} well-formed cores)" if pre.core_diameter_auto else ""))
     if o and pre.orientation_method == "anchor":
         print("  map position set by hand (from the edits file)")
     elif o and pre.orientation_method not in ("manual", "occupancy"):

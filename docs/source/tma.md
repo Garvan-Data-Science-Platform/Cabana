@@ -48,9 +48,12 @@ before exporting, and exporting can be repeated into a different folder.
    to name cores by grid position only. Leave **Orientation** on
    *Auto* unless you need to force one (see [Orientation](#orientation)).
    Changing either after a fit relabels the cores instantly; no refit.
-3. **Fit settings.** *Core Ø* is the nominal core diameter and sets the scale
-   of every step; *Sensitivity* is the tissue threshold; *Recover faint* looks
-   for pale cores at empty grid positions.
+3. **Fit settings.** *Core Ø* is the core diameter and sets the scale of
+   every step. With *Auto* ticked (the default) it is measured from the slide
+   at every fit and shown in the box (— before the first fit); untick *Auto*
+   to type a value, starting from the measured one. *Sensitivity* is the
+   tissue threshold; *Recover faint* looks for pale cores at empty grid
+   positions.
 4. **Fit Cores** fits the circles and matches the map. The overlay shows every
    core with its number and map position; the status line below the settings
    summarises the fit and any warnings.
@@ -90,8 +93,12 @@ before exporting, and exporting can be repeated into a different folder.
 3. **Components.** Blobs smaller than 5% of the largest are dropped. Inside
    each blob detached debris smaller than 5% of the main tissue mass is
    removed, and the minimum enclosing circle of what remains is the core.
-   Circles larger than 1.5 or smaller than 0.2 nominal core diameters are
-   rejected (fused neighbours, dust).
+   Circles larger than 1.5 or smaller than 0.2 core diameters are rejected
+   (fused neighbours, dust). With *Core Ø* on *Auto* a first pass starts from
+   1000 µm and accepts circles of 0.2 to 3 mm; the median diameter of the
+   well-formed circles (fill at least 30 %, radius within 20 % of the median)
+   becomes Core Ø, and the fit is repeated with it when it differs from
+   1000 µm by more than 10 %.
    Because an enclosing circle is set by its outermost points, debris next
    to a core would inflate it. Circles larger than 110 % of the slide's median
    radius are therefore rebuilt from the largest tissue piece (split at thin
@@ -119,9 +126,10 @@ before exporting, and exporting can be repeated into a different folder.
 Tuning: lower *Sensitivity* (for example 8) when very pale cores are missed
 and debris is not a problem; raise it (25 to 30) when shading or dust on the
 glass is being fitted. *Core Ø* sets the scale of every morphological step
-and of the size gates, so set it to the real core diameter first. On the
-command line the same knobs are `--sat-thresh`, `--val-ratio`, `--min-fill`
-and `--no-recover`.
+and of the size gates; leave it on *Auto* unless the measured value is off
+(for example on a slide with very few intact cores). On the command line the
+same knobs are `--core-diameter` (`auto` by default, or a value in µm),
+`--sat-thresh`, `--val-ratio`, `--min-fill` and `--no-recover`.
 
 ## Quality filters
 
@@ -140,16 +148,17 @@ exported. Filters update instantly; no refit is needed.
 Filters never change patient IDs. The orientation match ignores only objects
 more than half a core spacing from any grid position, a fixed rule, and all
 filters run after IDs are assigned. The status line reports how many cores each
-filter removed, the median fitted diameter (with a warning when Core Ø differs
-by more than 10 %), and any patient left with no core.
+filter removed, the Core Ø used (marked *auto* when measured; with a typed
+value, the median fitted diameter and a warning when they differ by more than
+10 %), and any patient left with no core. `cores.csv` records the Core Ø used
+and whether it was measured (`core_diameter_um`, `core_diameter_source`).
 
 On the APGI slides the weakest genuine patient cores have 3 to 5 % stained
 area and the Brain and Muscle controls about 0 to 1 %, which is why the stain
-default is 2 %. Core Ø defaults to 1250 µm, the fitted size of the APGI
-cores; the diameter range is only meaningful when Core Ø matches the array, so
-change it for other arrays (the status line warns when the median fitted
-diameter differs from Core Ø by more than 10 %). Partial or torn cores fit a
-smaller circle; lower Min Ø (for example to 70 %) to keep them.
+default is 2 %. The diameter range is only meaningful when Core Ø matches the
+array, which *Auto* takes care of (the APGI cores measure 1130 to 1300 µm, the
+neuroblastoma array about 700 µm). Partial or torn cores fit a smaller circle;
+lower Min Ø (for example to 70 %) to keep them.
 
 CLI: `--max-grid-offset`, `--diameter-range MIN MAX`, `--min-stain`, and
 `--stain-sat` (the saturation threshold, 40, not exposed in the GUI).

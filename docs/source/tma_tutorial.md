@@ -71,13 +71,12 @@ APGI_TMA_4_PicRed_cores/
    Fibre Detection and Gap Analysis pages on it as described in the
    [workflow](workflow.md). Bright-field cores use **Dark Line** on; polarised
    cores use it off.
-2. Set **Patch Size** on the Segmentation page to 1024 px, so that the
-   segmentation network sees the tissue at a useful resolution rather than the
-   whole core shrunk to 512 px.
-3. Export the parameters with **Parameters > Export Parameters**, then open
-   the file in a text editor and set `Segmentation: Max Size: 6000`, which the
-   GUI does not expose, so that a 4000 to 5000 px core is analysed as one
-   image instead of being split into blocks.
+2. Keep **Patch Size** on the Segmentation page at 1024 px (the default), so
+   that the segmentation network sees the tissue at a useful resolution rather
+   than the whole core shrunk to 512 px.
+3. Export the parameters with **Parameters > Export Parameters**. The default
+   Max Size (5000 px, shown on the Batch Run page) analyses a 4000 to 5000 px
+   core as one image, which needs about 7 GB of memory per core.
 
 ## 3. Run the batch
 
@@ -88,9 +87,10 @@ APGI_TMA_4_PicRed_cores/
 3. Tick **Stats** and **Scores** to get per-patient statistics and collagen
    risk scores; the TMA core names give the patient IDs.
 4. Click **Process Batch**. The status line above the progress bar names the
-   batch, stage and image being processed. With 1024 px patches a core takes
-   a few seconds on a CUDA GPU, three to four minutes on an Apple GPU and
-   about twenty minutes on a CPU, almost all of it in segmentation.
+   batch, stage and image being processed. On an Apple M-series Mac a whole
+   4400 px core takes about 2.5 minutes with nine line widths: segmentation
+   about 13 seconds with 1024 px patches, fibre detection about 1.8 minutes
+   and skeleton analysis about 16 seconds. A CPU-only machine is slower.
 5. When the run finishes, **Open Folder** shows the results. The `Batches`
    folder and checkpoint are removed automatically. If the run stops with an
    error (for example a full disk) or is cancelled, they are kept: fix the

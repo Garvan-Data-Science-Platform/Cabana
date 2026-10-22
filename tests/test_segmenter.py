@@ -12,8 +12,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from cabana.segmenter import (_feather_weights, load_roi_mask, segment_image,
-                              segment_single_image, tile_windows)
+from cabana.segmenter import (_feather_weights, load_roi_mask, mask_from_score, segment_image,
+                              segment_single_image, segmentation_steps, tile_windows)
 
 
 def seg_args(**overrides):
@@ -90,6 +90,79 @@ class TestSegmentImage:
         img = pink_square_image(h=140, w=80, box=(20, 60))
         mask = segment_image(img, seg_args())
         assert mask.shape == (140, 80) and mask[40, 40] == 255
+
+
+def sparse_and_dense_image(seed=0):
+    """Pale, nearly empty glass on the left; a dense magenta block on the right."""
+    rng = np.random.default_rng(seed)
+    img = np.clip(rng.normal(235, 3, (128, 256, 3)), 0, 255).astype(np.uint8)
+    img[16:112, 144:240] = (150, 60, 220)
+    return img
+
+
+class TestAbsoluteThreshold:
+    """The colour threshold is absolute: it is not rescaled per image or patch."""
+
+    def test_pale_patch_next_to_dense_tissue_stays_empty(self):
+        img = sparse_and_dense_image()
+        mask = segment_image(img, seg_args(patch_size=64), cnn_size=64)
+        assert mask[16:112, 144:240].mean() > 0.9 * 255
+        # with per-patch rescaling the noise of the glass-only patches crossed the threshold
+        assert (mask[:, :128] == 0).all()
+
+    def test_patch_size_hardly_matters(self):
+        img = sparse_and_dense_image()
+        a = segment_image(img, seg_args(patch_size=64), cnn_size=64) > 0
+        b = segment_image(img, seg_args(patch_size=128), cnn_size=64) > 0
+        for m in (a, b):
+            assert not m[:, :128].any() and m[24:104, 152:232].all()
+        assert (a == b).mean() > 0.95         # differences only along the block's edges
+
+    def test_image_within_one_patch_equals_patch_off(self):
+        img = pink_square_image()
+        assert np.array_equal(segment_image(img, seg_args(patch_size=128)), segment_image(img, seg_args()))
+
+    def test_score_map_rethresholds_to_the_same_mask(self):
+        for patch in (0, 64):
+            img = sparse_and_dense_image()
+            args = seg_args(patch_size=patch)
+            mask, (score, min_size) = segment_image(img, args, cnn_size=64, return_score=True)
+            assert np.array_equal(mask_from_score(score, min_size, args.rt, img.shape), mask)
+            looser = mask_from_score(score, min_size, 0.05, img.shape)
+            assert (looser >= mask).all()               # a lower threshold only adds
+
+    def test_progress_counts_training_and_patches(self):
+        img = sparse_and_dense_image()
+        args = seg_args(patch_size=64, max_iter=3, min_labels=0)
+        calls = []
+        segment_image(img, args, iter_callback=lambda i, t: calls.append((i, t)), cnn_size=64)
+        total = segmentation_steps(*img.shape[:2], args)
+        assert total == 3 + len(tile_windows(128, 64, 8)) * len(tile_windows(256, 64, 8))
+        assert [i for i, _ in calls] == list(range(total)) and {t for _, t in calls} == {total}
+
+
+class TestGreyscale:
+    """Greyscale images (SHG) keep the earlier per-image relative threshold."""
+
+    def _shg(self):
+        img = np.full((128, 256, 3), 20, np.uint8)
+        img[32:96, 40:104] = 80                 # dim fibre-bright block: absolute score of 80/255 is ~0.4
+        img[32:96, 168:232] = 80
+        return img
+
+    def test_dim_structure_found_whole_and_in_patches(self):
+        img = self._shg()
+        for patch in (0, 64):
+            m = segment_image(img, seg_args(patch_size=patch), cnn_size=64) > 0
+            assert m[40:88, 48:96].all() and m[40:88, 176:224].all()
+            # the dark background stays (mostly) empty; this toy CNN setting forms coarse regions
+            assert m[:20].mean() < 0.1 and m[:, 120:150].mean() < 0.1
+
+    def test_neutral_glass_in_a_colour_image_is_not_greyscale(self):
+        img = np.full((128, 256, 3), 235, np.uint8)          # perfectly neutral glass, no noise
+        img[16:112, 144:240] = (150, 60, 220)
+        m = segment_image(img, seg_args(patch_size=64), cnn_size=64)
+        assert (m[:, :128] == 0).all() and m[24:104, 152:232].all()
 
 
 class TestSegmentSingleImage:

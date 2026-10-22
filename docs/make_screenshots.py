@@ -205,8 +205,8 @@ def main(argv):
             (2, rect_of(win, win.input_btn), "right"),
             (3, rect_of(win, win.output_btn), "right"),
             (4, rect_of(win, win.mask_btn), "right"),
-            (5, rect_of(win, win.batch_size_spinner), "left"),
-            (6, union(win, (win.stats_cb, win.scores_cb)), "right"),
+            (5, union(win, (win.batch_size_spinner, win.batch_max_size_spinner)), "below"),
+            (6, union(win, (win.stats_cb, win.scores_cb, win.visuals_cb)), "right"),
             (7, rect_of(win, win.process_batch_btn)),
             (8, union(win, (win.progress_label, win.progress_bar)), "above"),
         ])

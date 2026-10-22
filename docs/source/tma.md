@@ -423,10 +423,11 @@ crop are excluded from segmentation, fibre detection, HDM, fibre-area and gap
 metrics, and the percentage metrics are relative to the circle area. The
 masks are honoured whether segmentation is enabled or not.
 
-Cores scanned at 20x are about 4000 to 5000 pixels across. Raise
-`Segmentation: Max Size` in the parameter file (for example to 6000) so that
-each core is analysed as one image, and consider `Segmentation: Patch Size`
-(for example 1024) so the segmentation network sees the tissue at a useful
+Cores scanned at 20x are about 4000 to 5000 pixels across. With the default
+Max Size (5000 px, on the Batch Run page) each core is analysed as one
+image, which needs about 7 GB of memory for a 4400 px core; lower Max Size
+to split cores into blocks on a machine with less memory. The default Patch
+Size (1024 px) lets the segmentation network see the tissue at a useful
 resolution instead of the whole core shrunk to 512 pixels.
 
 ## Command line

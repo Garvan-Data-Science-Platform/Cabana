@@ -9,13 +9,14 @@ All parameters live in the YAML parameter file (`Parameters.yml`, exported from 
 | Configs | Segmentation | true | on/off | Segmentation page toggle |
 | Configs | Quantification | true | on/off | file only |
 | Configs | Gap Analysis | true | on/off | Gap Analysis page toggle |
+| Configs | Max Size | 5000 (0 = no limit) | px (side) | Batch Run page (per run) |
+| Configs | Save Visualisations | true | on/off | Batch Run page (per run) |
 | Segmentation | Number of Labels | 32 | count | slider |
 | Segmentation | Max Iterations | 30 | count | slider |
 | Segmentation | Normalized Hue Value | 0.96 | 0 to 1 | colour picker |
 | Segmentation | Color Threshold | 0.2 | 0 to 1 | slider |
 | Segmentation | Min Size | 64 | px | file only |
-| Segmentation | Max Size | 2048 | px (side) | file only |
-| Segmentation | Patch Size | 0 (off) | px | spinner |
+| Segmentation | Patch Size | 1024 (0 = off) | px | spinner |
 | Detection | Dark Line | true | on/off | checkbox |
 | Detection | Min Line Width / Max Line Width | 5 / 13 | px | range slider |
 | Detection | Line Width Step | 2 | px | slider |
@@ -37,6 +38,10 @@ The user can set the parameters in this section to enable (setting to `true`) or
 
 For instance, if the background is clean, segmentation may not be needed and therefore can be disabled.
 
+`Max Size` (also in `Configs`) sets the largest image analysed as one piece: images with more pixels than its *square* are split into blocks of at most this size, and each block is analysed as a separate image, which keeps memory use down but cuts fibres and gaps at the block edges. 0 means no limit: every image is analysed whole, which needs roughly 0.4 GB of memory per megapixel (about 7 GB for a 4400 px TMA core), and a batch run warns about the largest image. The default value, 5000, analyses TMA cores scanned at 20x whole. The Batch Run page shows the parameter file's value and can override it for a run. Parameter files written before version 0.3.9 kept it under `Segmentation`; that location is still read.
+
+`Save Visualisations` (also in `Configs`, default `true`) decides whether batch runs write the visualisations: the colour maps and the gap overlay images (`Colors/`). The measurements (CSV files, the TIFF maps in `Exports/`, masks) are always written. Turning it off saves about four fifths of the storage for TMA cores; the Batch Run page shows the file's value and can change it for a run.
+
 ## Segmentation Parameters
 
 This component of Cabana aims to extract collagen fibre areas determined by Picrosirius Red staining or SHG in an image from cluttered background based on colour and other low-level features. It relies on a self-supervised semantic segmentation model based on convolutional neural networks to group semantically similar neighbouring pixels. The mean colour of the pixels in the same segment will be compared with a user-specified threshold to determine whether the segment is the region of interest (ROI).
@@ -57,23 +62,19 @@ The following image segmentation parameters for ROI extraction can be adjusted:
 
 4. **Colour Threshold**
 
-   Colour threshold used to determine ROI. Only segments with a mean colour greater than this threshold will be extracted as ROI. The default value is 0.2.
+   Minimum colour score of a segment for it to count as ROI. Each segment is scored by how close its mean colour is to the colour of interest, from 1 (exactly that colour) down to 0. For colour images the score is absolute, so the same threshold means the same on every image and in every patch; below about 0.12 pale tissue and glass start to count. Greyscale images are scored by brightness relative to the image (see the note below). The default value is 0.2. After a segmentation in the GUI, moving the slider updates the result immediately without segmenting again.
 
 5. **Min Size**
 
    The minimal size of segments. Any segment with a size smaller than this parameter will be ignored. The default value is 64.
 
-6. **Max Size**
+6. **Patch Size**
 
-   The maximum allowable image size. Any image with a size larger than the *square* of this parameter will be ignored by the program. The default value is 2048.
-
-7. **Patch Size**
-
-   Side length in pixels of the square patches used for patch-wise segmentation, or 0 (default) to segment the whole image at once after shrinking it to 512 px. Patches overlap by one eighth of their size, are edge-anchored so every patch is full-sized, and their colour-distance maps are blended before thresholding. Use about 1024 for images of several thousand pixels such as TMA cores.
+   Images larger than this (in pixels, on the longer side) are segmented in square patches of this size; 0 segments every image whole after shrinking it to 512 px. The segmentation network is trained once on the whole image shrunk to 512 px and then labels every patch, itself shrunk to 512 px, without further training, so a large image is seen at a higher resolution at little extra cost. Patches overlap by one eighth of their size and are edge-anchored so every patch is full-sized; their colour scores are blended across the overlaps and the image is thresholded once. The default value is 1024.
 
 Note:
 
-The program automatically detects whether the image is grayscale or in colour. If it's grayscale, it'll disregard the normalized hue value parameter and solely rely on the colour threshold for segmentation. To extract ROIs of colour images, you may need to adjust the Normalized Hue Value under the `Segmentation` tab or directly modify the `Segmentation` section in the exported `Parameters.yml` to optimise the parameters for your image**. To segment SHG images, it is recommended to increase the number of iterations from the default value 30 to 50. This needs to be tested and optimised by the user.
+The program automatically detects whether the image is grayscale or in colour. If it's grayscale, it'll disregard the normalized hue value parameter and solely rely on the colour threshold for segmentation: segments are scored by brightness, rescaled from the darkest to the brightest segment of the image (once per image, also when it is segmented in patches), so the threshold is relative to each image. To extract ROIs of colour images, you may need to adjust the Normalized Hue Value under the `Segmentation` tab or directly modify the `Segmentation` section in the exported `Parameters.yml` to optimise the parameters for your image**. To segment SHG images, it is recommended to increase the number of iterations from the default value 30 to 50. This needs to be tested and optimised by the user.
 
 When the boundaries between regions of interest (SHG signal or Picrosirius Red areas) and background are not clearly distinguishable, obtaining satisfactory segmentation results can be difficult. To address this, the `Number of Labels` and `Max Iterations` parameters can be optimised. Increasing the number of labels generally leads to finer granularity in segmentations, which may result in a better segmentation result. Avoid increasing the number of labels beyond 64, otherwise GPU Memory might overflow. On the other hand, decreasing the max iterations may result in premature segmentation, reducing the likelihood of mixing fibres and background. Adjusting the HUE parameter may not have much of an effect as the colour of Picrosirius stained collagen fibres is already red/pink.
 

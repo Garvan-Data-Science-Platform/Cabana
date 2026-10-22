@@ -42,14 +42,63 @@ def sanitize_filename(filename):
     return re.sub(forbidden_chars, '_', filename)
 
 
+# Default of ``Configs: Max Size``: images with more pixels than its square
+# are split into blocks. It covers TMA cores scanned at 20x (4000 to 5000 px).
+DEFAULT_MAX_SIZE = 5000
+
+
+def max_image_size(params):
+    """``Max Size`` of a parameter dict: ``Configs: Max Size``, else the
+    pre-0.3.9 location ``Segmentation: Max Size``, else :data:`DEFAULT_MAX_SIZE`.
+    0 means no limit."""
+    for section in ("Configs", "Segmentation"):
+        value = (params.get(section) or {}).get("Max Size")
+        if value is not None:
+            return int(value or 0)
+    return DEFAULT_MAX_SIZE
+
+
+def save_visualisations(params):
+    """``Configs: Save Visualisations`` of a parameter dict (default True):
+    whether batch runs write the colour maps and gap overlay images. The
+    measurement data (TIFF maps, masks, CSV) is always written."""
+    return bool((params.get("Configs") or {}).get("Save Visualisations", True))
+
+
+def migrate_max_size(params):
+    """Move a pre-0.3.9 ``Segmentation: Max Size`` to ``Configs: Max Size``
+    (in place) so that files are written in the current layout."""
+    seg = params.get("Segmentation") or {}
+    if "Max Size" in seg:
+        value = seg.pop("Max Size")
+        params.setdefault("Configs", {}).setdefault("Max Size", value)
+    return params
+
+
+def is_oversized(height, width, max_size):
+    """Whether an image has more than ``max_size`` squared pixels (the
+    ``Configs: Max Size`` parameter). 0 or None means no limit."""
+    return bool(max_size) and height * width > int(max_size) ** 2
+
+
 def contains_oversized(img_paths, max_res=2048):
-    max_size = max_res * max_res
     for img_path in img_paths:
-        image = Image.open(img_path)
-        resolution = image.size
-        if resolution[0] * resolution[1] > max_size:
+        with Image.open(img_path) as image:
+            w, h = image.size
+        if is_oversized(h, w, max_res):
             return True
     return False
+
+
+def largest_image(img_paths):
+    """``(path, height, width)`` of the image with the most pixels, or None."""
+    best = None
+    for img_path in img_paths:
+        with Image.open(img_path) as image:
+            w, h = image.size
+        if best is None or h * w > best[1] * best[2]:
+            best = (img_path, h, w)
+    return best
 
 
 def split2batches(img_paths, max_batch_size=5):

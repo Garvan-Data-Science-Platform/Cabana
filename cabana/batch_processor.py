@@ -81,6 +81,8 @@ class BatchProcessor(_BatchProcessor):
         batch_size = 5
         batch_num = 0
         ignore_large = False
+        max_size = None
+        save_visuals = None
         Log.logger.warning("A checkpoint file exists in the output folder.")
         with open(ckpt_path, "r") as f:
             for line in f:
@@ -93,6 +95,10 @@ class BatchProcessor(_BatchProcessor):
                     batch_num = int(value)
                 elif key == "Ignore Large":
                     ignore_large = value.lower() == 'true'
+                elif key == "Max Size":
+                    max_size = int(value)
+                elif key == "Save Visualisations":
+                    save_visuals = value.lower() == 'true'
 
         self.resume = (os.path.exists(input_folder)
                        and os.path.samefile(input_folder, self.input_folder))
@@ -112,6 +118,12 @@ class BatchProcessor(_BatchProcessor):
                 self.batch_size = batch_size
                 self.batch_num = batch_num
                 self.ignore_large = ignore_large
+                if max_size is not None:        # keep the splitting of the interrupted run
+                    self.max_size = max_size
+                    self.args.setdefault("Configs", {})["Max Size"] = max_size
+                if save_visuals is not None:
+                    self.save_visuals = save_visuals
+                    self.args.setdefault("Configs", {})["Save Visualisations"] = save_visuals
                 break
             elif user_input.lower() in ("n", "no"):
                 Log.logger.info("Starting a new run.")

@@ -389,8 +389,10 @@ class SkeletonAnalyzer:
             segment_counts = ndi.sum(self.skel_image > 0, labels, range(1, num + 1))
             labels_remove = np.where(segment_counts <= self.skel_thresh)[0]
 
-            for label in labels_remove:
-                self.skel_image[np.where(labels == label + 1)] = self.BACKGROUND
+            # one pass over the image (a per-label scan is quadratic on large images)
+            remove = np.zeros(num + 1, dtype=bool)
+            remove[labels_remove + 1] = True
+            self.skel_image[remove[labels]] = self.BACKGROUND
 
             # Relabel after deleting short skeletons
             labels, num = ndi.label(self.skel_image, eight_con)
@@ -441,20 +443,27 @@ class SkeletonAnalyzer:
 
         self.pruned_image = self.skel_image.copy()
 
-        # Process each connected component
+        # Process each connected component within its bounding box: a
+        # full-image canvas and label scan per component made this stage
+        # quadratic in image size (minutes on a TMA core).
+        objects = ndi.find_objects(labels)
         for label in range(1, num + 1):
-            # Canvas image to draw a segment at a time
-            canvas = np.zeros(self.skel_image.shape, dtype=np.uint8)
-            row_idx, col_idx = np.where(labels == label)
-            canvas[row_idx, col_idx] = self.FOREGROUND
-            row_start, row_end = row_idx.min(), row_idx.max()
-            col_start, col_end = col_idx.min(), col_idx.max()
+            sl = objects[label - 1]
+            row_start, row_end = sl[0].start, sl[0].stop - 1
+            col_start, col_end = sl[1].start, sl[1].stop - 1
+            # Canvas of the component alone: its bounding box plus a one-pixel
+            # margin (clipped at the image edge), so neighbour look-ups behave
+            # as on the full image
+            r0, c0 = max(row_start - 1, 0), max(col_start - 1, 0)
+            r1, c1 = min(row_end + 2, height), min(col_end + 2, width)
+            canvas = np.zeros((r1 - r0, c1 - c0), dtype=np.uint8)
+            canvas[labels[r0:r1, c0:c1] == label] = self.FOREGROUND
 
             # Find endpoints and branch points
             endpoints, branchpoints = [], []
             for row in range(row_start, row_end + 1):
                 for col in range(col_start, col_end + 1):
-                    if canvas[row, col] == self.FOREGROUND:
+                    if canvas[row - r0, col - c0] == self.FOREGROUND:
                         if num_neighbors[row, col] == 1:
                             endpoints.append((row, col))
                         elif num_neighbors[row, col] == 2:
@@ -487,8 +496,13 @@ class SkeletonAnalyzer:
             for brh_pt in branchpoints:
                 G.add_node(brh_pt, node_type="branch-point")
 
-            # Find paths between key points and add edges
-            lengths_paths = SkeletonAnalyzer.traverse_skeletons(canvas, endpoints, branchpoints, self.FOREGROUND)
+            # Find paths between key points (in canvas coordinates) and add edges
+            local = SkeletonAnalyzer.traverse_skeletons(canvas, [(r - r0, c - c0) for r, c in endpoints],
+                                                        [(r - r0, c - c0) for r, c in branchpoints],
+                                                        self.FOREGROUND)
+            lengths_paths = [((src[0] + r0, src[1] + c0), (dst[0] + r0, dst[1] + c0), length,
+                              [(p[0] + r0, p[1] + c0) for p in path], typ)
+                             for src, dst, length, path, typ in local]
             for src, dst, length, path, typ in lengths_paths:
                 if (src == dst or G.has_edge(src, dst)) and len(path) >= 6:
                     # nx.Graph keeps one edge per node pair: a second path between the same

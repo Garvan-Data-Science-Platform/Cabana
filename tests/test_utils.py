@@ -341,3 +341,50 @@ class TestCalColorDist:
         img[:, :, 2] = 200  # only blue value
         abs_dist, rel_dist = cal_color_dist(img)
         assert abs_dist is not None
+
+    def test_greyscale_detection_and_forcing(self):
+        from cabana.utils import is_greyscale
+        grey = np.full((10, 10, 3), 150, np.uint8)
+        assert is_greyscale(grey)
+        colour = grey.copy()
+        colour[0, 0] = (150, 60, 220)
+        assert not is_greyscale(colour)
+        # a neutral image scored as colour does not get the bright-white target
+        auto, _ = cal_color_dist(grey, hue=0.96)
+        forced, _ = cal_color_dist(grey, hue=0.96, greyscale=False)
+        assert auto.min() > 0.5 and forced.max() < 0.2
+
+
+class TestMaxImageSize:
+    def test_reads_new_then_old_location_then_default(self):
+        from cabana.io import DEFAULT_MAX_SIZE, max_image_size
+        assert max_image_size({"Configs": {"Max Size": 0}, "Segmentation": {"Max Size": 2048}}) == 0
+        assert max_image_size({"Configs": {}, "Segmentation": {"Max Size": 2048}}) == 2048
+        assert max_image_size({"Configs": {}, "Segmentation": {}}) == DEFAULT_MAX_SIZE == 5000
+
+    def test_migration_moves_the_old_key(self):
+        from cabana.io import migrate_max_size
+        p = migrate_max_size({"Configs": {"Segmentation": True}, "Segmentation": {"Max Size": 3000, "Min Size": 64}})
+        assert p == {"Configs": {"Segmentation": True, "Max Size": 3000}, "Segmentation": {"Min Size": 64}}
+        # an explicit new value wins over a stale old one
+        p = migrate_max_size({"Configs": {"Max Size": 0}, "Segmentation": {"Max Size": 3000}})
+        assert p["Configs"]["Max Size"] == 0 and "Max Size" not in p["Segmentation"]
+
+
+class TestStorageHelpers:
+    def test_save_visualisations_default_and_value(self):
+        from cabana.io import save_visualisations
+        assert save_visualisations({"Configs": {}}) is True
+        assert save_visualisations({"Configs": {"Save Visualisations": False}}) is False
+
+    def test_map_tiff_is_float32_and_lossless_otherwise(self, tmp_path):
+        import tifffile
+        from cabana.stages import write_map_tiff
+        rng = np.random.default_rng(0)
+        a = np.zeros((64, 64)); a[10:20, 10:20] = rng.random((10, 10)) * 180
+        write_map_tiff(str(tmp_path / "m.tif"), a)
+        b = tifffile.imread(tmp_path / "m.tif")
+        assert b.dtype == np.float32 and np.array_equal(b, a.astype(np.float32))
+        rgb = rng.integers(0, 255, (16, 16, 3), dtype=np.uint8)
+        write_map_tiff(str(tmp_path / "c.tif"), rgb)
+        assert np.array_equal(tifffile.imread(tmp_path / "c.tif"), rgb)

@@ -18,7 +18,7 @@ from skimage.feature import peak_local_max
 from .orientation import OrientationAnalyzer
 from skimage.color import rgb2hed, hed2rgb, rgb2gray
 from sklearn.metrics.pairwise import euclidean_distances
-from .utils import create_folder, join_path, mask_color_map
+from .utils import create_folder, is_oversized, join_path, mask_color_map, max_image_size
 from .segmenter import parse_args, segment_single_image, visualize_fibres
 from .utils import overlay_colorbar, color_survey_with_colorbar
 
@@ -120,7 +120,6 @@ class Cabana:
         setattr(self.seg_args, 'max_iter', int(self.args['Segmentation']["Max Iterations"]))
         setattr(self.seg_args, 'hue_value', float(self.args['Segmentation']["Normalized Hue Value"]))
         setattr(self.seg_args, 'rt', float(self.args['Segmentation']["Color Threshold"]))
-        setattr(self.seg_args, 'max_size', int(self.args['Segmentation']["Max Size"]))
         setattr(self.seg_args, 'min_size', int(self.args['Segmentation']["Min Size"]))
         setattr(self.seg_args, 'patch_size', int(self.args['Segmentation'].get("Patch Size", 0) or 0))
         setattr(self.seg_args, 'white_background', self.args['Detection']["Dark Line"])
@@ -155,7 +154,7 @@ class Cabana:
         height, width = img.shape[:2]
         bright_percent = np.sum(gray > 5) / width / height
         max_line_width = self.args['Detection']["Max Line Width"]
-        max_size = self.args["Segmentation"]["Max Size"]
+        max_size = max_image_size(self.args)
 
         # Check for black or small images
         if np.min([height, width]) < 2 * max_line_width or bright_percent <= 0.01:
@@ -164,7 +163,7 @@ class Cabana:
 
         # Check if image is too large
         crop_box = None
-        if height * width > max_size ** 2 and bright_percent > 0.01:
+        if is_oversized(height, width, max_size):
             if self.ignore_large:
                 warnings.warn('Image is too large. No analysis will be performed.')
                 return False
@@ -663,13 +662,13 @@ class Cabana:
             color_survey_with_colorbar(orient_map, cohere_map, energy_map,
                                        join_path(self.color_img_dir, f"{self.name_wo_ext}_orient_color_survey.png"))
 
-        # Copy gap images if they exist
+        # Move the gap images to the other colour maps (one copy only)
         if os.path.exists(join_path(self.export_img_dir, "GapImage.png")):
-            shutil.copy(join_path(self.export_img_dir, "GapImage.png"),
+            shutil.move(join_path(self.export_img_dir, "GapImage.png"),
                         join_path(self.color_img_dir, f"{self.name_wo_ext}_all_gaps.png"))
 
         if os.path.exists(join_path(self.export_img_dir, "GapImage_intra_gaps.png")):
-            shutil.copy(join_path(self.export_img_dir, "GapImage_intra_gaps.png"),
+            shutil.move(join_path(self.export_img_dir, "GapImage_intra_gaps.png"),
                         join_path(self.color_img_dir, f"{self.name_wo_ext}_intra_gaps.png"))
         print(f"Color maps have been saved to {self.color_img_dir}")
 

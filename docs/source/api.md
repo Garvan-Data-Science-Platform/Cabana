@@ -45,9 +45,11 @@ bp = BatchProcessor(
     input_folder="cores/BF/Patients/Images",
     output_folder="cores/BF/Patients/Output",
     mask_dir="cores/BF/Patients/Masks",   # optional ROI masks
-    ignore_large=False,
+    ignore_large=False,                   # split images larger than Max Size into blocks
     generate_stats=True,                  # QuantificationResults_MEAN_STD_SEM.csv
     generate_scores=True,                 # QuantificationResults_SCORES.csv
+    max_size=None,                        # override Configs: Max Size for this run (0 = no limit)
+    save_visuals=None,                    # override Configs: Save Visualisations (False: measurements only)
 )
 bp.progress_callback = lambda pct: print(f"{pct}%")
 bp.status_callback = print              # "Batch 1/9: Segmenting … (1/5)"

@@ -41,6 +41,26 @@ def mask_color_map(img, mask, rgb_color=[0.224, 1.0, 0.0784], sigma=0.5):
     return glow
 
 
+def _save_figure(fig, image_ax, image_height, save_path):
+    """Save a figure as an RGB PNG at the resolution that draws the image in
+    ``image_ax`` at its own pixel size (no enlargement, no detail lost).
+
+    The resolution and bounding box are passed explicitly so the output does
+    not depend on global matplotlib settings (importing seaborn_image sets
+    300 dpi, which enlarged these figures 2 to 3 times). The layout scales as
+    a whole, so the colour bar keeps its position and size relative to the
+    image."""
+    import io
+    from PIL import Image
+    fig.canvas.draw()
+    shown = image_ax.get_window_extent().height      # image height in pixels at fig.dpi
+    dpi = fig.dpi * image_height / max(shown, 1.0)
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', dpi=dpi, bbox_inches='tight', transparent=False, facecolor='white')
+    buf.seek(0)
+    Image.open(buf).convert('RGB').save(save_path)
+
+
 def color_survey_with_colorbar(orient, coherency, energy, save_path,
                                clabel="Color Survey", dpi=100, font_size=12):
     """Color survey visualization with a colorbar (thread-safe)."""
@@ -66,8 +86,7 @@ def color_survey_with_colorbar(orient, coherency, energy, save_path,
     cbar.ax.tick_params(labelsize=font_size)
     cbar.set_ticks(ticks=[-np.pi / 2, -np.pi / 4, 0, np.pi / 4, np.pi / 2],
                    labels=[r'-$\pi$/2', r'-$\pi$/4', '0', r'$\pi$/4', r'$\pi$/2'])
-    canvas.draw()
-    fig.savefig(save_path, format='png', transparent=False, facecolor='white')
+    _save_figure(fig, ax, height, save_path)
     fig.clf()
     return colored_img
 
@@ -117,8 +136,7 @@ def overlay_colorbar(rgb_img, img, save_path,
     cbar = fig.colorbar(sm, cax=cax)
     cbar.ax.set_ylabel(clabel, fontsize=font_size)
     cbar.ax.tick_params(labelsize=font_size)
-    canvas.draw()
-    fig.savefig(save_path, format='png', transparent=False, facecolor='white')
+    _save_figure(fig, ax, height, save_path)
     fig.clf()
     return rgb_img
 

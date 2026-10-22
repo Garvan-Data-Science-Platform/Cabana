@@ -64,6 +64,31 @@ def _eigh_2x2_symmetric(a, b, c):
     return eigvals, eigvecs
 
 
+def _principal_eig_2x2(a, b, c):
+    """Eigenvalue of largest magnitude, and its unit eigenvector, of the 2x2
+    symmetric matrix [[a, b], [b, c]].
+
+    Same values as :func:`_eigh_2x2_symmetric` followed by a descending sort
+    of the eigenvalue magnitudes (on a tie the larger eigenvalue), without
+    building the (..., 2) and (..., 2, 2) arrays. Returns ``(value, v0, v1)``
+    where ``(v0, v1)`` are the eigenvector's components along the first and
+    second axis.
+    """
+    half_trace = 0.5 * (a + c)
+    half_diff = 0.5 * (a - c)
+    disc = np.sqrt(half_diff * half_diff + b * b)
+    lam_min = half_trace - disc
+    lam_max = half_trace + disc
+    take_max = np.absolute(lam_max) >= np.absolute(lam_min)
+    phi = 0.5 * np.arctan2(2.0 * b, a - c)
+    cos_phi = np.cos(phi)
+    sin_phi = np.sin(phi)
+    value = np.where(take_max, lam_max, lam_min)
+    v0 = np.where(take_max, cos_phi, -sin_phi)
+    v1 = np.where(take_max, sin_phi, cos_phi)
+    return value, v0, v1
+
+
 # Minimum fraction of the ridge-to-background intensity range that must have
 # been covered at an accepted fibre edge. A genuine edge lies on the intensity
 # ramp between the ridge and the background; a gradient-magnitude maximum
@@ -124,9 +149,10 @@ class FibreDetector:
         self.gamma = gamma
         self.image = None
         self.gray = None
-        self.derivatives = None
-        self.lower_thresh = None
-        self.upper_thresh = None
+        self._scale_idx = None              # per-pixel index of the selected scale
+        self._low_by_scale = None
+        self._high_by_scale = None
+        self._hessian = None                # second derivatives at the selected scale
         self.contours = None
         self.junctions = None
         self.eigvals = None
@@ -142,24 +168,41 @@ class FibreDetector:
         self.ismax = None
         self.mode = LinesUtil.MODE_DARK if self.dark_line else LinesUtil.MODE_LIGHT
 
+    @property
+    def lower_thresh(self):
+        """Lower ridge threshold at each pixel's selected scale (None before filtering)."""
+        return None if self._scale_idx is None else self._low_by_scale[self._scale_idx]
+
+    @property
+    def upper_thresh(self):
+        """Upper ridge threshold at each pixel's selected scale (None before filtering)."""
+        return None if self._scale_idx is None else self._high_by_scale[self._scale_idx]
+
     def apply_filtering(self):
+        """Ridge filtering at every scale, keeping per pixel only the scale of
+        maximum saliency.
+
+        Memory does not grow with the number of scales except for the
+        per-scale gradient magnitude used by width estimation (stored as
+        float32). The selection is a running maximum over ascending scales in
+        which a later scale wins a tie, the same choice as the former argsort
+        over all scales.
+        """
         height, width = self.gray.shape[:2]
         num_scales = len(self.sigmas)
-        saliency = np.zeros((height, width, num_scales), dtype=float)
-        orientation = np.zeros((height, width, 2, num_scales), dtype=float)
-        rys = np.zeros((height, width, num_scales), dtype=float)
-        rxs = np.zeros((height, width, num_scales), dtype=float)
-        ryys = np.zeros((height, width, num_scales), dtype=float)
-        rxys = np.zeros((height, width, num_scales), dtype=float)
-        rxxs = np.zeros((height, width, num_scales), dtype=float)
-
-        low_threshs = np.zeros((height, width, num_scales), dtype=float)
-        high_threshs = np.zeros((height, width, num_scales), dtype=float)
-        sigma_maps = np.zeros((height, width, num_scales), dtype=float)
+        sign = 1.0 if self.mode == LinesUtil.MODE_DARK else -1.0
+        best = np.full((height, width), -np.inf)          # saliency at the selected scale
+        best_idx = np.zeros((height, width), dtype=np.uint8 if num_scales < 256 else np.intp)
+        grady = np.zeros((height, width), dtype=float)
+        gradx = np.zeros((height, width), dtype=float)
+        hessian = np.zeros((3, height, width), dtype=float)  # ryy, rxy, rxx; freed after line points
+        orientation = np.zeros((height, width, 2), dtype=float)
+        low_by_scale = np.zeros(num_scales)
+        high_by_scale = np.zeros(num_scales)
         # Gradient magnitude at every scale, kept for width estimation: each
         # contour's edges are located in the gradient of ITS OWN scale rather
         # than in the per-pixel patchwork of selected scales.
-        grad_scales = np.zeros((num_scales, height, width), dtype=float)
+        grad_scales = np.zeros((num_scales, height, width), dtype=np.float32)
 
         # filtering at different scales
         gray = self.gray.astype(float)
@@ -170,36 +213,32 @@ class FibreDetector:
             rxy = convolve_gauss(gray, sigma, LinesUtil.DERIV_RC)
             rxx = convolve_gauss(gray, sigma, LinesUtil.DERIV_CC)
 
-            # Closed-form eigendecomposition of the 2x2 Hessian per pixel.
-            # Equivalent to np.linalg.eigh on a (H, W, 2, 2) tensor with
-            # M[0,0]=ryy, M[0,1]=M[1,0]=rxy, M[1,1]=rxx, but ~10x faster.
-            eigvals, eigvecs = _eigh_2x2_symmetric(ryy, rxy, rxx)
-
-            # maximum absolute eigen as the saliency of lines
-            idx = np.absolute(eigvals).argsort()[..., ::-1]
-            eigvals_tmp = np.take_along_axis(eigvals, idx, axis=-1)
-            eigvecs_tmp = np.take_along_axis(eigvecs, idx[:, :, None, :], axis=-1)
+            # Closed-form eigendecomposition of the 2x2 Hessian per pixel
+            # (M[0,0]=ryy, M[0,1]=M[1,0]=rxy, M[1,1]=rxx): the eigenvalue of
+            # maximum magnitude is the line's, on a tie the larger one.
+            principal, vec0, vec1 = _principal_eig_2x2(ryy, rxy, rxx)
 
             # Polarity-aware saliency. The principal Hessian eigenvalue at a
             # ridge pixel is positive for a dark line on a bright background
             # (intensity has a local minimum) and negative for a bright line
-            # on a dark background. argmax across scales picks the largest
-            # value, so we must build saliency with the sign that makes a
-            # genuine ridge response register as a large positive number for
-            # the requested polarity. Without this, MODE_LIGHT runs select
-            # the LEAST-negative saliency (the over-smoothed scale where the
-            # line is least sharp) instead of the strongest response.
-            sign = 1.0 if self.mode == LinesUtil.MODE_DARK else -1.0
-            saliency[:, :, scale_idx] = sigma ** self.gamma * sign * eigvals_tmp[:, :, 0]
-            orientation[:, :, :, scale_idx] = eigvecs_tmp[:, :, :, 0]
-
-            # store intermediate results
-            rys[..., scale_idx] = ry
-            rxs[..., scale_idx] = rx
+            # on a dark background. The maximum across scales picks the
+            # largest value, so we must build saliency with the sign that
+            # makes a genuine ridge response register as a large positive
+            # number for the requested polarity. Without this, MODE_LIGHT runs
+            # select the LEAST-negative saliency (the over-smoothed scale
+            # where the line is least sharp) instead of the strongest response.
+            saliency = sigma ** self.gamma * sign * principal
+            take = saliency >= best
+            best[take] = saliency[take]
+            best_idx[take] = scale_idx
+            grady[take] = ry[take]
+            gradx[take] = rx[take]
+            for k, d in enumerate((ryy, rxy, rxx)):
+                hessian[k][take] = d[take]
+            orientation[..., 0][take] = vec0[take]
+            orientation[..., 1][take] = vec1[take]
             grad_scales[scale_idx] = np.hypot(ry, rx)
-            ryys[..., scale_idx] = ryy
-            rxys[..., scale_idx] = rxy
-            rxxs[..., scale_idx] = rxx
+            del ry, rx, ryy, rxy, rxx, principal, vec0, vec1, saliency, take
 
             # Continuous Steger ridge-saliency threshold (Steger 1996, Eq. 12,
             # scaled by 0.17 * sigma^gamma to match this module's normalised
@@ -215,47 +254,34 @@ class FibreDetector:
             line_width = 2 * np.sqrt(3) * (sigma - 0.5)
             _gauss = (line_width / (np.sqrt(2 * np.pi) * sigma ** 3) *
                       np.exp(-line_width ** 2 / (8 * sigma ** 2)))
-            low_thresh = 0.17 * sigma ** self.gamma * self.clow * _gauss
-            high_thresh = 0.17 * sigma ** self.gamma * self.chigh * _gauss
-            low_threshs[..., scale_idx] = low_thresh
-            high_threshs[..., scale_idx] = high_thresh
-            sigma_maps[..., scale_idx] = sigma
+            low_by_scale[scale_idx] = 0.17 * sigma ** self.gamma * self.clow * _gauss
+            high_by_scale[scale_idx] = 0.17 * sigma ** self.gamma * self.chigh * _gauss
 
-        # get the scale index of the maximum saliency and the corresponding derivatives and thresholds
-        global_max_idx = saliency.argsort()[..., -1]
-        self.lower_thresh = np.squeeze(np.take_along_axis(low_threshs, global_max_idx[:, :, None], axis=-1))
-        self.upper_thresh = np.squeeze(np.take_along_axis(high_threshs, global_max_idx[:, :, None], axis=-1))
-        self.sigma_map = np.squeeze(np.take_along_axis(sigma_maps, global_max_idx[:, :, None], axis=-1))
+        # thresholds (looked up from the scale index, see lower_thresh) and
+        # scale at each pixel's selected scale
+        self._scale_idx = best_idx
+        self._low_by_scale, self._high_by_scale = low_by_scale, high_by_scale
+        self.sigma_map = np.asarray(self.sigmas, dtype=float)[best_idx]
 
-        self.derivatives = np.zeros((5, height, width), dtype=float)
-
-        self.derivatives[0, ...] = np.squeeze(np.take_along_axis(rys, global_max_idx[:, :, None], axis=-1))
-        self.derivatives[1, ...] = np.squeeze(np.take_along_axis(rxs, global_max_idx[:, :, None], axis=-1))
-        self.derivatives[2, ...] = np.squeeze(np.take_along_axis(ryys, global_max_idx[:, :, None], axis=-1))
-        self.derivatives[3, ...] = np.squeeze(np.take_along_axis(rxys, global_max_idx[:, :, None], axis=-1))
-        self.derivatives[4, ...] = np.squeeze(np.take_along_axis(rxxs, global_max_idx[:, :, None], axis=-1))
-
-        self.grady = self.derivatives[0, ...]
-        self.gradx = self.derivatives[1, ...]
+        self.grady = grady
+        self.gradx = gradx
+        self._hessian = hessian
         self.grad_scales = grad_scales
 
-        self.eigvals = np.take_along_axis(saliency, global_max_idx[:, :, None], axis=-1)
-        self.eigvecs = np.take_along_axis(orientation, global_max_idx[:, :, None, None], axis=-1)
+        self.eigvals = best[:, :, None]
+        self.eigvecs = orientation[:, :, :, None]
 
     def compute_line_points(self):
         height, width = self.gray.shape[:2]
-        self.ismax = np.zeros((height, width), dtype=int)
+        self.ismax = np.zeros((height, width), dtype=np.int8)     # 0, 1 (weak) or 2 (strong)
         self.eigval = np.zeros((height, width), dtype=float)
         self.normx = np.zeros((height, width), dtype=float)
         self.normy = np.zeros((height, width), dtype=float)
         self.posx = np.zeros((height, width), dtype=float)
         self.posy = np.zeros((height, width), dtype=float)
 
-        ry = self.derivatives[0, ...]
-        rx = self.derivatives[1, ...]
-        ryy = self.derivatives[2, ...]
-        rxy = self.derivatives[3, ...]
-        rxx = self.derivatives[4, ...]
+        ry, rx = self.grady, self.gradx
+        ryy, rxy, rxx = self._hessian
 
         # self.eigvals stores the polarity-aware saliency at the per-pixel
         # selected scale (apply_filtering bakes the mode sign in), so it is
@@ -276,16 +302,17 @@ class FibreDetector:
 
         bnd_mask = (abs(py_) <= PIXEL_BOUNDARY) & (abs(px_) <= PIXEL_BOUNDARY)
         base_mask = val_mask & bnd_mask
-        upper_mask = base_mask & (val >= self.upper_thresh)
-        lower_mask = base_mask & (val >= self.lower_thresh) & (val < self.upper_thresh)
+        upper_thresh, lower_thresh = self.upper_thresh, self.lower_thresh
+        upper_mask = base_mask & (val >= upper_thresh)
+        lower_mask = base_mask & (val >= lower_thresh) & (val < upper_thresh)
         self.ismax[upper_mask] = 2
         self.ismax[lower_mask] = 1
 
         self.normy[base_mask] = ny_[base_mask]
         self.normx[base_mask] = nx_[base_mask]
-        Y, X = np.mgrid[0:height, 0:width]
-        self.posy[base_mask] = Y[base_mask] + py_[base_mask]
-        self.posx[base_mask] = X[base_mask] + px_[base_mask]
+        rows, cols = np.nonzero(base_mask)
+        self.posy[rows, cols] = rows + py_[rows, cols]
+        self.posx[rows, cols] = cols + px_[rows, cols]
 
     def extend_lines(self, label):
         height, width = label.shape[:2]
@@ -825,7 +852,9 @@ class FibreDetector:
             scale_of_cont[i] = int(np.argmin(np.abs(self.sigmas - sig_med)))
 
         for scale_idx in np.unique(scale_of_cont):
-            edge = self._edge_arrays(self.grad_scales[scale_idx])
+            # stored as float32 to save memory; the edge arrays are computed in float64
+            edge = None         # release the previous scale's arrays before building the next
+            edge = self._edge_arrays(self.grad_scales[scale_idx].astype(float))
             sigma_c = float(self.sigmas[scale_idx])
             for i in np.flatnonzero(scale_of_cont == scale_idx):
                 self._measure_contour_width(self.contours[i], edge, sigma_c,
@@ -842,24 +871,22 @@ class FibreDetector:
         grad_dcc = convolve(grad, kernel_cc, mode='mirror')
 
         # Closed-form eigendecomposition of the 2x2 gradient-magnitude Hessian
-        # per pixel; same shapes and contract as np.linalg.eigh on a
-        # (H, W, 2, 2) tensor, faster.
-        eigvals, eigvecs = _eigh_2x2_symmetric(2 * grad_drr, grad_drc, 2 * grad_dcc)
-        idx = np.absolute(eigvals).argsort()[..., ::-1]
-        eigvals = np.take_along_axis(eigvals, idx, axis=-1)
-        eigvecs = np.take_along_axis(eigvecs, idx[:, :, None, :], axis=-1)
+        # per pixel; only the eigenvalue of largest magnitude and its
+        # eigenvector are used.
+        eigval, ev0, ev1 = _principal_eig_2x2(2 * grad_drr, grad_drc, 2 * grad_dcc)
 
-        bb = grad_dr * eigvecs[:, :, 0, 0] + grad_dc * eigvecs[:, :, 1, 0]
-        aa = 2.0 * (grad_drr * eigvecs[:, :, 0, 0] ** 2 + grad_drc * eigvecs[:, :, 0, 0] * eigvecs[:, :, 1, 0] +
-                    grad_dcc * eigvecs[:, :, 1, 0] ** 2)
+        bb = grad_dr * ev0 + grad_dc * ev1
+        aa = 2.0 * (grad_drr * ev0 ** 2 + grad_drc * ev0 * ev1 + grad_dcc * ev1 ** 2)
         tt = bb / (aa + np.finfo(float).eps)
-        pp1, pp2 = tt * eigvecs[:, :, 0, 0], tt * eigvecs[:, :, 1, 0]
+        del bb, aa
+        pp1, pp2 = tt * ev0, tt * ev1
+        del tt
         grad_rl = (grad_dd + pp1 * grad_dr + pp2 * grad_dc +
                    pp1 * pp1 * grad_drr + pp1 * pp2 * grad_drc + pp2 * pp2 * grad_dcc)
-        return eigvals, eigvecs, pp1, pp2, grad_rl
+        return eigval, ev0, ev1, pp1, pp2, grad_rl
 
     def _measure_contour_width(self, cont, edge, sigma_c, gray_s, max_length, max_half_width):
-        eigvals, eigvecs, pp1, pp2, grad_rl = edge
+        eigval, ev0, ev1, pp1, pp2, grad_rl = edge
         height, width = gray_s.shape[:2]
         regularize_normals(cont)
         num_points = cont.num
@@ -899,7 +926,7 @@ class FibreDetector:
                     continue
                 for k in range(num_line):
                     y, x = scan_y[k], scan_x[k]
-                    val = -eigvals[y, x, 0]
+                    val = -eigval[y, x]
                     if val > 0.0:
                         p1, p2 = pp1[y, x], pp2[y, x]
 
@@ -918,7 +945,7 @@ class FibreDetector:
                             # 60 deg off the normal kills those "spurs"
                             # while still tolerating moderate curvature and
                             # smoothing-induced misalignment.
-                            ev_dot = eigvecs[y, x, 0, 0] * ny + eigvecs[y, x, 1, 0] * nx
+                            ev_dot = ev0[y, x] * ny + ev1[y, x] * nx
                             if abs(ev_dot) < 0.5:
                                 continue
                             # Edge must sit on the ridge-to-background
@@ -1007,7 +1034,13 @@ class FibreDetector:
 
         self.apply_filtering()
         self.compute_line_points()
+        # Free what later steps do not need, so the peak during width
+        # estimation stays low on large images. eigvals and the threshold
+        # maps (cheap, derived from the scale index) stay for inspection.
+        self._hessian = None
+        self.eigvecs = None
         self.compute_contours()
+        self.normx = self.normy = self.posx = self.posy = self.ismax = self.eigval = None
         self.compute_line_width()
         self.prune_contours()
 
@@ -1057,8 +1090,10 @@ class FibreDetector:
         binary_widths = np.ones((height, width), dtype=np.uint8) * 255
         for width_left, width_right in zip(all_width_left, all_width_right):
             poly_points = np.concatenate((width_left, width_right[::-1, :]), axis=0)
-            mask = ski.draw.polygon2mask((height, width), poly_points[:, [1, 0]])
-            binary_widths[mask] = 0
+            # fill the polygon's pixels directly (polygon2mask builds and scans a
+            # full-size mask per polygon, quadratic on large images)
+            rr, cc = ski.draw.polygon(poly_points[:, 1], poly_points[:, 0], (height, width))
+            binary_widths[rr, cc] = 0
 
         return contour_img, width_img, binary_contours, binary_widths, int_width_img
 
@@ -1121,8 +1156,10 @@ class FibreDetector:
             binary_widths = np.ones((height, width), dtype=np.uint8) * 255
             for width_left, width_right in zip(all_width_left, all_width_right):
                 poly_points = np.concatenate((width_left, width_right[::-1, :]), axis=0)
-                mask = ski.draw.polygon2mask((height, width), poly_points[:, [1, 0]])
-                binary_widths[mask] = 0
+                # fill the polygon's pixels directly (polygon2mask builds and scans a
+                # full-size mask per polygon, quadratic on large images)
+                rr, cc = ski.draw.polygon(poly_points[:, 1], poly_points[:, 0], (height, width))
+                binary_widths[rr, cc] = 0
             iio.imwrite(os.path.join(save_dir, "binary_widths.png"), binary_widths)
 
     def show_results(self):
@@ -1170,8 +1207,10 @@ class FibreDetector:
             if width_left.size == 0 or width_right.size == 0:
                 continue
             poly_points = np.concatenate((width_left, width_right[::-1, :]), axis=0)
-            mask = ski.draw.polygon2mask((height, width), poly_points[:, [1, 0]])
-            binary_widths[mask] = 0
+            # fill the polygon's pixels directly (polygon2mask builds and scans a
+            # full-size mask per polygon, quadratic on large images)
+            rr, cc = ski.draw.polygon(poly_points[:, 1], poly_points[:, 0], (height, width))
+            binary_widths[rr, cc] = 0
 
         fig, axes = plt.subplots(2, 2, figsize=(16, 16))
         axes[0, 0].imshow(img_contours)

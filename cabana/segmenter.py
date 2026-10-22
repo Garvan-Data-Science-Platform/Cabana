@@ -29,10 +29,9 @@ from pathlib import Path
 from skimage import measure
 import torch.optim as optim
 from .log import Log
-from torch.autograd import Variable
 from skimage.morphology import remove_small_objects, remove_small_holes
 from .models import BackBone, LightConv3x3
-from .utils import mean_image, cal_color_dist
+from .utils import mean_image, cal_color_dist, is_greyscale
 
 # Set fixed seed for reproducible results
 SEED = 0
@@ -60,13 +59,11 @@ def parse_args():
     parser.add_argument('--sz_filter', default=5, type=int,
                         help='CRF filter size')
     parser.add_argument('--rt', default=0.2, type=float,
-                        help='Relative color threshold for object detection')
+                        help='Colour threshold: minimum absolute colour score of a region (1 = the target hue)')
     parser.add_argument('--mode', type=str, default="both",
                         help='Processing mode')
     parser.add_argument('--min_size', default=64, type=int,
                         help='The smallest allowable object size in pixels')
-    parser.add_argument('--max_size', default=2048, type=int,
-                        help='The maximal allowable image size')
     parser.add_argument('--white_background', default=True, type=bool,
                         help='Set background color to white in output images')
     parser.add_argument('--roi_dir', type=str, default="./output/ROIs",
@@ -123,83 +120,170 @@ def select_device():
     return torch.device("cpu")
 
 
-def segment_color_distance(img_bgr, args, iter_callback=None, cnn_size=512):
-    """See :func:`_segment_color_distance`. Falls back to the CPU when the
-    accelerator rejects an operation (e.g. a kernel missing on MPS)."""
+def _reduce(img_bgr, cnn_size):
+    """Resize so that the longer side is ``cnn_size`` (no rotation)."""
+    h, w = img_bgr.shape[:2]
+    return imutils.resize(img_bgr, width=cnn_size) if w >= h else imutils.resize(img_bgr, height=cnn_size)
+
+
+def _tensors(img, device):
+    """Network input (0-1) and CRF image (0-255) tensors of a reduced BGR image."""
+    chw = np.ascontiguousarray(img.transpose(2, 0, 1)).astype("float32")
+    return torch.from_numpy(chw[None] / 255.).to(device), torch.from_numpy(chw[None]).to(device)
+
+
+def _make_crf(shape, args, device):
+    config = convcrf.default_conf
+    config['filter_size'] = args.sz_filter
+    return convcrf.GaussCRF(conf=config, shape=shape, nclasses=args.num_channels,
+                            use_gpu=(device.type == "cuda")).to(device)
+
+
+def _train_network(img, args, step, device):
+    """Train the self-supervised CNN + CRF on the reduced image ``img``.
+
+    The network is trained to agree with its own CRF-smoothed labels for up to
+    ``args.max_iter`` iterations (fewer once only ``args.min_labels`` labels
+    are left). ``step(i)`` is called after iteration ``i``. Returns the trained
+    model, the CRF and the label map of the last iteration.
+    """
+    torch.manual_seed(SEED)
+    torch.cuda.manual_seed(SEED)
+    img_size = img.shape[:2]
+    data, img_var = _tensors(img, device)
+    crf = _make_crf(img_size, args, device)
+    model = BackBone([LightConv3x3], [2], [args.num_channels // 2, args.num_channels]).to(device)
+    model.train()
+    loss_fn = torch.nn.CrossEntropyLoss()
+    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
+    labels = None
+    for it in range(args.max_iter):
+        optimizer.zero_grad()
+        output = model(data)[0]
+        prediction = crf.forward(unary=output.unsqueeze(0), img=img_var)
+        target = torch.argmax(prediction.squeeze(0), axis=0).reshape(img_size[0] * img_size[1], )
+        output = output.permute(1, 2, 0).contiguous().view(-1, args.num_channels)
+        im_target = target.data.cpu().numpy()
+        labels = im_target.reshape(img_size).astype("uint8")
+        loss = loss_fn(output, target)
+        loss.backward()
+        optimizer.step()
+        step(it)
+        if len(np.unique(im_target)) <= args.min_labels:
+            Log.logger.debug(f"nLabels reached minLabels {args.min_labels}")
+            break
+    # The model stays in training mode for labelling patches: its BatchNorm
+    # layers then normalise each patch with the patch's own statistics. The
+    # running statistics of eval mode are not settled after so few iterations
+    # and lose most collagen on weakly stained images.
+    return model, crf, labels
+
+
+def _label_image(model, crfs, img, args, device):
+    """Labels of the reduced image ``img`` from a trained model, without training."""
+    shape = img.shape[:2]
+    if shape not in crfs:
+        crfs[shape] = _make_crf(shape, args, device)
+    data, img_var = _tensors(img, device)
+    with torch.no_grad():
+        output = model(data)[0]
+        prediction = crfs[shape].forward(unary=output.unsqueeze(0), img=img_var)
+    return torch.argmax(prediction.squeeze(0), axis=0).cpu().numpy().astype("uint8")
+
+
+def _colour_score(img, labels, hue_value, greyscale):
+    """Absolute colour score (0-1) of every pixel of the reduced image ``img``:
+    each connected region of one label takes its mean colour, scored by its
+    closeness to the target hue (1 = exactly the target colour; bright white
+    for a greyscale image)."""
+    mean_img = mean_image(cv2.cvtColor(img, cv2.COLOR_BGR2RGB), measure.label(labels))
+    absolute, _ = cal_color_dist(mean_img, hue_value, greyscale=greyscale)
+    return absolute.astype(np.float32)
+
+
+def _per_image_scale(score):
+    """Min-max normalise a greyscale image's score over the whole image."""
+    lo, hi = float(score.min()), float(score.max())
+    return (score - lo) / (hi - lo + np.finfo(float).eps)
+
+
+def _patch_grid(h, w, args):
+    """``(patch, overlap, ys, xs)`` of the patch tiling, or None when the image
+    is segmented whole (Patch Size off, or the image fits in one patch)."""
+    patch = int(getattr(args, 'patch_size', 0) or 0)
+    if patch <= 0 or max(h, w) <= patch:
+        return None
+    overlap = int(round(patch * float(getattr(args, 'patch_overlap', 0.125) or 0)))
+    return patch, overlap, tile_windows(h, patch, overlap), tile_windows(w, patch, overlap)
+
+
+def segmentation_steps(h, w, args):
+    """Progress steps of segmenting an ``h`` x ``w`` image: the training
+    iterations plus one labelling pass per patch."""
+    grid = _patch_grid(h, w, args)
+    return int(args.max_iter) + (len(grid[2]) * len(grid[3]) if grid else 0)
+
+
+def colour_score_map(img_bgr, args, iter_callback=None, cnn_size=512):
+    """Absolute colour-score map of an image, see :func:`segment_image`.
+
+    Returns ``(score, min_size)``: the score map (at the reduced size when the
+    image is segmented whole, else at full size) and the smallest object size
+    in pixels of that map. Falls back to the CPU when the accelerator rejects
+    an operation (e.g. a kernel missing on MPS)."""
     device = select_device()
     try:
-        return _segment_color_distance(img_bgr, args, iter_callback, cnn_size, device)
+        return _colour_score_map(img_bgr, args, iter_callback, cnn_size, device)
     except (RuntimeError, NotImplementedError) as e:
         if device.type == "cpu":
             raise
         Log.logger.warning(f"Segmentation on {device} failed ({e}); retrying on CPU.")
-        return _segment_color_distance(img_bgr, args, iter_callback, cnn_size, torch.device("cpu"))
+        return _colour_score_map(img_bgr, args, iter_callback, cnn_size, torch.device("cpu"))
 
 
-def _segment_color_distance(img_bgr, args, iter_callback, cnn_size, device):
-    """Train the self-supervised CNN + CRF on one image and return the relative
-    colour-distance map to the hue of interest.
-
-    The image is resized so that its longer side is ``cnn_size`` before
-    training (no rotation). The returned map has that reduced size; callers
-    threshold it with ``args.rt`` and resize as needed. ``iter_callback(it,
-    max_iter)`` is invoked after every iteration.
-    """
-    torch.manual_seed(SEED)
-    torch.cuda.manual_seed(SEED)
-
+def _colour_score_map(img_bgr, args, iter_callback, cnn_size, device):
     h, w = img_bgr.shape[:2]
-    if w >= h:
-        img = imutils.resize(img_bgr, width=cnn_size)
-    else:
-        img = imutils.resize(img_bgr, height=cnn_size)
-    rgb_image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    img_size = img.shape[:2]
+    total = segmentation_steps(h, w, args)
 
-    chw = img.transpose(2, 0, 1)
-    data = torch.from_numpy(np.array([chw.astype('float32') / 255.]))
-    img_var = torch.Tensor(chw.reshape([1, 3, *img_size]))
-
-    config = convcrf.default_conf
-    config['filter_size'] = args.sz_filter
-    gausscrf = convcrf.GaussCRF(conf=config, shape=img_size, nclasses=args.num_channels,
-                                use_gpu=(device.type == "cuda"))
-    model = BackBone([LightConv3x3], [2], [args.num_channels // 2, args.num_channels])
-    data, img_var = data.to(device), img_var.to(device)
-    gausscrf, model = gausscrf.to(device), model.to(device)
-    data = Variable(data)
-    img_var = Variable(img_var)
-
-    model.train()
-    loss_fn = torch.nn.CrossEntropyLoss()
-    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
-
-    image_labels = None
-    for batch_idx in range(args.max_iter):
-        optimizer.zero_grad()
-        output = model(data)[0]
-        unary = output.unsqueeze(0)
-        prediction = gausscrf.forward(unary=unary, img=img_var)
-        target = torch.argmax(prediction.squeeze(0), axis=0).reshape(img_size[0] * img_size[1], )
-        output = output.permute(1, 2, 0).contiguous().view(-1, args.num_channels)
-        im_target = target.data.cpu().numpy()
-        image_labels = im_target.reshape(img_size[0], img_size[1]).astype("uint8")
-        num_labels = len(np.unique(im_target))
-
-        loss = loss_fn(output, target)
-        loss.backward()
-        optimizer.step()
-
+    def step(i):
         if iter_callback is not None:
-            iter_callback(batch_idx, args.max_iter)
-        if num_labels <= args.min_labels:
-            Log.logger.debug(f"nLabels {num_labels} reached minLabels {args.min_labels}")
-            break
+            iter_callback(i, total)
 
-    labels = measure.label(image_labels)
-    mean_img = mean_image(rgb_image, labels)
-    _, rel_color_dist = cal_color_dist(mean_img, args.hue_value)
-    return rel_color_dist.astype(np.float32)
+    # Greyscale images (SHG, fluorescence) are scored by brightness, relative
+    # to the image: the scores are min-max normalised once over the whole
+    # image, as in earlier versions. Colour images use the absolute score.
+    grey = is_greyscale(img_bgr)
+    small = _reduce(img_bgr, cnn_size)
+    model, crf, labels = _train_network(small, args, step, device)
+    grid = _patch_grid(h, w, args)
+    if grid is None:
+        score = _colour_score(small, labels, args.hue_value, grey)
+        return (_per_image_scale(score) if grey else score), int(args.min_size)
+
+    # Train once, label every patch: the network trained on the whole image
+    # labels each patch (reduced to cnn_size) without further training, so the
+    # labels mean the same in every patch. The absolute scores are blended
+    # across the overlaps and the merged map is thresholded once.
+    patch, overlap, ys, xs = grid
+    crfs = {small.shape[:2]: crf}
+    acc = np.zeros((h, w), dtype=np.float32)
+    wsum = np.zeros((h, w), dtype=np.float32)
+    weights = _feather_weights(patch, patch, overlap)
+    k = 0
+    for y0 in ys:
+        for x0 in xs:
+            ph, pw = min(patch, h - y0), min(patch, w - x0)
+            sub = _reduce(img_bgr[y0:y0 + ph, x0:x0 + pw], cnn_size)
+            score = _colour_score(sub, _label_image(model, crfs, sub, args, device), args.hue_value, grey)
+            wgt = weights[:ph, :pw]
+            acc[y0:y0 + ph, x0:x0 + pw] += cv2.resize(score, (pw, ph), interpolation=cv2.INTER_LINEAR) * wgt
+            wsum[y0:y0 + ph, x0:x0 + pw] += wgt
+            step(int(args.max_iter) + k)
+            k += 1
+    # min_size keeps meaning "objects smaller than N pixels at CNN resolution"
+    scale = (patch / float(cnn_size)) ** 2
+    merged = acc / np.maximum(wsum, 1e-6)
+    return (_per_image_scale(merged) if grey else merged), max(1, int(round(args.min_size * scale)))
 
 
 def _clean_mask(thresholded, min_size):
@@ -210,57 +294,49 @@ def _clean_mask(thresholded, min_size):
     return thresholded
 
 
-def segment_image(img_bgr, args, iter_callback=None, cnn_size=512):
+def mask_from_score(score, min_size, threshold, shape):
+    """Binary ``uint8`` mask (0/255) of size ``shape`` from a colour-score map:
+    regions scoring above ``threshold`` (absolute, 1 = the target colour),
+    cleaned of objects and holes smaller than ``min_size`` pixels of the map,
+    then up-sampled (nearest neighbour) when the map is smaller. Cheap, so a
+    host can re-threshold without segmenting again."""
+    mask = 255 * _clean_mask(score > threshold, min_size).astype("uint8")
+    if mask.shape[:2] != tuple(shape[:2]):
+        mask = cv2.resize(mask, (shape[1], shape[0]), interpolation=cv2.INTER_NEAREST)
+    return mask
+
+
+def segment_image(img_bgr, args, iter_callback=None, cnn_size=512, return_score=False):
     """Segment one image and return a binary ``uint8`` mask (0/255) at the
     image's own resolution.
 
-    When ``args.patch_size`` is 0 or the image fits inside one patch, the
-    whole image is reduced to ``cnn_size`` on its longer side, segmented, and
-    the thresholded mask is up-sampled with nearest-neighbour interpolation
-    (the original behaviour). Otherwise the image is tiled with edge-anchored
-    square patches of ``args.patch_size`` pixels overlapping by
-    ``args.patch_overlap`` (fraction of the patch); every patch is reduced to
-    ``cnn_size`` and segmented independently, the colour-distance maps are
-    up-sampled to patch resolution and blended with linear feathering, and the
-    merged map is thresholded once. ``min_size`` is scaled by the square of the
-    patch reduction factor so it keeps meaning "objects smaller than N pixels
-    at CNN resolution".
+    The self-supervised CNN + CRF is trained once on the image reduced to
+    ``cnn_size`` on its longer side; each connected region of one label takes
+    its mean colour, and pixels whose region scores above ``args.rt`` on the
+    absolute colour score (1 = exactly the target hue ``args.hue_value``) are
+    kept. For colour images the threshold is the same on every image: it is
+    not rescaled to the image's own score range. Greyscale images (no colour
+    at all, e.g. SHG) target bright white and keep the earlier behaviour: the
+    scores are min-max normalised over the whole image (never per patch)
+    before thresholding.
+
+    When ``args.patch_size`` is set and the image is larger than one patch,
+    the image is tiled with edge-anchored square patches overlapping by
+    ``args.patch_overlap`` (fraction of the patch). The trained network labels
+    each patch (reduced to ``cnn_size``) without further training, the scores
+    are blended across the overlaps with linear feathering, and the merged map
+    is thresholded once at full resolution. ``min_size`` is scaled by the
+    square of the patch reduction factor so it keeps meaning "objects smaller
+    than N pixels at CNN resolution".
+
+    ``iter_callback(step, total)`` is called after every training iteration
+    and every patch (see :func:`segmentation_steps`). With ``return_score``
+    the result is ``(mask, (score, min_size))`` so a host can re-threshold
+    with :func:`mask_from_score`.
     """
-    h, w = img_bgr.shape[:2]
-    patch = int(getattr(args, 'patch_size', 0) or 0)
-    if patch <= 0 or max(h, w) <= patch:
-        dist = segment_color_distance(img_bgr, args, iter_callback, cnn_size)
-        thresholded = _clean_mask(dist > args.rt, args.min_size)
-        mask = 255 * thresholded.astype("uint8")
-        return cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
-
-    overlap = int(round(patch * float(getattr(args, 'patch_overlap', 0.125) or 0)))
-    ys = tile_windows(h, patch, overlap)
-    xs = tile_windows(w, patch, overlap)
-    n_patches = len(ys) * len(xs)
-    acc = np.zeros((h, w), dtype=np.float32)
-    wsum = np.zeros((h, w), dtype=np.float32)
-    weights = _feather_weights(patch, patch, overlap)
-    k = 0
-    for y0 in ys:
-        for x0 in xs:
-            ph, pw = min(patch, h - y0), min(patch, w - x0)
-            sub = img_bgr[y0:y0 + ph, x0:x0 + pw]
-
-            def _cb(it, max_iter, _k=k):
-                if iter_callback is not None:
-                    iter_callback(_k * max_iter + it, n_patches * max_iter)
-
-            dist = segment_color_distance(sub, args, _cb, cnn_size)
-            dist = cv2.resize(dist, (pw, ph), interpolation=cv2.INTER_LINEAR)
-            wgt = weights[:ph, :pw]
-            acc[y0:y0 + ph, x0:x0 + pw] += dist * wgt
-            wsum[y0:y0 + ph, x0:x0 + pw] += wgt
-            k += 1
-    merged = acc / np.maximum(wsum, 1e-6)
-    scale = (patch / float(cnn_size)) ** 2
-    thresholded = _clean_mask(merged > args.rt, max(1, int(round(args.min_size * scale))))
-    return 255 * thresholded.astype("uint8")
+    score, min_size = colour_score_map(img_bgr, args, iter_callback, cnn_size)
+    mask = mask_from_score(score, min_size, args.rt, img_bgr.shape)
+    return (mask, (score, min_size)) if return_score else mask
 
 
 def load_roi_mask(mask_path, shape):

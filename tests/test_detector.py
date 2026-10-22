@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from cabana.detector import FibreDetector, _eigh_2x2_symmetric
+from cabana.detector import FibreDetector, _eigh_2x2_symmetric, _principal_eig_2x2
 
 
 def make_gray_image_with_line(h=128, w=128, line_y=64, thickness=5):
@@ -741,3 +741,25 @@ class TestClosedContours:
         det = FibreDetector(line_widths=[3], dark_line=True, min_len=3)
         det.detect_lines(img)
         assert det.image.max() > 0 and len(det.contours) >= 1
+
+
+class TestPrincipalEig:
+    """_principal_eig_2x2 equals the full decomposition followed by a
+    descending sort of the eigenvalue magnitudes (ties: the larger one)."""
+
+    def _reference(self, a, b, c):
+        vals, vecs = _eigh_2x2_symmetric(a, b, c)
+        idx = np.absolute(vals).argsort()[..., ::-1]
+        vals = np.take_along_axis(vals, idx, axis=-1)
+        vecs = np.take_along_axis(vecs, idx[..., None, :], axis=-1)
+        return vals[..., 0], vecs[..., 0, 0], vecs[..., 1, 0]
+
+    def test_matches_sorted_decomposition_exactly(self):
+        rng = np.random.default_rng(0)
+        a, b, c = (rng.normal(size=(50, 60)) for _ in range(3))
+        # ties: equal eigenvalues (a = c, b = 0) and equal magnitudes (a = -c, b = 0)
+        a[0, :10], b[0, :10], c[0, :10] = 1.5, 0.0, 1.5
+        a[1, :10], b[1, :10], c[1, :10] = 2.0, 0.0, -2.0
+        a[2, :10], b[2, :10], c[2, :10] = 0.0, 0.0, 0.0
+        for got, want in zip(_principal_eig_2x2(a, b, c), self._reference(a, b, c)):
+            assert np.array_equal(got, want)

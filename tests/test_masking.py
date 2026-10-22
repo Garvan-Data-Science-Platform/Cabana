@@ -175,13 +175,47 @@ class TestBatchMasking:
         w1 = cv2.imread(str(out / "Exports" / "core1_roi" / "Width.png"), 0)
         assert np.all(w1[:48, :48] == 255)
 
+    def test_mask_message_counts_eligible_images(self, tmp_path, monkeypatch):
+        img_dir, mask_dir = _write_inputs(tmp_path, with_mask=True)
+        cv2.imwrite(os.path.join(img_dir, "core2.png"), corner_fibre_image())
+        out = tmp_path / "out"
+        out.mkdir()
+        params = _params(tmp_path, False)
+        data = yaml.safe_load(open(params))
+        data["Configs"]["Quantification"] = False
+        yaml.safe_dump(data, open(params, "w"))
+        from cabana.log import Log
+        Log.init_log_path(str(tmp_path / "Logs"))
+        said = []
+        monkeypatch.setattr(Log.logger, "info", lambda msg, *a, **k: said.append(str(msg)))
+        BatchCabana(params, img_dir, str(out), batch_size=5, batch_idx=0, ignore_large=True,
+                    mask_dir=mask_dir).run()
+        assert any(m.startswith("1 of 2 eligible images have an external ROI mask") for m in said)
+
+    def test_max_size_zero_analyses_the_image_whole(self, tmp_path):
+        img_dir, mask_dir = _write_inputs(tmp_path, with_mask=True)
+        out = tmp_path / "out"
+        out.mkdir()
+        params = _params(tmp_path, False)
+        data = yaml.safe_load(open(params))
+        data.setdefault("Configs", {})["Max Size"] = 0         # no limit: no blocks, nothing ignored
+        data["Configs"]["Quantification"] = False
+        yaml.safe_dump(data, open(params, "w"))
+        from cabana.log import Log
+        Log.init_log_path(str(tmp_path / "Logs"))
+        BatchCabana(params, img_dir, str(out), batch_size=5, batch_idx=0, ignore_large=True,
+                    mask_dir=mask_dir).run()
+        assert sorted(os.listdir(out / "ROIMasks")) == ["core1.png"]
+
     def test_oversized_image_blocks_get_cropped_masks(self, tmp_path):
         img_dir, mask_dir = _write_inputs(tmp_path, with_mask=True)
         out = tmp_path / "out"
         out.mkdir()
         params = _params(tmp_path, False)
         data = yaml.safe_load(open(params))
-        data["Segmentation"]["Max Size"] = 150         # forces a 2x2 block split of the 240 px image
+        # forces a 2x2 block split of the 240 px image; the pre-0.3.9 location
+        # Segmentation: Max Size must still be honoured
+        data["Segmentation"]["Max Size"] = 150
         data["Configs"]["Quantification"] = False
         yaml.safe_dump(data, open(params, "w"))
         from cabana.log import Log
@@ -194,3 +228,38 @@ class TestBatchMasking:
         full = circle_mask()
         blk = cv2.imread(str(out / "ROIMasks" / "core1_blk_0_0.png"), 0)
         assert blk.shape == (120, 120) and np.array_equal(blk > 0, full[:120, :120] > 0)
+
+
+class TestBatchStorage:
+    """A finished batch keeps one copy of each output, compressed maps and no
+    working copies; with visualisations off only the measurements remain."""
+
+    def _run(self, tmp_path, save_visuals=None):
+        from cabana.batch import BatchProcessor
+        img_dir, mask_dir = _write_inputs(tmp_path, with_mask=True)
+        out = tmp_path / "out"
+        out.mkdir()
+        BatchProcessor(_params(tmp_path, False), img_dir, str(out), batch_size=5, mask_dir=mask_dir,
+                       save_visuals=save_visuals).run()
+        return out
+
+    def test_outputs_once_and_compressed(self, tmp_path):
+        import tifffile
+        out = self._run(tmp_path)
+        assert not (out / "Eligible").exists() and (out / "IgnoredImages.txt").exists()
+        exp, col = out / "Exports" / "core1_roi", out / "Colors" / "core1_roi"
+        assert (col / "all_gaps.png").exists() and not (exp / "GapImage.png").exists()
+        assert (col / "intra_gaps.png").exists() and not (exp / "GapImage_intra_gaps.png").exists()
+        for name in ("Energy", "Coherency", "Orientation", "Length_Map", "Curve_Map_10"):
+            with tifffile.TiffFile(exp / f"{name}.tif") as t:
+                page = t.pages[0]
+                assert page.dtype == np.float32 and page.compression.name in ("ADOBE_DEFLATE", "DEFLATE")
+        assert not (out / "Fibres").exists()           # the fibre overlay is Colors/.../color_mask.png
+        assert (col / "color_mask.png").exists()
+
+    def test_without_visualisations_only_measurements_remain(self, tmp_path):
+        out = self._run(tmp_path, save_visuals=False)
+        assert not list((out / "Colors").rglob("*.png")) and not (out / "Fibres").exists()
+        assert not list((out / "Masks" / "GapAnalysis").glob("*GapImage*"))
+        assert (out / "Exports" / "core1_roi" / "Energy.tif").exists()
+        assert (out / "QuantificationResults.csv").exists()

@@ -394,3 +394,29 @@ class TestLoops:
         a = _white_on_black_analyzer()
         a.analyze_image(img)
         assert a.total_length > 110          # ring ~126 + tail ~10; before the fix only the tail counted
+
+
+class TestComponentsAtTheImageBorder:
+    """construct_graphs works on each component's bounding box (plus a
+    one-pixel margin clipped at the image edge); components touching the
+    border and pure loops must measure as on the full image."""
+
+    def test_lines_touching_every_border(self, light_analyzer):
+        img = np.zeros((40, 50), np.uint8)
+        img[0, 5:30] = 255                      # along the top edge
+        img[10:40, 49] = 255                    # down the right edge to the bottom
+        img[39, 2:20] = 255                     # along the bottom edge
+        light_analyzer.analyze_image(img)
+        assert light_analyzer.total_length == pytest.approx(24 + 29 + 17, abs=1e-9)
+        assert len(light_analyzer.subgraphs) == 3
+
+    def test_square_loop_and_short_piece_removed(self, light_analyzer):
+        img = np.zeros((40, 40), np.uint8)
+        img[5, 5:25] = img[24, 5:25] = 255     # a closed 20 x 20 square outline
+        img[5:25, 5] = img[5:25, 24] = 255
+        img[35, 30:33] = 255                    # 3 px: below skel_thresh, removed
+        light_analyzer.analyze_image(img)
+        # skeletonisation cuts each corner (value of the earlier full-image implementation)
+        assert light_analyzer.total_length == pytest.approx(72.24264068711929, abs=1e-9)
+        assert len(light_analyzer.subgraphs) == 1
+        assert light_analyzer.skel_image[35, 30:33].max() == 0

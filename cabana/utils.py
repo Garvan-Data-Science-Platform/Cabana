@@ -39,6 +39,12 @@ from .io import (
     get_img_paths,
     sanitize_filename,
     contains_oversized,
+    is_oversized,
+    max_image_size,
+    save_visualisations,
+    migrate_max_size,
+    DEFAULT_MAX_SIZE,
+    largest_image,
     split2batches,
     export_parameters,
     convert_parameters,
@@ -248,14 +254,27 @@ def mean_image(image, labels):
     return np.reshape(uu, [image.shape[0], image.shape[1], image.shape[2]]).astype('uint8')
 
 
-def cal_color_dist(rgb_image, hue=1.0):
+def is_greyscale(rgb_image):
+    """Whether an RGB/BGR image carries no colour (every pixel has R = G = B)."""
+    hsv = cv2.cvtColor(rgb_image, cv2.COLOR_RGB2HSV)
+    return not hsv[:, :, :2].any()
+
+
+def cal_color_dist(rgb_image, hue=1.0, greyscale=None):
+    """Closeness of every pixel's colour to the target colour.
+
+    Returns ``(absolute, relative)``: ``absolute`` is 1 for exactly the target
+    colour (hue ``hue``) and falls off with the HSV distance; ``relative`` is
+    ``absolute`` min-max normalised over this image. A greyscale image targets
+    bright white instead and ignores ``hue``; ``greyscale`` forces the choice
+    (None decides from ``rgb_image``)."""
     hsv = cv2.cvtColor(rgb_image, cv2.COLOR_RGB2HSV).astype(np.float64)
     hsv[:, :, 0] = hsv[:, :, 0] / 180.0
     hsv[:, :, 1] = hsv[:, :, 1] / 255.0
     hsv[:, :, 2] = hsv[:, :, 2] / 255.0
 
     # mu = np.array([60.0 / 180.0, 160.0 / 255.0, 200.0 / 255.0])
-    if np.mean(hsv[:, :, :2]) == 0:  # grayscale
+    if greyscale if greyscale is not None else np.mean(hsv[:, :, :2]) == 0:  # grayscale
         mu = np.array([0, 0, 0.99])
     else:
         mu = np.array([hue, 160.0 / 255.0, 200.0 / 255.0])  # this is the mean value previously used for color images

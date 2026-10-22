@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 import pandas as pd
 import imageio.v3 as iio
+import tifffile
 from skimage.color import rgb2hed, hed2rgb, rgb2gray
 
 from .hdm import HDM
@@ -20,6 +21,19 @@ from .analyzer import SkeletonAnalyzer
 from .orientation import OrientationAnalyzer
 from .utils import join_path
 
+
+
+def write_map_tiff(path, arr):
+    """Write an analysis map as a TIFF with lossless deflate compression.
+
+    float64 maps are stored as float32: the relative rounding is below 1e-7,
+    far below anything the maps resolve, and halves the file. Compression
+    matters most for the skeleton maps (length, curvature), which are almost
+    entirely zero."""
+    arr = np.asarray(arr)
+    if arr.dtype == np.float64:
+        arr = arr.astype(np.float32)
+    tifffile.imwrite(path, arr, compression="zlib")
 
 def summary_stats(values, label, include_count=False, count_label=None):
     """Return mean/std/percentile5/median/percentile95 keyed by ``'<stat> ({label})'``.
@@ -207,10 +221,14 @@ def compute_fibre_areas(img_mask_path, ori_img_path, width_mask_path, hdm_mask_p
     elif ori_img.ndim == 3 and ori_img.shape[2] == 4:
         ori_img = ori_img[..., :3]          # colour deconvolution needs exactly three channels
 
-    hed = rgb2hed(ori_img)
-    null = np.zeros_like(hed[:, :, 0])
-    ihc_e = hed2rgb(np.stack((null, hed[:, :, 1], null), axis=-1))
+    # eosin channel only; intermediates are freed early (several full-size
+    # float64 copies otherwise coexist on large images)
+    eosin = rgb2hed(ori_img)[:, :, 1].copy()
+    null = np.zeros_like(eosin)
+    ihc_e = hed2rgb(np.stack((null, eosin, null), axis=-1))
+    del eosin, null
     red_img = (rgb2gray(ihc_e) * 255).astype(np.uint8)
+    del ihc_e
 
     width_mask = cv2.imread(width_mask_path, 0)
     hdm_mask = cv2.imread(hdm_mask_path, 0)
@@ -327,14 +345,15 @@ def detect_one_image(det, roi_img_path, mask_dir, export_subdir, color_subdir,
     base = mask_filename or os.path.basename(roi_img_path)
 
     Path(export_subdir).mkdir(parents=True, exist_ok=True)
-    Path(color_subdir).mkdir(parents=True, exist_ok=True)
 
     iio.imwrite(join_path(mask_dir, base), binary_contours)
     iio.imwrite(join_path(export_subdir, "Mask.png"), binary_contours)
     iio.imwrite(join_path(export_subdir, "Width.png"), binary_widths)
-    iio.imwrite(join_path(color_subdir, "color_mask.png"), contour_img)
-    iio.imwrite(join_path(color_subdir, "color_width.png"), width_img)
-    iio.imwrite(join_path(color_subdir, "gray_width.png"), int_width_img)
+    if color_subdir is not None:            # None: visualisations are not saved
+        Path(color_subdir).mkdir(parents=True, exist_ok=True)
+        iio.imwrite(join_path(color_subdir, "color_mask.png"), contour_img)
+        iio.imwrite(join_path(color_subdir, "color_width.png"), width_img)
+        iio.imwrite(join_path(color_subdir, "gray_width.png"), int_width_img)
 
     return {
         'contour_img': contour_img,
@@ -397,16 +416,16 @@ def quantify_one_skeleton(skel_analyzer, mask_path, export_subdir,
 
     Path(export_subdir).mkdir(parents=True, exist_ok=True)
     iio.imwrite(join_path(export_subdir, "Skeleton.png"), skel_analyzer.key_pts_image)
-    iio.imwrite(join_path(export_subdir, "Length_Map.tif"),
-                (skel_analyzer.length_map_all * ims_res).astype(np.float32))
+    write_map_tiff(join_path(export_subdir, "Length_Map.tif"),
+                   (skel_analyzer.length_map_all * ims_res).astype(np.float32))
 
     curve_maps = {}
     for win_sz in curve_windows:
         skel_analyzer.calc_curve_all(win_sz)
         metrics[f"Curvature (win_sz={win_sz})"] = skel_analyzer.avg_curve_all
         curve_maps[int(win_sz)] = skel_analyzer.curve_map_all
-        iio.imwrite(join_path(export_subdir, f"Curve_Map_{win_sz}.tif"),
-                    skel_analyzer.curve_map_all)
+        write_map_tiff(join_path(export_subdir, f"Curve_Map_{win_sz}.tif"),
+                       skel_analyzer.curve_map_all)
 
     return metrics, curve_maps, skel_analyzer.key_pts_image, skel_analyzer.length_map_all
 
@@ -421,15 +440,17 @@ def analyze_one_orientation(orient_analyzer, roi_img_path, mask_roi_path,
     are still written so downstream globs find them).
     """
     Path(export_subdir).mkdir(parents=True, exist_ok=True)
-    Path(color_subdir).mkdir(parents=True, exist_ok=True)
+    if color_subdir is not None:            # None: visualisations are not saved
+        Path(color_subdir).mkdir(parents=True, exist_ok=True)
     mask_roi = iio.imread(mask_roi_path)
 
     if np.sum(mask_roi) == 0:
         empty = np.zeros_like(mask_roi)
         for name in ("Energy", "Coherency", "Orientation", "Color_Survey"):
-            iio.imwrite(join_path(export_subdir, f"{name}.tif"), empty)
-        for name in ("orient_vf", "angular_hist"):
-            iio.imwrite(join_path(color_subdir, f"{name}.png"), empty)
+            write_map_tiff(join_path(export_subdir, f"{name}.tif"), empty)
+        if color_subdir is not None:
+            for name in ("orient_vf", "angular_hist"):
+                iio.imwrite(join_path(color_subdir, f"{name}.png"), empty)
         return dict.fromkeys(ORIENT_METRICS, 0), {}
 
     mask_hdm = (iio.imread(mask_hdm_path) > 0).astype(np.uint8) * 255
@@ -457,11 +478,12 @@ def analyze_one_orientation(orient_analyzer, roi_img_path, mask_roi_path,
         'angular_hist': orient_analyzer.draw_angular_hist(mask=mask_roi),
     }
 
-    iio.imwrite(join_path(export_subdir, "Energy.tif"), images['energy'])
-    iio.imwrite(join_path(export_subdir, "Coherency.tif"), images['coherency'])
-    iio.imwrite(join_path(export_subdir, "Orientation.tif"), images['orientation'])
-    iio.imwrite(join_path(export_subdir, "Color_Survey.tif"), images['color_survey'])
-    iio.imwrite(join_path(color_subdir, "orient_vf.png"), images['vector_field'])
-    iio.imwrite(join_path(color_subdir, "angular_hist.png"), images['angular_hist'])
+    write_map_tiff(join_path(export_subdir, "Energy.tif"), images['energy'])
+    write_map_tiff(join_path(export_subdir, "Coherency.tif"), images['coherency'])
+    write_map_tiff(join_path(export_subdir, "Orientation.tif"), images['orientation'])
+    write_map_tiff(join_path(export_subdir, "Color_Survey.tif"), images['color_survey'])
+    if color_subdir is not None:
+        iio.imwrite(join_path(color_subdir, "orient_vf.png"), images['vector_field'])
+        iio.imwrite(join_path(color_subdir, "angular_hist.png"), images['angular_hist'])
 
     return metrics, images

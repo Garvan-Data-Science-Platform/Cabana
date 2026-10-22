@@ -147,8 +147,8 @@ def test_estimate_progress_total_full_pipeline():
     # 5 eligible, 5 input
     total = bc._estimate_progress_total(n_eligible=5, n_input=5)
     # generate_rois (5) + hdm (5) + detect (5) + skel (5) + orient (5) +
-    # visualize (5) + calc_areas (5) + gap (5) + intra_gap (5) + colormaps (5)
-    assert total == 50
+    # calc_areas (5) + gap (5) + intra_gap (5) + colormaps (5)
+    assert total == 45
 
 
 def test_estimate_progress_total_no_quantification():
@@ -163,27 +163,28 @@ def test_estimate_progress_total_no_gap_analysis():
     bc = _make_batch_cabana(None)
     bc.args = {"Configs": {"Quantification": True, "Gap Analysis": False}}
     total = bc._estimate_progress_total(n_eligible=5, n_input=5)
-    # Full pipeline minus gap (5) and intra-gap (5) = 50 - 10 = 40
-    assert total == 40
+    # Full pipeline minus gap (5) and intra-gap (5) = 45 - 10 = 35
+    assert total == 35
 
 
 def test_estimate_progress_total_weights_segmentation_by_patches(tmp_path):
     import numpy as np, cv2, types
-    from cabana.batch import SEG_TICKS_PER_PATCH
+    from cabana.batch import PATCHES_PER_TICK, SEG_TICKS_PER_TRAINING
     bc = _make_batch_cabana(None)
     bc.args = {"Configs": {"Segmentation": True, "Quantification": False, "Gap Analysis": False}}
     cv2.imwrite(str(tmp_path / "small.png"), np.zeros((300, 300, 3), np.uint8))
     cv2.imwrite(str(tmp_path / "big.png"), np.zeros((2000, 1200, 3), np.uint8))
     bc.input_folder = str(tmp_path)
-    # patch-wise segmentation off: one CNN run per image
+    # patch-wise segmentation off: one CNN training run per image
     bc.seg_args = types.SimpleNamespace(patch_size=0)
-    assert bc._estimate_progress_total(n_eligible=2, n_input=2) == 2 * SEG_TICKS_PER_PATCH
+    assert bc._estimate_progress_total(n_eligible=2, n_input=2) == 2 * SEG_TICKS_PER_TRAINING
     # 1024-px patches with 1/8 overlap: the small image fits in one patch, the
-    # big one needs 3 x 2 windows
+    # big one is trained once and labelled in 3 x 2 windows
     bc.seg_args = types.SimpleNamespace(patch_size=1024, patch_overlap=0.125)
-    assert bc._seg_weight(str(tmp_path / "small.png")) == SEG_TICKS_PER_PATCH
-    assert bc._seg_weight(str(tmp_path / "big.png")) == 6 * SEG_TICKS_PER_PATCH
-    assert bc._estimate_progress_total(n_eligible=2, n_input=2) == 7 * SEG_TICKS_PER_PATCH
+    big = SEG_TICKS_PER_TRAINING + -(-6 // PATCHES_PER_TICK)
+    assert bc._seg_weight(str(tmp_path / "small.png")) == SEG_TICKS_PER_TRAINING
+    assert bc._seg_weight(str(tmp_path / "big.png")) == big
+    assert bc._estimate_progress_total(n_eligible=2, n_input=2) == SEG_TICKS_PER_TRAINING + big
 
 
 def test_status_callback_receives_batch_prefix(tmp_path, monkeypatch):
@@ -229,7 +230,7 @@ class _FakeBatchCabana:
 
     def __init__(self, param_file, input_folder, batch_folder, batch_size,
                  batch_idx, ignore_large, progress_callback=None, mask_dir=None,
-                 status_callback=None):
+                 status_callback=None, max_size=None, save_visuals=None):
         self.batch_idx = batch_idx
         self.status_callback = status_callback
         self.progress_callback = progress_callback
@@ -481,3 +482,73 @@ def test_bad_paths_raise_instead_of_exiting(tmp_path):
     with pytest.raises(FileNotFoundError):
         BatchProcessor(str(tmp_path / "nope.yml"), str(empty), str(tmp_path / "out"),
                        batch_size=2, batch_num=0, resume=False, ignore_large=True)
+
+
+def test_gui_splits_oversized_images_on_a_new_run(tmp_path):
+    """A new GUI batch run splits oversized images into blocks (it ignored
+    them from v0.3.1 to v0.3.8); a checkpoint keeps its own setting."""
+    pytest.importorskip("PyQt5")
+    from cabana.cabana_gui import MainWindow
+    win = types.SimpleNamespace(output_folder=str(tmp_path), input_folder=str(tmp_path))
+    resume, _, _, ignore_large, kept = MainWindow._check_batch_running_status(win)
+    assert not resume and ignore_large is False and kept == {}
+
+
+def test_no_limit_warns_about_the_largest_image(tmp_path, monkeypatch):
+    import numpy as np, cv2, yaml
+    from cabana.log import Log
+    input_dir = tmp_path / "in"
+    input_dir.mkdir()
+    cv2.imwrite(str(input_dir / "small.png"), np.full((40, 40, 3), 200, np.uint8))
+    cv2.imwrite(str(input_dir / "large.png"), np.full((300, 200, 3), 200, np.uint8))
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    proj_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    params = yaml.safe_load(open(os.path.join(proj_root, "cabana", "default_params.yml")))
+    params["Configs"]["Max Size"] = 0
+    param_file = tmp_path / "params.yml"
+    yaml.safe_dump(params, open(param_file, "w"))
+    import cabana.batch as batch_mod
+    monkeypatch.setattr(batch_mod, "BatchCabana", _FakeBatchCabana)
+    warned = []
+    monkeypatch.setattr(Log.logger, "warning", lambda msg, *a, **k: warned.append(str(msg)))
+    BatchProcessor(str(param_file), str(input_dir), str(out_dir), batch_size=5, batch_num=0,
+                   resume=False, ignore_large=False).process()
+    assert any("no limit" in m and "large.png (200x300 px" in m for m in warned)
+
+
+def test_max_size_override_and_checkpoint(tmp_path, monkeypatch):
+    """BatchProcessor(max_size=...) overrides the file's Max Size, hands it to
+    every BatchCabana and records it in the checkpoint."""
+    import numpy as np, cv2, yaml
+    input_dir = tmp_path / "in"
+    input_dir.mkdir()
+    cv2.imwrite(str(input_dir / "a.png"), np.full((40, 40, 3), 200, np.uint8))
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    proj_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    param_file = tmp_path / "params.yml"
+    shutil.copy(os.path.join(proj_root, "cabana", "default_params.yml"), str(param_file))
+    import cabana.batch as batch_mod
+    seen = []
+
+    class _Recorder(_FakeBatchCabana):
+        def __init__(self, *a, max_size=None, **k):
+            seen.append(max_size)
+            super().__init__(*a, **k)
+
+    monkeypatch.setattr(batch_mod, "BatchCabana", _Recorder)
+    bp = BatchProcessor(str(param_file), str(input_dir), str(out_dir), batch_size=5, batch_num=0,
+                        resume=False, ignore_large=False, max_size=3000)
+    assert bp.args["Configs"]["Max Size"] == 3000
+    bp.process()
+    assert seen == [3000]
+    lines = open(out_dir / ".CheckPoint.txt").read().splitlines()
+    assert "Max Size,3000" in lines
+
+
+def test_estimate_progress_total_without_visualisations():
+    bc = _make_batch_cabana(None)
+    bc.args = {"Configs": {"Quantification": True, "Gap Analysis": True, "Save Visualisations": False}}
+    # the full pipeline (45) minus the colour maps (5)
+    assert bc._estimate_progress_total(n_eligible=5, n_input=5) == 40

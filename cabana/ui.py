@@ -566,9 +566,12 @@ class BatchProcessingWorker(QThread):
 
     def __init__(self, param_file, input_folder, output_folder, batch_size=5,
                  batch_num=0, resume=False, ignore_large=False,
-                 generate_stats=False, generate_scores=False, mask_dir=None):
+                 generate_stats=False, generate_scores=False, mask_dir=None, max_size=None,
+                 save_visuals=None):
         super().__init__()
         self.mask_dir = mask_dir
+        self.max_size = max_size
+        self.save_visuals = save_visuals
         self.param_file = param_file
         self.input_folder = input_folder
         self.output_folder = output_folder
@@ -589,7 +592,8 @@ class BatchProcessingWorker(QThread):
                                          self.output_folder, self.batch_size,
                                          self.batch_num, self.resume, self.ignore_large,
                                          self.generate_stats, self.generate_scores,
-                                         mask_dir=self.mask_dir)
+                                         mask_dir=self.mask_dir, max_size=self.max_size,
+                                         save_visuals=self.save_visuals)
 
         batch_processor.progress_callback = self.update_progress
         batch_processor.status_callback = self.status_updated.emit
@@ -776,9 +780,9 @@ class SegmentationWorker(QThread):
 
         # segment_image expects BGR (OpenCV) input; the GUI holds RGB
         bgr = cv2.cvtColor(self.ori_img, cv2.COLOR_RGB2BGR)
-        mask = segment_image(bgr, self.args, iter_callback=_progress)
+        mask, score = segment_image(bgr, self.args, iter_callback=_progress, return_score=True)
         roi_img = generate_rois(self.ori_img, mask, self.args.white_background)
-        self.segmentation_complete.emit(roi_img)
+        self.segmentation_complete.emit((roi_img, score))
 
 
 class TMAWorker(QThread):
@@ -878,8 +882,6 @@ def parse_args():
     parser.add_argument('--mode', type=str, default="both")
     parser.add_argument('--min_size', default=64, type=int,
                         help='The smallest allowable object size')
-    parser.add_argument('--max_size', default=2048, type=int,
-                        help='The maximal allowable image size')
     parser.add_argument('--white_background', default=True, type=bool, help='Used to set background color')
     parser.add_argument('--input', type=str, help='Input image path', required=False)
     args, _ = parser.parse_known_args()

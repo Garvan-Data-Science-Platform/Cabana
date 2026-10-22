@@ -2,6 +2,8 @@ Configs:
   Segmentation: True
   Quantification: True
   Gap Analysis: True
+  Max Size: 5000
+  Save Visualisations: True
 
 Segmentation:
   Number of Labels: 32
@@ -9,8 +11,7 @@ Segmentation:
   Normalized Hue Value: 0.96
   Color Threshold: 0.2
   Min Size: 64
-  Max Size: 2048
-  Patch Size: 0
+  Patch Size: 1024
 
 Detection:
   Dark Line: True

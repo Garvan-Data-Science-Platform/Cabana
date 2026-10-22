@@ -4,7 +4,7 @@
 Yes, but it's not recommended. While Cabana can process images of varying resolutions, ridge detection results may vary significantly. For consistent and comparable analysis, use images with the same pixel resolution.
 
 **2. What is the maximum supported image size?**  
-Images larger than `Segmentation: Max Size` squared (2048×2048 pixels by default) are split into blocks, or skipped when large images are ignored. Raise `Max Size` in the parameter file (for example to 6000 for TMA cores) to analyse each image whole, and consider `Segmentation: Patch Size` so the segmentation network sees large images at a useful resolution.
+Images larger than `Configs: Max Size` squared (5000×5000 pixels by default; 2048×2048 before version 0.3.9, when it was under `Segmentation`) are split into blocks of at most that size, each analysed as a separate image. Raise Max Size on the Batch Run page (or set it to *No limit*) to analyse each image whole; this needs roughly 0.4 GB of memory per megapixel, about 7 GB for a 4400 px TMA core. From version 0.3.1 to 0.3.8 the GUI's batch run skipped oversized images instead of splitting them; 0.3.9 splits them again.
 
 **3. Why was my image rejected due to a dark background?**  
 Images with more than 99% of pixels having intensity values below 5 are automatically rejected. Such images are considered to lack sufficient regions of interest for analysis.

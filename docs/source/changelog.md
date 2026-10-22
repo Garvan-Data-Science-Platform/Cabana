@@ -1,5 +1,87 @@
 # Changelog
 
+## Unreleased
+
+### Segmentation
+
+- **Results change for colour images.** The colour threshold is now compared
+  with each region's absolute colour score (1 = exactly the colour of
+  interest) instead of a score rescaled to the image's, or in patch mode to
+  each patch's, own range. With Patch Size set, the old per-patch rescaling
+  marked faint or empty patches as collagen (68 % of an APGI Brain control
+  core, which has almost none) and left square seams; results also depended
+  on the patch size. Typical stained images change by a few points; weakly
+  stained ones can drop a lot (an APGI tumour core from 48 % to 15 %).
+  Results from runs with a Patch Size set should be re-run.
+- Greyscale images (SHG, fluorescence) keep the earlier behaviour: they are
+  scored by brightness relative to the image, rescaled once per image (never
+  per patch). Unpatched greyscale results are unchanged.
+- Patch mode trains the segmentation network once on the whole image and
+  labels every patch with it, instead of training a network per patch: about
+  11 s instead of 127 s for a 4400 px TMA core at 1024 px patches.
+- Patch Size defaults to 1024 px; images up to 1024 px are unaffected.
+- After a segmentation in the GUI, moving the Colour Threshold slider updates
+  the result immediately, without segmenting again.
+
+### Speed and memory
+
+- A whole 4400 px TMA core is analysed about 7 times faster with the same
+  settings (125 s instead of 857 s on an Apple M-series Mac) and with a lower
+  memory peak (7.0 GB instead of 9.7 GB):
+  - Skeleton analysis worked on the full image once per skeleton piece; it
+    now works within each piece's bounding box (533 s to 16 s on a core).
+  - Fibre detection keeps only each pixel's best line-width scale instead of
+    full-size arrays for every scale, so its memory no longer grows with the
+    number of line widths, and frees intermediate arrays between its steps.
+    Width polygons are filled directly instead of through a full-size mask
+    per fibre.
+  - Results are unchanged: detected fibres, skeleton graphs and all metrics
+    are identical, except fibre widths, which differ by at most 0.03 px (and
+    in all but a handful of points by less than 0.001 px) because the
+    per-scale gradients used to locate fibre edges are stored in single
+    precision.
+
+### Storage
+
+- A batch of whole TMA cores needs about a fifth of the storage (300 MB per
+  4400 px core instead of 1.35 GB; the measurements are unchanged):
+  - The maps in `Exports/` (Energy, Coherency, Orientation, curvature and
+    length maps, colour survey) are TIFFs with lossless deflate compression,
+    stored as float32 (relative rounding below 1e-7; they were uncompressed
+    float64, 158 MB each).
+  - The gap overlay images are kept once, as `Colors/.../all_gaps.png` and
+    `intra_gaps.png`; the copies in `Exports/` are gone.
+  - The working copies of the inputs (`Eligible/`) are deleted at the end
+    of a run; `IgnoredImages.txt` moved to the output folder.
+  - Figures with a colour bar draw the image at its own pixel size (they
+    were enlarged 2 to 3 times because importing seaborn_image changes
+    matplotlib's save resolution), as RGB without transparency; layout and
+    colour bar are unchanged.
+- Batch runs no longer write `Fibres/`: its fibre overlay showed the same as
+  `Colors/.../color_mask.png` (24 MB per core).
+- New `Configs: Save Visualisations` (default on), with a **Visualisations**
+  checkbox on the Batch Run page: off keeps only the measurements (about
+  60 MB per core).
+
+### Batch
+
+- Oversized images (larger than Max Size) are split into blocks again in GUI
+  batch runs. From 0.3.1 to 0.3.8 they were skipped, so batches of TMA cores
+  (4000 to 5000 px) produced no results.
+- **Max Size moved to `Configs: Max Size` and defaults to 5000 px** (was
+  `Segmentation: Max Size`, 2048 px, which the segmenter never used). Images
+  between 2048 and 5000 px, such as TMA cores, are now analysed whole instead
+  of in blocks, so their results change (fibres and gaps are no longer cut at
+  block edges). Parameter files with the old location are still read, and
+  are written in the new layout when re-exported.
+- The Batch Run page shows the parameter file's Max Size and can override it
+  for a run; the value is kept in the checkpoint, so a resumed run splits
+  images as it started. 0 (*No limit*) analyses every image whole and the
+  run warns about the largest image's memory need (a 4400 px core needs about
+  7 GB); 0 used to fail.
+- The log reports how many eligible images have an external ROI mask, and
+  says when no image was eligible, instead of "0 external ROI masks found".
+
 ## 0.3.8
 
 ### GUI

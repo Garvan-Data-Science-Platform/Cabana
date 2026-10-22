@@ -28,26 +28,38 @@ from .hdm import HDM
 from .detector import FibreDetector
 from .analyzer import SkeletonAnalyzer
 from .orientation import OrientationAnalyzer
-from .segmenter import parse_args, segment_single_image, visualize_fibres
+from .segmenter import parse_args, segment_single_image
 from .version_info import get_version_info
 from .utils import (
     join_path, get_img_paths, create_folder, split2batches,
-    contains_oversized, mask_color_map, sanitize_filename,
+    contains_oversized, is_oversized, largest_image, mask_color_map, max_image_size, sanitize_filename,
+    save_visualisations,
     read_bar_format, array_divide, overlay_colorbar,
     color_survey_with_colorbar
 )
 
 
-# Progress cost of one CNN training run (whole image or one patch) relative
-# to an ordinary per-image stage such as detection or gap analysis.
-SEG_TICKS_PER_PATCH = 4
+# Progress cost of the CNN training run of one image relative to an ordinary
+# per-image stage such as detection or gap analysis; labelling the patches of
+# a large image with the trained network adds one tick per PATCHES_PER_TICK
+# patches.
+SEG_TICKS_PER_TRAINING = 4
+
+# Approximate peak memory of the full pipeline per megapixel of image, used to
+# warn when Max Size is 0 (no limit). Measured on a 4417 x 4417 px TMA core.
+MEM_GB_PER_MEGAPIXEL = 0.4
+PATCHES_PER_TICK = 5
 
 
 class BatchCabana:
     def __init__(self, param_file, input_folder, out_folder,
                  batch_size=5, batch_idx=0, ignore_large=True, progress_callback=None,
-                 mask_dir=None, status_callback=None):
+                 mask_dir=None, status_callback=None, max_size=None, save_visuals=None):
         self.param_file = param_file
+        # Optional Max Size overriding the parameter file's (0 = no limit)
+        self.max_size = max_size
+        # Optional Save Visualisations overriding the parameter file's
+        self.save_visuals = save_visuals
         # Optional callable(str) told which image and stage are being processed.
         self.status_callback = status_callback
         # Optional folder of external ROI masks (e.g. TMA core circles), one
@@ -80,13 +92,11 @@ class BatchCabana:
         self.hdm_dir = join_path(self.output_folder, 'HDM', "")
         self.export_dir = join_path(self.output_folder, 'Exports', "")
         self.color_dir = join_path(self.output_folder, 'Colors', "")
-        self.fibre_dir = join_path(self.output_folder, 'Fibres', "")
         self.eligible_dir = join_path(self.output_folder, 'Eligible')
         self.roimask_dir = join_path(self.output_folder, 'ROIMasks', "")
 
         create_folder(self.eligible_dir)
         create_folder(self.roimask_dir)
-        create_folder(self.fibre_dir)
         create_folder(self.mask_dir)
         create_folder(self.hdm_dir)
         create_folder(self.export_dir)
@@ -102,12 +112,12 @@ class BatchCabana:
             cb(msg)
 
     def _seg_weight(self, img_path):
-        """Progress ticks for segmenting one image: the CNN is trained once per
-        patch, and one training run costs about :data:`SEG_TICKS_PER_PATCH`
-        ordinary per-image stages."""
+        """Progress ticks for segmenting one image: one CNN training run
+        (:data:`SEG_TICKS_PER_TRAINING`) plus one labelling pass per patch
+        (:data:`PATCHES_PER_TICK` passes per tick)."""
         seg_args = getattr(self, 'seg_args', None)
         patch = int(getattr(seg_args, 'patch_size', 0) or 0)
-        n_patches = 1
+        n_patches = 0
         if patch > 0:
             try:
                 from PIL import Image
@@ -118,8 +128,8 @@ class BatchCabana:
                     overlap = int(round(patch * float(getattr(seg_args, 'patch_overlap', 0.125) or 0)))
                     n_patches = len(tile_windows(h, patch, overlap)) * len(tile_windows(w, patch, overlap))
             except Exception:
-                n_patches = 1
-        return SEG_TICKS_PER_PATCH * n_patches
+                n_patches = 0
+        return SEG_TICKS_PER_TRAINING + -(-n_patches // PATCHES_PER_TICK)
 
     def _tick(self, n=1):
         """Advance progress by ``n`` per-image ticks and notify the callback."""
@@ -135,13 +145,16 @@ class BatchCabana:
                 self.args = yaml.safe_load(pf)
             except yaml.YAMLError as exc:
                 print(exc)
+        if self.max_size is not None and self.args is not None:
+            self.args.setdefault("Configs", {})["Max Size"] = int(self.max_size)
+        if self.save_visuals is not None and self.args is not None:
+            self.args.setdefault("Configs", {})["Save Visualisations"] = bool(self.save_visuals)
 
         # overwrite specific fields of seg_args with those in the parameter file
         setattr(self.seg_args, 'num_channels', int(self.args['Segmentation']["Number of Labels"]))
         setattr(self.seg_args, 'max_iter', int(self.args['Segmentation']["Max Iterations"]))
         setattr(self.seg_args, 'hue_value', float(self.args['Segmentation']["Normalized Hue Value"]))
         setattr(self.seg_args, 'rt', float(self.args['Segmentation']["Color Threshold"]))
-        setattr(self.seg_args, 'max_size', int(self.args['Segmentation']["Max Size"]))
         setattr(self.seg_args, 'min_size', int(self.args['Segmentation']["Min Size"]))
         setattr(self.seg_args, 'patch_size', int(self.args['Segmentation'].get("Patch Size", 0) or 0))
         setattr(self.seg_args, 'white_background', self.args['Detection']["Dark Line"])
@@ -150,10 +163,11 @@ class BatchCabana:
         from .stages import prepare_roi_mask
         img_paths = get_img_paths(self.input_folder)
         path_batches, res_batches = split2batches(img_paths, self.batch_size)
-        n_masks = 0
+        with_mask = set()       # input images (not blocks) that have an external ROI mask
+        n_eligible = 0
 
         max_line_width = self.args['Detection']["Max Line Width"]
-        max_size = self.args["Segmentation"]["Max Size"]
+        max_size = max_image_size(self.args)
         with open(join_path(self.eligible_dir, "IgnoredImages.txt"), 'w') as f:
             count_black = 0
             count_oversized = 0
@@ -183,18 +197,20 @@ class BatchCabana:
                 if np.min([height, width]) < 2 * max_line_width or bright_percent <= 0.0001:
                     count_black += 1
                     f.write(img_path + "\n")
-                elif height*width <= max_size**2 and bright_percent > 0.0001:
+                elif not is_oversized(height, width, max_size):
+                    n_eligible += 1
                     stem = os.path.splitext(img_name)[0]
                     cv2.imwrite(join_path(self.eligible_dir, stem + ".png"), img)
                     src_stem = os.path.splitext(os.path.basename(img_path))[0]
                     if prepare_roi_mask(self.ext_mask_dir, src_stem, (height, width), self.roimask_dir,
                                         out_stem=stem):
-                        n_masks += 1
-                elif height*width > max_size**2 and bright_percent > 0.0001:
+                        with_mask.add(img_path)
+                else:
                     if self.ignore_large:
                         count_oversized += 1
                         f.write(img_path+"\n")
                     else:
+                        n_eligible += 1
                         row_blk_sz = int(np.ceil(height / int(np.ceil(height / max_size))))
                         col_blk_sz = int(np.ceil(width / int(np.ceil(width / max_size))))
                         count_oversized += 1
@@ -212,10 +228,15 @@ class BatchCabana:
                                 src_stem = os.path.splitext(os.path.basename(img_path))[0]
                                 if prepare_roi_mask(self.ext_mask_dir, src_stem, (height, width),
                                                     self.roimask_dir, out_stem=blk_stem, crop_box=box):
-                                    n_masks += 1
+                                    with_mask.add(img_path)
 
         if self.ext_mask_dir:
-            Log.logger.info('{} external ROI masks found in {}'.format(n_masks, self.ext_mask_dir))
+            if n_eligible:
+                Log.logger.info(f'{len(with_mask)} of {n_eligible} eligible images have an external ROI mask '
+                                f'in {self.ext_mask_dir}')
+            else:
+                Log.logger.info(f'No eligible images in this batch, so no ROI masks were looked up in '
+                                f'{self.ext_mask_dir}')
         if count_black > 0:
             Log.logger.warning('{} black or small-sized images have been ignored.'.format(count_black))
         if count_oversized > 0:
@@ -298,7 +319,7 @@ class BatchCabana:
             detect_one_image(det, img_path,
                              mask_dir=self.mask_dir,
                              export_subdir=join_path(self.export_dir, name_wo_ext),
-                             color_subdir=join_path(self.color_dir, name_wo_ext),
+                             color_subdir=self._color_subdir(name_wo_ext),
                              roi_mask=roi_mask_for(self.roimask_dir, name_wo_ext[:-4]),
                              roi_erode_px=int(d['Max Line Width']))
             self._tick()
@@ -321,7 +342,7 @@ class BatchCabana:
                 mask_hdm_path=join_path(self.hdm_dir, stem + "_roi.png"),
                 mask_width_path=join_path(self.export_dir, name_wo_ext, "Width.png"),
                 export_subdir=join_path(self.export_dir, name_wo_ext),
-                color_subdir=join_path(self.color_dir, name_wo_ext),
+                color_subdir=self._color_subdir(name_wo_ext),
             )
             rows.append({'Image': ori_img_name, **metrics})
             self._tick()
@@ -376,19 +397,13 @@ class BatchCabana:
             self.analyze_orientations()  # Orientation analysis
             Log.logger.info('Image analysis finished.')
 
-    def visualize_fibres(self, thickness=3):
-        Log.logger.info('Generating fibre visualization results.')
-        img_paths = get_img_paths(self.input_folder)
-        img_paths.sort()
-        for img_path in img_paths:
-            img_name = os.path.basename(img_path)
-            self._status(f"Drawing fibres: {img_name}")
-            mask_path = join_path(self.mask_dir, os.path.splitext(img_name)[0] + '_roi.png')
-            img = cv2.imread(img_path)
-            mask = cv2.imread(mask_path)
-            visualize_fibres(img, mask,
-                             join_path(self.fibre_dir, os.path.splitext(img_name)[0] + '_fibres.png'), thickness)
-            self._tick()
+    def _visuals(self):
+        """Whether visualisations are saved (Configs: Save Visualisations)."""
+        return save_visualisations(self.args)
+
+    def _color_subdir(self, name_wo_ext):
+        """Colour-image folder of one image, or None when visualisations are off."""
+        return join_path(self.color_dir, name_wo_ext) if self._visuals() else None
 
     def calc_fibre_areas(self):
         from .stages import compute_fibre_areas, FIBRE_AREA_METRICS
@@ -494,9 +509,11 @@ class BatchCabana:
                                               int(circle[2]), (0, 255, 255), 2)
                     color_result = cv2.circle(color_result, (int(circle[1]), int(circle[0])),
                                               int(circle[2]), (0, 255, 255), 2)
-                cv2.imwrite(join_path(gap_result_dir, os.path.splitext(img_name)[0] + "_GapImage.png"), final_result)
-                cv2.imwrite(join_path(self.export_dir, os.path.splitext(img_name)[0],
-                                      "GapImage.png"), color_result)
+                if self._visuals():
+                    cv2.imwrite(join_path(gap_result_dir, os.path.splitext(img_name)[0] + "_GapImage.png"),
+                                final_result)
+                    cv2.imwrite(join_path(self.export_dir, os.path.splitext(img_name)[0],
+                                          "GapImage.png"), color_result)
                 if len(final_circles) == 0:
                     names.append(img_name)
                     for lst in (means, stds, percentile5, median, percentile95, counts,
@@ -573,10 +590,11 @@ class BatchCabana:
                     color_img = cv2.circle(color_img, (x, y), radius, (0, 255, 255), 1)
                     areas.append(area)
                     circle_cnt += 1
-            cv2.imwrite(join_path(gap_result_dir,
-                                  base_name + "_roi_GapImage_intra_gaps.png"), color_img_fibre)
-            cv2.imwrite(join_path(self.export_dir, base_name + "_roi",
-                                  "GapImage_intra_gaps.png"), color_img)
+            if self._visuals():
+                cv2.imwrite(join_path(gap_result_dir,
+                                      base_name + "_roi_GapImage_intra_gaps.png"), color_img_fibre)
+                cv2.imwrite(join_path(self.export_dir, base_name + "_roi",
+                                      "GapImage_intra_gaps.png"), color_img)
             areas = np.array(areas)
             radius = np.sqrt(areas / np.pi)
             names.append(base_name + "_roi.png")
@@ -947,6 +965,9 @@ class BatchCabana:
         Log.logger.info('Statistics have been normalized and saved to ' + final_csv)
 
     def generate_color_maps(self):
+        if not self._visuals():
+            Log.logger.info('Visualisations are off (Configs: Save Visualisations); no colour maps written.')
+            return
         ori_img_paths = get_img_paths(join_path(self.output_folder, "Eligible"))
         Log.logger.info(f'Generating color maps for {len(ori_img_paths)} images.')
         for ori_img_path in tqdm(ori_img_paths, bar_format=read_bar_format):
@@ -956,6 +977,12 @@ class BatchCabana:
 
             # Create a sub-folder for better readability
             Path(join_path(self.color_dir, name_wo_ext)).mkdir(parents=True, exist_ok=True)
+
+            # the gap overlays join the other colour maps (moved: one copy only)
+            for src, dst in (("GapImage.png", "all_gaps.png"), ("GapImage_intra_gaps.png", "intra_gaps.png")):
+                if os.path.exists(join_path(self.export_dir, name_wo_ext, src)):
+                    shutil.move(join_path(self.export_dir, name_wo_ext, src),
+                                join_path(self.color_dir, name_wo_ext, dst))
 
             rgb_img = iio.imread(ori_img_path)
             mask_img = 255 - iio.imread(join_path(self.export_dir, name_wo_ext, "Mask.png"))
@@ -1018,14 +1045,6 @@ class BatchCabana:
             color_survey_with_colorbar(orient_map, cohere_map, energy_map,
                                        join_path(self.color_dir, name_wo_ext, "orient_color_survey.png"))
 
-            if os.path.exists(join_path(self.export_dir, name_wo_ext, "GapImage.png")):
-                shutil.copy(join_path(self.export_dir, name_wo_ext, "GapImage.png"),
-                            join_path(self.color_dir, name_wo_ext, "all_gaps.png"))
-
-            if os.path.exists(join_path(self.export_dir, name_wo_ext, "GapImage_intra_gaps.png")):
-                shutil.copy(join_path(self.export_dir, name_wo_ext, "GapImage_intra_gaps.png"),
-                            join_path(self.color_dir, name_wo_ext, "intra_gaps.png"))
-
             self._tick()
 
     def run(self):
@@ -1047,7 +1066,6 @@ class BatchCabana:
             self.generate_rois()
             if self.args["Configs"]["Quantification"]:
                 self.quantify_images()
-                self.visualize_fibres()
                 self.calc_fibre_areas()
                 if self.args["Configs"]["Gap Analysis"]:
                     self.analyze_all_gaps()
@@ -1086,12 +1104,12 @@ class BatchCabana:
             ticks += n_eligible          # detect_fibres
             ticks += n_eligible          # quantify_skeletons
             ticks += n_eligible          # analyze_orientations
-            ticks += n_input             # visualize_fibres
+            visuals = self._visuals()
             ticks += n_eligible          # calc_fibre_areas
             if self.args["Configs"]["Gap Analysis"]:
                 ticks += n_eligible      # analyze_all_gaps
                 ticks += n_eligible      # analyze_intra_gaps
-            ticks += n_eligible          # generate_color_maps
+            ticks += n_eligible if visuals else 0       # generate_color_maps
         return max(1, ticks)
 
 class BatchProcessor():
@@ -1124,7 +1142,8 @@ class BatchProcessor():
 
     def __init__(self, param_file, input_folder, output_folder, batch_size=5,
                  batch_num=0, resume=False, ignore_large=False,
-                 generate_stats=False, generate_scores=False, mask_dir=None):
+                 generate_stats=False, generate_scores=False, mask_dir=None, max_size=None,
+                 save_visuals=None):
         """
         Initialize a BatchProcessor with the given parameters.
 
@@ -1152,8 +1171,18 @@ class BatchProcessor():
             Folder of external ROI masks (one ``<image stem>.png`` per input
             image, e.g. TMA core circles). When omitted, only the segmentation
             mask defines the analysis region.
+        max_size : int, optional
+            Overrides the parameter file's ``Configs: Max Size`` for this run
+            (images with more pixels than its square are split into blocks;
+            0 = no limit). Recorded in the checkpoint.
+        save_visuals : bool, optional
+            Overrides ``Configs: Save Visualisations`` for this run (False
+            keeps only the measurements: CSV files, maps and masks). Recorded
+            in the checkpoint.
         """
         self.mask_dir = mask_dir
+        self.max_size = max_size        # overrides the parameter file's Max Size when given
+        self.save_visuals = save_visuals  # overrides the file's Save Visualisations when given
         self.batch_size = batch_size
         self.batch_num = batch_num
         self.resume = resume
@@ -1195,6 +1224,12 @@ class BatchProcessor():
                 Log.logger.error(exc)
                 raise ValueError(f"Could not parse the parameter file {self.param_file}: {exc}") from exc
         Log.log_parameters(self.param_file)
+        if self.max_size is not None:
+            self.args.setdefault("Configs", {})["Max Size"] = int(self.max_size)
+            Log.logger.info(f"Max Size for this run: {int(self.max_size) or 'no limit'}")
+        if self.save_visuals is not None:
+            self.args.setdefault("Configs", {})["Save Visualisations"] = bool(self.save_visuals)
+            Log.logger.info(f"Save Visualisations for this run: {bool(self.save_visuals)}")
 
     def update_progress(self, value):
         """
@@ -1253,8 +1288,16 @@ class BatchProcessor():
             os.mkdir(self.output_folder)
 
             # Check for oversized images based on configuration
-            max_res = self.args['Segmentation']["Max Size"]
-            if contains_oversized(img_paths, max_res):
+            max_res = max_image_size(self.args)
+            if not max_res:
+                big = largest_image(img_paths)
+                if big is not None:
+                    mp = big[1] * big[2] / 1e6
+                    Log.logger.warning(
+                        f"Max Size is 0 (no limit): every image is analysed whole. The largest, "
+                        f"{os.path.basename(big[0])} ({big[2]}x{big[1]} px, {mp:.1f} megapixels), may need "
+                        f"about {MEM_GB_PER_MEGAPIXEL * mp:.0f} GB of memory; set Max Size to split large images.")
+            elif contains_oversized(img_paths, max_res):
                 action = "ignored" if self.ignore_large else "split into blocks"
                 Log.logger.warning(f"Oversized (> {max_res:d}x{max_res:d} pixels) images will be {action}.")
 
@@ -1264,6 +1307,8 @@ class BatchProcessor():
                 ckpt.write('Batch Size,{}\n'.format(self.batch_size))
                 ckpt.write('Batch Number,-1\n')
                 ckpt.write('Ignore Large,{}\n'.format(str(self.ignore_large)))
+                ckpt.write('Max Size,{}\n'.format(max_image_size(self.args)))
+                ckpt.write('Save Visualisations,{}\n'.format(save_visualisations(self.args)))
 
         # Initial progress update
         self.update_progress(2)
@@ -1356,7 +1401,9 @@ class BatchProcessor():
                                   batch_folder, self.batch_size, batch_idx, self.ignore_large,
                                   progress_callback=on_batch_progress,
                                   mask_dir=getattr(self, 'mask_dir', None),
-                                  status_callback=on_batch_status)
+                                  status_callback=on_batch_status,
+                                  max_size=max_image_size(self.args),
+                                  save_visuals=save_visualisations(self.args))
             batch_cabana.run()
 
             # Update checkpoint file with completed batch
@@ -1431,7 +1478,10 @@ class BatchProcessor():
         current_step = 0
 
         # Step 1: Create output folder structure
-        sub_folders = ['ROIs', 'Bins', 'Masks', 'HDM', 'Exports', 'Fibres', 'Eligible', 'Colors']
+        # Eligible/ holds working copies of the inputs; it stays in the batch
+        # folders, which are deleted at the end (the list of ignored images
+        # is written to the output root)
+        sub_folders = ['ROIs', 'Bins', 'Masks', 'HDM', 'Exports', 'Colors']
         for sub_folder in sub_folders:
             create_folder(join_path(self.output_folder, sub_folder, ""))
         create_folder(join_path(self.output_folder, "Masks", "GapAnalysis"))
@@ -1488,7 +1538,7 @@ class BatchProcessor():
                 lines = f.readlines()
             if len(lines) > 0:
                 ignored_images.extend(lines)
-        with open(join_path(self.output_folder, 'Eligible', 'IgnoredImages.txt'), 'w') as f:
+        with open(join_path(self.output_folder, 'IgnoredImages.txt'), 'w') as f:
             f.writelines(ignored_images)
         current_step += 1
         self.update_progress(post_span_start + (current_step / total_steps) * post_span)

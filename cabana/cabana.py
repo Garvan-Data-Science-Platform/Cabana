@@ -191,7 +191,7 @@ class Cabana:
         self.roi_mask_path = prepare_roi_mask(self.ext_mask_dir, self.name_wo_ext, (height, width),
                                               self.roimask_dir, crop_box=crop_box)
         if self.roi_mask_path:
-            print('Using external ROI mask {}'.format(self.roi_mask_path))
+            Log.logger.info('Using external ROI mask {}'.format(self.roi_mask_path))
         return True
 
     def generate_roi(self):
@@ -202,10 +202,10 @@ class Cabana:
         setattr(self.seg_args, 'input', img_path)
         setattr(self.seg_args, 'roi_mask_path', self.roi_mask_path)
         if self.args["Configs"]["Segmentation"]:
-            print('Segmenting image')
+            Log.logger.info('Segmenting image')
             segment_single_image(self.seg_args)
         else:
-            print("No segmentation is applied prior to image analysis.")
+            Log.logger.info("No segmentation is applied prior to image analysis.")
             img = cv2.imread(self.seg_args.input)
             # The external ROI mask (if any) is the analysis region even when
             # segmentation is off; otherwise the whole image is analysed.
@@ -222,15 +222,15 @@ class Cabana:
         self.roi_img = cv2.imread(join_path(self.roi_dir, self.name_wo_ext + '_roi.png'))
         self.mask_img = cv2.imread(join_path(self.bin_dir, self.name_wo_ext + '_mask.png'), cv2.IMREAD_GRAYSCALE)
 
-        print('ROIs have been saved in {}'.format(self.seg_args.roi_dir))
-        print('Masks have been saved in {}'.format(self.seg_args.bin_dir))
+        Log.logger.debug('ROIs have been saved in {}'.format(self.seg_args.roi_dir))
+        Log.logger.debug('Masks have been saved in {}'.format(self.seg_args.bin_dir))
 
     def detect_fibres(self):
         """Detect fibres in the ROI image"""
         from .stages import build_fibre_detector, detect_one_image, roi_mask_for
         d = self.args["Detection"]
-        print(f"Detecting fibres with line widths in "
-              f"[{d['Min Line Width']}, {d['Max Line Width']}] pixels")
+        Log.logger.info(f"Detecting fibres with line widths in "
+                        f"[{d['Min Line Width']}, {d['Max Line Width']}] pixels")
         det = build_fibre_detector(self.args)
         img_path = join_path(self.roi_dir, self.name_wo_ext + '_roi.png')
         result = detect_one_image(det, img_path,
@@ -269,8 +269,8 @@ class Cabana:
         from .stages import (build_skeleton_analyzer, curve_windows_from_args,
                              quantify_one_skeleton)
         skel_analyzer = build_skeleton_analyzer(self.args)
-        print(f"Min branch length = {skel_analyzer.branch_thresh} px, "
-              f"Min hole area = {skel_analyzer.hole_thresh} px²")
+        Log.logger.debug(f"Min branch length = {skel_analyzer.branch_thresh} px, "
+                         f"Min hole area = {skel_analyzer.hole_thresh} px²")
 
         metrics, curve_maps, key_pts_image, length_map = quantify_one_skeleton(
             skel_analyzer,
@@ -300,9 +300,9 @@ class Cabana:
             warnings.warn("minimum gap diameter = 0 pixels. Skipping gap analysis.")
             return
 
-        print(f"Performing gap analysis with "
-              f"minimum gap diameter = {min_gap_diameter * self.ims_res:.1f}µm "
-              f"({min_gap_diameter} pixels).")
+        Log.logger.info(f"Performing gap analysis with "
+                        f"minimum gap diameter = {min_gap_diameter * self.ims_res:.1f}µm "
+                        f"({min_gap_diameter} pixels).")
 
         # Create gap analysis directory
         gap_result_dir = join_path(self.mask_dir, 'GapAnalysis')
@@ -416,7 +416,7 @@ class Cabana:
         if not os.path.exists(csv_file_path):
             return
 
-        print('Performing intra gap analysis')
+        Log.logger.info('Performing intra gap analysis')
 
         # Load gap data
         df_circles = pd.read_csv(csv_file_path)
@@ -470,7 +470,7 @@ class Cabana:
 
     def visualize_fibres(self, thickness=3):
         """Generate visualizations of detected fibres"""
-        print('Generating fibre visualization results')
+        Log.logger.info('Generating fibre visualization results')
 
         img_path = join_path(self.eligible_dir, self.name_wo_ext + ".png")
         mask_path = join_path(self.mask_dir, self.name_wo_ext + '_roi.png')
@@ -487,7 +487,7 @@ class Cabana:
 
     def combine_statistics(self):
         """Combine all statistics into a single dataframe"""
-        print('Combining statistics')
+        Log.logger.info('Combining statistics')
 
         # Initialize image name if not set
         if 'Image' not in self.stats.columns:
@@ -532,7 +532,7 @@ class Cabana:
     def normalize_statistics(self):
         """Normalize various statistics"""
         from .stages import safe_div
-        print('Normalizing statistics')
+        Log.logger.info('Normalizing statistics')
 
         safe_div(self.stats, 'Fibre Area (WIDTH, µm²)', 'Fibre Area (ROI, µm²)',
                  'Fibre Coverage (WIDTH/ROI)')
@@ -579,7 +579,7 @@ class Cabana:
 
     def generate_color_maps(self):
         """Generate color maps for visualization"""
-        print('Generating color maps')
+        Log.logger.info('Generating color maps')
 
         # Load original image
         rgb_img = iio.imread(join_path(self.eligible_dir, self.name_wo_ext + ".png"))
@@ -670,14 +670,14 @@ class Cabana:
         if os.path.exists(join_path(self.export_img_dir, "GapImage_intra_gaps.png")):
             shutil.move(join_path(self.export_img_dir, "GapImage_intra_gaps.png"),
                         join_path(self.color_img_dir, f"{self.name_wo_ext}_intra_gaps.png"))
-        print(f"Color maps have been saved to {self.color_img_dir}")
+        Log.logger.info(f"Color maps have been saved to {self.color_img_dir}")
 
     def export_results(self):
         """Export all results to files"""
         # Export stats to CSV
         stats_csv = join_path(self.output_folder, f"{self.name_wo_ext}_QuantificationResults.csv")
         self.stats.to_csv(stats_csv, index=False, float_format='%.3f')
-        print(f'Statistics have been saved to {stats_csv}')
+        Log.logger.info(f'Statistics have been saved to {stats_csv}')
 
         # Export stats as formatted text
         stats_txt = join_path(self.output_folder, f"{self.name_wo_ext}_QuantificationResults.txt")
@@ -813,7 +813,16 @@ class Cabana:
             warnings.warn(f"Could not create summary visualization: {str(e)}")
 
     def run(self):
-        """Run the full analysis pipeline"""
+        """Run the full analysis pipeline, logging to ``<output>/Logs/``."""
+        Log.init_log_path(join_path(self.output_folder, 'Logs'))
+        Log.logger.info('Log file: {}'.format(Log.log_name))
+        Log.log_parameters(self.param_file)
+        try:
+            return self._run()
+        finally:
+            Log.close_log_file()
+
+    def _run(self):
         self.initialize_params()
 
         # Prepare image
@@ -848,5 +857,5 @@ class Cabana:
 
             return True
         else:
-            print('Segmentation is done. No further analysis will be conducted.')
+            Log.logger.info('Segmentation is done. No further analysis will be conducted.')
             return False

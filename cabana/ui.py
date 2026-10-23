@@ -588,22 +588,22 @@ class BatchProcessingWorker(QThread):
 
     def run(self):
         self.progress_updated.emit(1)
-        batch_processor = BatchProcessor(self.param_file, self.input_folder,
-                                         self.output_folder, self.batch_size,
-                                         self.batch_num, self.resume, self.ignore_large,
-                                         self.generate_stats, self.generate_scores,
-                                         mask_dir=self.mask_dir, max_size=self.max_size,
-                                         save_visuals=self.save_visuals)
-
-        batch_processor.progress_callback = self.update_progress
-        batch_processor.status_callback = self.status_updated.emit
-        batch_processor.cancel_check = lambda: self._cancel_requested
-
         try:
+            batch_processor = BatchProcessor(self.param_file, self.input_folder,
+                                             self.output_folder, self.batch_size,
+                                             self.batch_num, self.resume, self.ignore_large,
+                                             self.generate_stats, self.generate_scores,
+                                             mask_dir=self.mask_dir, max_size=self.max_size,
+                                             save_visuals=self.save_visuals)
+
+            batch_processor.progress_callback = self.update_progress
+            batch_processor.status_callback = self.status_updated.emit
+            batch_processor.cancel_check = lambda: self._cancel_requested
+
             was_cancelled = batch_processor.run()
         except Exception as exc:   # an exception escaping QThread.run aborts the process
-            import traceback
-            Log.logger.error("Batch processing failed:\n" + traceback.format_exc())
+            # BatchProcessor.run has already logged the traceback to the run's log file
+            Log.logger.error(f"Batch processing failed: {type(exc).__name__}: {exc}")
             self.batch_failed.emit(f"{type(exc).__name__}: {exc}")
             return
         if was_cancelled:
@@ -1720,7 +1720,7 @@ class ImagePanel(QWidget):
                     self.calculateFitZoomFactor()
                 self.update()  # Trigger a repaint
             except Exception as e:
-                print(f"Error converting numpy array to QPixmap: {str(e)}")
+                Log.logger.error(f"Error converting numpy array to QPixmap: {str(e)}")
                 return
 
     def calculateFitZoomFactor(self):

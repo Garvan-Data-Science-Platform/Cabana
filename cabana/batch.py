@@ -144,7 +144,7 @@ class BatchCabana:
             try:
                 self.args = yaml.safe_load(pf)
             except yaml.YAMLError as exc:
-                print(exc)
+                Log.logger.error(exc)
         if self.max_size is not None and self.args is not None:
             self.args.setdefault("Configs", {})["Max Size"] = int(self.max_size)
         if self.save_visuals is not None and self.args is not None:
@@ -162,7 +162,8 @@ class BatchCabana:
     def remove_large_images(self):
         from .stages import prepare_roi_mask
         img_paths = get_img_paths(self.input_folder)
-        path_batches, res_batches = split2batches(img_paths, self.batch_size)
+        # BatchProcessor already warned about missing resolutions for the whole run
+        path_batches, res_batches = split2batches(img_paths, self.batch_size, warn=False)
         with_mask = set()       # input images (not blocks) that have an external ROI mask
         n_eligible = 0
 
@@ -260,7 +261,7 @@ class BatchCabana:
         img_paths = get_img_paths(self.input_folder)
         img_paths.sort()
         if self.args["Configs"]["Segmentation"]:
-            Log.logger.info('Segmenting {} images in {}'.format(len(img_paths), self.input_folder))
+            Log.logger.debug('Segmenting {} images in {}'.format(len(img_paths), self.input_folder))
             for i, img_path in enumerate(img_paths):
                 setattr(self.seg_args, 'input', img_path)
                 setattr(self.seg_args, 'roi_mask_path', self._roi_mask_path(img_path))
@@ -283,7 +284,7 @@ class BatchCabana:
                 self._tick(weight)
 
         else:
-            Log.logger.info("No segmentation is applied prior to image analysis.")
+            Log.logger.debug("No segmentation is applied prior to image analysis.")
             for i, img_path in enumerate(img_paths):
                 setattr(self.seg_args, 'input', img_path)
                 self._status(f"Preparing {os.path.basename(img_path)} ({i + 1}/{len(img_paths)})")
@@ -301,16 +302,16 @@ class BatchCabana:
                 cv2.imwrite(join_path(self.seg_args.bin_dir, img_name + '_mask.png'), mask)
                 self._tick()
 
-        Log.logger.info('ROIs have been saved in {}'.format(self.seg_args.roi_dir))
-        Log.logger.info('Masks have been saved in {}'.format(self.seg_args.bin_dir))
+        Log.logger.debug('ROIs have been saved in {}'.format(self.seg_args.roi_dir))
+        Log.logger.debug('Masks have been saved in {}'.format(self.seg_args.bin_dir))
 
     def detect_fibres(self):
         from .stages import build_fibre_detector, detect_one_image, roi_mask_for
         d = self.args["Detection"]
         img_paths = glob(join_path(self.roi_dir, '*.png'))
-        Log.logger.info(f"Detecting fibres with line widths in "
-                        f"[{d['Min Line Width']}, {d['Max Line Width']}] pixels "
-                        f"for {len(img_paths)} images.")
+        Log.logger.debug(f"Detecting fibres with line widths in "
+                         f"[{d['Min Line Width']}, {d['Max Line Width']}] pixels "
+                         f"for {len(img_paths)} images.")
         det = build_fibre_detector(self.args)
         for img_path in tqdm(img_paths, bar_format=read_bar_format):
             ori_img_name = os.path.basename(img_path)
@@ -328,7 +329,7 @@ class BatchCabana:
         from .stages import analyze_one_orientation
         orient_analyzer = OrientationAnalyzer(2.0)
         img_paths = glob(join_path(self.roi_dir, '*.png'))
-        Log.logger.info(f"Analyzing orientations for {len(img_paths)} images.")
+        Log.logger.debug(f"Analyzing orientations for {len(img_paths)} images.")
         rows = []
         for img_path in tqdm(img_paths, bar_format=read_bar_format):
             ori_img_name = os.path.basename(img_path)
@@ -355,11 +356,11 @@ class BatchCabana:
                              quantify_one_skeleton)
         skel_analyzer = build_skeleton_analyzer(self.args)
         curve_windows = curve_windows_from_args(self.args)
-        Log.logger.info(f"Min branch length = {skel_analyzer.branch_thresh} px, "
-                        f"Min hole area = {skel_analyzer.hole_thresh} px²")
+        Log.logger.debug(f"Min branch length = {skel_analyzer.branch_thresh} px, "
+                         f"Min hole area = {skel_analyzer.hole_thresh} px²")
 
         img_paths = glob(join_path(self.mask_dir, '*.png'))
-        Log.logger.info(f"Quantifying skeletons for {len(img_paths)} images.")
+        Log.logger.debug(f"Quantifying skeletons for {len(img_paths)} images.")
         rows = []
         for img_path in tqdm(img_paths, bar_format=read_bar_format):
             skel_analyzer.reset()
@@ -381,8 +382,8 @@ class BatchCabana:
     def quantify_hdm(self):
         from .stages import run_hdm
         n_elig = len(glob(join_path(self.eligible_dir, '*.png')))
-        Log.logger.info(f"Quantifying High Density Matrix (HDM) areas for "
-                        f"{n_elig} images.")
+        Log.logger.debug(f"Quantifying High Density Matrix (HDM) areas for "
+                         f"{n_elig} images.")
         self._status(f"Quantifying HDM areas ({n_elig} images)")
         self.df_stats = run_hdm(self.args, self.eligible_dir, self.hdm_dir, ext=".png",
                                 mask_dir=self.roimask_dir)
@@ -395,7 +396,7 @@ class BatchCabana:
             self.detect_fibres()  # Ridge detection
             self.quantify_skeletons()  # Skeleton analysis
             self.analyze_orientations()  # Orientation analysis
-            Log.logger.info('Image analysis finished.')
+            Log.logger.debug('Image analysis finished.')
 
     def _visuals(self):
         """Whether visualisations are saved (Configs: Save Visualisations)."""
@@ -411,7 +412,7 @@ class BatchCabana:
         with open(join_path(self.bin_dir, 'ResultsROI.csv'), 'w', encoding='UTF8') as f:
             writer = csv.writer(f)
             writer.writerow(['Image', *FIBRE_AREA_METRICS])
-            Log.logger.info('Calculating fibre areas for {} images.'.format(len(img_paths)))
+            Log.logger.debug('Calculating fibre areas for {} images.'.format(len(img_paths)))
             for img_path in img_paths:
                 base = os.path.basename(img_path)
                 self._status(f"Measuring fibre areas: {base}")
@@ -430,7 +431,7 @@ class BatchCabana:
                 else:
                     writer.writerow([roi_name, *(metrics[k] for k in FIBRE_AREA_METRICS)])
                 self._tick()
-            Log.logger.info('Areas have been saved in {}'.format(join_path(self.bin_dir, 'ResultsROI.csv')))
+            Log.logger.debug('Areas have been saved in {}'.format(join_path(self.bin_dir, 'ResultsROI.csv')))
 
     def analyze_all_gaps(self):
         from .stages import roi_mask_for
@@ -439,7 +440,7 @@ class BatchCabana:
             Log.logger.warning("minimum gap diameter = 0 pixels. Skipping gap analysis.")
             return
         else:
-            Log.logger.info(
+            Log.logger.debug(
                 f"Performing gap analysis with "
                 f"minimum gap diameter = {min_gap_diameter*self.ims_res:.1f}µm "
                 f"({min_gap_diameter} pixels).")
@@ -566,7 +567,8 @@ class BatchCabana:
 
         names, means, stds, means_radius, stds_radius, counts = [], [], [], [], [], []
         medians, medians_radius, pct5, pct95, pct5_radius, pct95_radius = [], [], [], [], [], []
-        Log.logger.info('Performing intra gap analysis for {} images'.format(len(img_paths)))
+        Log.logger.debug('Performing intra gap analysis for {} images'.format(len(img_paths)))
+        no_gaps = 0
         for img_path in img_paths:
             base_name = os.path.basename(img_path)[:-9]
             self._status(f"Intra-fibre gap analysis: {base_name}")
@@ -611,13 +613,16 @@ class BatchCabana:
                 pct95_radius.append(np.percentile(radius, 95))
                 counts.append(circle_cnt)
             else:
-                Log.logger.warning('No gaps found in ' + os.path.basename(img_path))
+                Log.logger.debug('No gaps found in ' + os.path.basename(img_path))
+                no_gaps += 1
                 for lst in [means, stds, pct5, medians, pct95, means_radius, stds_radius,
                             pct5_radius, medians_radius, pct95_radius, counts]:
                     lst.append(0)
 
             self._tick()
 
+        if no_gaps:
+            Log.logger.warning(f'No intra-fibre gaps found in {no_gaps} of {len(names)} images.')
         if names:
             data = {'Image': names,
                     'Mean (ROI gaps area in µm²)': means,
@@ -637,7 +642,7 @@ class BatchCabana:
             Log.logger.warning('No gap analysis results. Skipping intra gap analysis.')
 
     def combine_statistics(self):
-        Log.logger.info('Combining statistics.')
+        Log.logger.debug('Combining statistics.')
 
         segmenter_csv = join_path(self.bin_dir, 'ResultsROI.csv')
         df_segmenter = pd.read_csv(segmenter_csv)
@@ -652,6 +657,7 @@ class BatchCabana:
         area_roi, percent_roi = [], []
         area_width, percent_width = [], []
         mean_red_intensity_roi, mean_red_intensity_width, mean_red_intensity_hdm = [], [], []
+        missing = 0
         for i in range(len(self.df_stats)):
             img_name = self.df_stats.loc[i, 'Image']
             if img_name[:-4] + ".png" in df_segmenter['Image'].values:
@@ -664,7 +670,8 @@ class BatchCabana:
                 mean_red_intensity_width.append(df_segmenter.loc[max_idx, 'Mean Fibre Intensity (WIDTH)'])
                 mean_red_intensity_hdm.append(df_segmenter.loc[max_idx, 'Mean Fibre Intensity (HDM)'])
             else:
-                Log.logger.info(img_name + ' cannot be found in ' + segmenter_csv)
+                Log.logger.debug(img_name + ' cannot be found in ' + segmenter_csv)
+                missing += 1
                 area_roi.append(0)
                 percent_roi.append(0)
                 area_width.append(0)
@@ -673,6 +680,8 @@ class BatchCabana:
                 mean_red_intensity_width.append(0)
                 mean_red_intensity_hdm.append(0)
 
+        if missing:
+            Log.logger.warning(f'{missing} images cannot be found in {segmenter_csv}; their fibre areas are set to 0.')
         area_roi = [v*self.ims_res**2 for v in area_roi]
         area_width = [v*self.ims_res**2 for v in area_width]
         self.df_stats.insert(
@@ -778,6 +787,7 @@ class BatchCabana:
                 Log.logger.critical('Images names are not unique in ' + intra_gaps_csv)
                 return
 
+            missing = 0
             for img_name in self.df_stats['Image']:
                 img_name = img_name[:-4] + ".png"
                 if img_name in gaps_img_names:
@@ -808,7 +818,8 @@ class BatchCabana:
                     counts_total.append(gaps_total_row['Gap Circles Count (All)'])
 
                 else:
-                    Log.logger.warning(img_name + ' cannot be found in ' + segmenter_csv)
+                    Log.logger.debug(img_name + ' cannot be found in ' + intra_gaps_csv)
+                    missing += 1
                     intra_lists = [means_intra, stds_intra, medians_intra, pct5_intra, pct95_intra,
                                    means_radius_intra, stds_radius_intra, medians_radius_intra,
                                    pct5_radius_intra, pct95_radius_intra, counts_intra]
@@ -821,6 +832,8 @@ class BatchCabana:
                     for lst in intra_lists + total_lists:
                         lst.append(0)
 
+            if missing:
+                Log.logger.warning(f'{missing} images have no gap analysis results; their gap statistics are set to 0.')
             self.df_stats.insert(len(self.df_stats.columns), "Mean (All gaps area in µm²)", means_total)
             self.df_stats.insert(len(self.df_stats.columns), "Std (All gaps area in µm²)", stds_total)
             self.df_stats.insert(len(self.df_stats.columns), "Median (All gaps area in µm²)", medians_total)
@@ -855,7 +868,7 @@ class BatchCabana:
         # Save to new csv file
         final_csv = join_path(self.output_folder, 'QuantificationResults.csv')
         self.df_stats.to_csv(final_csv, index=False, float_format="%.3f")
-        Log.logger.info('Statistics have been saved to ' + final_csv)
+        Log.logger.debug('Statistics have been saved to ' + final_csv)
 
     def normalize_statistics(self):
         results_csv = join_path(self.output_folder, 'QuantificationResults.csv')
@@ -955,21 +968,21 @@ class BatchCabana:
 
         # if no segmentation is performed, no need to re-calculate statistics
         if not self.args["Configs"]["Segmentation"]:
-            Log.logger.info(
+            Log.logger.debug(
                 "No segmentation results available. Dropping columns with 'ROI'.")
             df_results.drop(list(df_results.filter(regex="ROI")), axis=1, inplace=True)
 
         # save to new csv file
         final_csv = join_path(self.output_folder, 'QuantificationResults.csv')
         df_results.to_csv(final_csv, index=False, float_format='%.3f')
-        Log.logger.info('Statistics have been normalized and saved to ' + final_csv)
+        Log.logger.debug('Statistics have been normalized and saved to ' + final_csv)
 
     def generate_color_maps(self):
         if not self._visuals():
-            Log.logger.info('Visualisations are off (Configs: Save Visualisations); no colour maps written.')
+            Log.logger.debug('Visualisations are off (Configs: Save Visualisations); no colour maps written.')
             return
         ori_img_paths = get_img_paths(join_path(self.output_folder, "Eligible"))
-        Log.logger.info(f'Generating color maps for {len(ori_img_paths)} images.')
+        Log.logger.debug(f'Generating color maps for {len(ori_img_paths)} images.')
         for ori_img_path in tqdm(ori_img_paths, bar_format=read_bar_format):
             ori_img_name = os.path.basename(ori_img_path)
             self._status(f"Colour maps: {ori_img_name}")
@@ -1074,7 +1087,7 @@ class BatchCabana:
                 self.normalize_statistics()
                 self.generate_color_maps()
             else:
-                Log.logger.info('Segmentation is done. No further analysis will be conducted.')
+                Log.logger.debug('Segmentation is done. No further analysis will be conducted.')
 
         # Always finish on 1.0 so the host can advance the bar past this batch
         # even when the estimate above is approximate.
@@ -1211,9 +1224,9 @@ class BatchProcessor():
         if not os.path.exists(self.output_folder):
             os.makedirs(self.output_folder, exist_ok=True)
 
-        # Create 'Logs' folder and print out parameters
-        Log.init_log_path(join_path(os.path.dirname(self.input_folder), 'Logs'))
-        Log.logger.info('Logs folder: {}'.format(join_path(os.path.dirname(self.output_folder), 'Logs')))
+        # Create 'Logs' folder and record the parameters in the log file
+        Log.init_log_path(join_path(self.output_folder, 'Logs'))
+        Log.logger.info('Log file: {}'.format(Log.log_name))
 
         # Load parameters from YAML file
         self.args = None
@@ -1276,7 +1289,7 @@ class BatchProcessor():
         # Get all image paths from the input folder
         img_paths = get_img_paths(self.input_folder)
         if len(img_paths) == 0:
-            print('No images found in the input folder. Only tif, png, and jpg images are supported!')
+            Log.logger.warning('No images found in the input folder. Only tif, png, and jpg images are supported!')
             return
 
         # Split images into batches
@@ -1284,8 +1297,16 @@ class BatchProcessor():
 
         # Initialize output folder if not resuming
         if not self.resume:
-            shutil.rmtree(self.output_folder)
-            os.mkdir(self.output_folder)
+            # Clear the output folder but keep Logs/: this run's log file is
+            # already open there (see __init__)
+            for entry in os.listdir(self.output_folder):
+                if entry == 'Logs':
+                    continue
+                path = join_path(self.output_folder, entry)
+                if os.path.isdir(path) and not os.path.islink(path):
+                    shutil.rmtree(path)
+                else:
+                    os.remove(path)
 
             # Check for oversized images based on configuration
             max_res = max_image_size(self.args)
@@ -1653,18 +1674,24 @@ class BatchProcessor():
         """
         start_time = time.time()
 
-        self.process()
+        try:
+            self.process()
 
-        if getattr(self, '_cancelled', False):
-            Log.logger.info('Processing stopped. Checkpoint preserved for resume.')
-            return True
+            if getattr(self, '_cancelled', False):
+                Log.logger.info('Processing stopped. Checkpoint preserved for resume.')
+                return True
 
-        self.post_process()
-        self.update_progress(100)
+            self.post_process()
+            self.update_progress(100)
 
-        time_secs = time.time() - start_time
-        hours = time_secs // 3600
-        minutes = (time_secs % 3600) // 60
-        seconds = (time_secs % 3600) % 60
-        Log.logger.info("--- Finished in {:.0f} hours {:.0f} mins {:.0f} seconds ---".format(hours, minutes, seconds))
-        return False
+            time_secs = time.time() - start_time
+            hours = time_secs // 3600
+            minutes = (time_secs % 3600) // 60
+            seconds = (time_secs % 3600) % 60
+            Log.logger.info("--- Finished in {:.0f} hours {:.0f} mins {:.0f} seconds ---".format(hours, minutes, seconds))
+            return False
+        except Exception:
+            Log.logger.exception('Batch processing failed')
+            raise
+        finally:
+            Log.close_log_file()

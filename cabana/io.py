@@ -10,6 +10,8 @@ import shutil
 from glob import glob
 from PIL import Image, ExifTags
 
+from .log import Log
+
 
 read_bar_format = "%s{l_bar}%s{bar}%s{r_bar}" % (
     "\033[0;34m", "\033[0;34m", "\033[0;34m")
@@ -101,14 +103,15 @@ def largest_image(img_paths):
     return best
 
 
-def split2batches(img_paths, max_batch_size=5):
+def split2batches(img_paths, max_batch_size=5, warn=True):
     pixel_res = []
+    no_res, mismatched = 0, 0
     for img_path in img_paths:
         img_info = Image.open(img_path)
         img_exif = img_info.getexif()
 
         if img_exif is None:
-            print('Sorry, image has no exif data. Setting to default 1.0.')
+            no_res += 1
             pixel_res.append(1.0)
         else:
             xres, yres = 1.0, 1.0
@@ -123,12 +126,18 @@ def split2batches(img_paths, max_batch_size=5):
                         found = True
             if found:
                 if abs(xres - yres) > 0.01:
-                    print('Warning: XResolution and YResolution in metadata are different! Using XResolution...')
+                    mismatched += 1
                 pixel_res.append(xres)
             else:
-                print('Warning: No pixel resolution available in metadata! Setting to default 1.0.')
+                no_res += 1
                 pixel_res.append(1.0)
     assert len(pixel_res) == len(img_paths)
+    if warn and mismatched:
+        Log.logger.warning(f'{mismatched} of {len(img_paths)} images have different X and Y resolutions '
+                           f'in their metadata; using XResolution.')
+    if warn and no_res:
+        Log.logger.warning(f'{no_res} of {len(img_paths)} images have no pixel resolution in their metadata; '
+                           f'using 1.0 µm/pixel.')
 
     img_paths = [x for _, x in sorted(zip(pixel_res, img_paths))]
     pixel_res = [y for y, _ in sorted(zip(pixel_res, img_paths))]
@@ -161,7 +170,7 @@ def split2batches(img_paths, max_batch_size=5):
 
 def export_parameters(param_path, out_file):
     if not os.path.exists(param_path):
-        print("{} not exists.".format(param_path))
+        Log.logger.error("{} not exists.".format(param_path))
         return
     with open(out_file, 'a+') as hf:
         if os.path.basename(param_path).endswith('.txt'):
@@ -199,4 +208,4 @@ def convert_parameters(param_file_in_micros, param_file_in_pixels, ims_res):
             elif kl.startswith("minimum gap diameter"):
                 wf.write("Minimum Gap Diameter,{:d}\n".format(int(float(value) / ims_res)))
             else:
-                print('Invalid parameter {}'.format(key))
+                Log.logger.warning('Invalid parameter {}'.format(key))

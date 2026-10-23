@@ -20,6 +20,7 @@ from PyQt5.QtCore import QSettings, QTimer, QUrl
 from PyQt5.QtGui import QDesktopServices
 
 from .ui import *
+from .log import Log
 from .themes import THEMES, DEFAULT_THEME
 from .tma import AUTO_START_DIAMETER_UM, ORIENTATIONS, EDITS_FILE
 from .io import DEFAULT_MAX_SIZE, max_image_size, migrate_max_size, save_visualisations
@@ -1960,11 +1961,11 @@ class MainWindow(QMainWindow):
 
         # Check if checkpoint file exists
         if not os.path.exists(checkpoint_path):
-            print("No checkpoint file found. Starting a new run.")
+            Log.logger.info("No checkpoint file found. Starting a new run.")
             return resume, batch_size, batch_num, ignore_large, {}
 
         # Read checkpoint file
-        print("A checkpoint file exists in the output folder.")
+        Log.logger.info("A checkpoint file exists in the output folder.")
         with open(checkpoint_path, "r") as f:
             for line in f:
                 key, value = line.rstrip().split(",")
@@ -1989,7 +1990,7 @@ class MainWindow(QMainWindow):
         for batch_idx in range(batch_num + 1):
             batch_path = join_path(self.output_folder, 'Batches', f'batch_{batch_idx}')
             if not os.path.exists(batch_path):
-                print('However, some necessary sub-folders are missing. A new run will start.')
+                Log.logger.warning('However, some necessary sub-folders are missing. A new run will start.')
                 resume = False
                 break
 
@@ -2003,11 +2004,11 @@ class MainWindow(QMainWindow):
             msg_box.setStyleSheet(self.msgbox_style)
 
             if msg_box.exec_() == QMessageBox.Yes:
-                print('Resuming from last check point.')
+                Log.logger.info('Resuming from last check point.')
                 return True, batch_size, batch_num, ignore_large, {
                     k: v for k, v in (("max_size", max_size), ("save_visuals", save_visuals)) if v is not None}
             else:
-                print("Starting a new run.")
+                Log.logger.info("Starting a new run.")
 
         return False, batch_size, batch_num, ignore_large, {}
 
@@ -2698,7 +2699,7 @@ class MainWindow(QMainWindow):
             self.yml_data = migrate_max_size(data)      # pre-0.3.9 files kept Max Size under Segmentation
             self.apply_params_to_widgets()
         except Exception as e:
-            print(f"Failed to load parameters: {e}")
+            Log.logger.error(f"Failed to load parameters: {e}")
 
     def apply_params_to_widgets(self):
         """Update all GUI widgets to reflect current yml_data values"""
@@ -2792,7 +2793,7 @@ class MainWindow(QMainWindow):
             self.detect_btn.setEnabled(False)
             self.reload_btn.setEnabled(False)
             self._update_image_status()
-            print(f"Error loading image: {e}")
+            Log.logger.error(f"Error loading image: {e}")
 
 
     def load_image(self):

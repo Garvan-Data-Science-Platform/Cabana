@@ -29,27 +29,27 @@ def _pick_paths_with_tkinter():
             title="Choose Parameter File",
         )
         if not param_file or not os.path.exists(param_file):
-            print("No path/folder has been selected. Abort!")
+            Log.logger.error("No path/folder has been selected. Abort!")
             os._exit(1)
-        print(param_file + " has been selected.")
+        Log.logger.info(param_file + " has been selected.")
 
         input_folder = filedialog.askdirectory(
             initialdir=Path(param_file).parent.parent,
             title="Choose Input Directory",
         )
         if not input_folder or not os.listdir(input_folder):
-            print("No path/folder has been selected. Abort.")
+            Log.logger.error("No path/folder has been selected. Abort.")
             os._exit(1)
-        print(input_folder + " has been selected.")
+        Log.logger.info(input_folder + " has been selected.")
 
         output_folder = filedialog.askdirectory(
             initialdir=os.path.dirname(input_folder),
             title="Choose Output Directory",
         )
         if not output_folder:
-            print("No path/folder has been selected. Abort.")
+            Log.logger.error("No path/folder has been selected. Abort.")
             os._exit(1)
-        print(output_folder + " has been selected.")
+        Log.logger.info(output_folder + " has been selected.")
     finally:
         gui.destroy()
     return param_file, input_folder, output_folder

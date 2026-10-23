@@ -751,7 +751,7 @@ class SkeletonAnalyzer:
                         brh_pts_cnt += 1
 
         # Log the results
-        Log.logger.info(f"points_test: {end_pts_cnt} end points, {brh_pts_cnt} branch points.")
+        Log.logger.debug(f"points_test: {end_pts_cnt} end points, {brh_pts_cnt} branch points.")
 
     def draw_key_points(self):
         """

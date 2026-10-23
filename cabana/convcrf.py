@@ -10,7 +10,6 @@ from __future__ import print_function
 
 import os
 import imageio
-import sys
 
 import numpy as np
 import scipy as scp
@@ -19,9 +18,7 @@ import math
 import logging
 import warnings
 
-logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s',
-                    level=logging.INFO,
-                    stream=sys.stdout)
+logger = logging.getLogger(__name__)
 
 try:
     import pyinn as P
@@ -237,7 +234,7 @@ def show_memusage(device=0, name=""):
     gpu_stats = gpustat.GPUStatCollection.new_query()
     item = gpu_stats.jsonify()["gpus"][device]
 
-    logging.info("{:>5}/{:>5} MB Usage at {}".format(
+    logger.info("{:>5}/{:>5} MB Usage at {}".format(
         item["memory.used"], item["memory.total"], name))
 
 
@@ -516,8 +513,8 @@ class ConvCRF(nn.Module):
 
         if self.use_gpu:
             if not torch.cuda.is_available():
-                logging.error("GPU mode requested but not available.")
-                logging.error("Please run using use_gpu=False.")
+                logger.error("GPU mode requested but not available.")
+                logger.error("Please run using use_gpu=False.")
                 raise ValueError
 
         self.npixels = npixels

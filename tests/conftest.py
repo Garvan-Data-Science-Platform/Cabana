@@ -21,6 +21,19 @@ import pytest  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
+def _close_stray_run_logs():
+    """Tests that build a BatchProcessor without calling run() leave its run
+    log open; close such handlers so tests stay independent."""
+    yield
+    import logging
+    from cabana.log import Log
+    for h in list(Log.logger.handlers):
+        if isinstance(h, logging.FileHandler) and h is not Log._file_handler:
+            Log.logger.removeHandler(h)
+            h.close()
+
+
+@pytest.fixture(autouse=True)
 def _no_quit_confirmation(monkeypatch):
     """Closing a MainWindow in a test must not open the quit confirmation."""
     try:

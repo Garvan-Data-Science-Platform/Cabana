@@ -103,7 +103,7 @@ def largest_image(img_paths):
     return best
 
 
-def split2batches(img_paths, max_batch_size=5, warn=True):
+def split2batches(img_paths, max_batch_size=5):
     pixel_res = []
     no_res, mismatched = 0, 0
     for img_path in img_paths:
@@ -132,10 +132,10 @@ def split2batches(img_paths, max_batch_size=5, warn=True):
                 no_res += 1
                 pixel_res.append(1.0)
     assert len(pixel_res) == len(img_paths)
-    if warn and mismatched:
+    if mismatched:
         Log.logger.warning(f'{mismatched} of {len(img_paths)} images have different X and Y resolutions '
                            f'in their metadata; using XResolution.')
-    if warn and no_res:
+    if no_res:
         Log.logger.warning(f'{no_res} of {len(img_paths)} images have no pixel resolution in their metadata; '
                            f'using 1.0 µm/pixel.')
 

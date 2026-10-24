@@ -814,13 +814,8 @@ class Cabana:
 
     def run(self):
         """Run the full analysis pipeline, logging to ``<output>/Logs/``."""
-        Log.init_log_path(join_path(self.output_folder, 'Logs'))
-        Log.logger.info('Log file: {}'.format(Log.log_name))
-        Log.log_parameters(self.param_file)
-        try:
+        with Log.run_log(join_path(self.output_folder, 'Logs'), self.param_file):
             return self._run()
-        finally:
-            Log.close_log_file()
 
     def _run(self):
         self.initialize_params()

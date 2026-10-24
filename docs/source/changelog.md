@@ -7,10 +7,14 @@
 - Batch and single-image runs write a log file to `<output>/Logs/`, with
   timestamps and one file per run. Repeated runs in the GUI no longer write
   into each other's log.
-- The console shows only run progress, warnings and errors; stage details and
-  parameters go to the log file. Per-image warnings are summarised as counts.
+- The console shows only run progress, warnings, errors and where results
+  were saved; stage details and parameters go to the log file. Per-image
+  warnings are summarised as counts.
+- A run's log does not interfere with a log file your own script has opened
+  with `Log.init_log_path`.
 - Fixed: the GUI could close when a batch run failed during setup (for
   example, a missing parameter file). The error is now reported.
+- Batch runs no longer re-read every input image's metadata for each batch.
 
 ## 0.3.9
 

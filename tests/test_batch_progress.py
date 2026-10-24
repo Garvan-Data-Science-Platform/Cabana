@@ -230,7 +230,7 @@ class _FakeBatchCabana:
 
     def __init__(self, param_file, input_folder, batch_folder, batch_size,
                  batch_idx, ignore_large, progress_callback=None, mask_dir=None,
-                 status_callback=None, max_size=None, save_visuals=None):
+                 status_callback=None, max_size=None, save_visuals=None, batch=None):
         self.batch_idx = batch_idx
         self.status_callback = status_callback
         self.progress_callback = progress_callback

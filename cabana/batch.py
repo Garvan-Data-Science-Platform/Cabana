@@ -6,7 +6,6 @@ import yaml
 import shutil
 import getpass
 import datetime
-import warnings
 from glob import glob
 from pathlib import Path
 
@@ -54,7 +53,8 @@ PATCHES_PER_TICK = 5
 class BatchCabana:
     def __init__(self, param_file, input_folder, out_folder,
                  batch_size=5, batch_idx=0, ignore_large=True, progress_callback=None,
-                 mask_dir=None, status_callback=None, max_size=None, save_visuals=None):
+                 mask_dir=None, status_callback=None, max_size=None, save_visuals=None,
+                 batch=None):
         self.param_file = param_file
         # Optional Max Size overriding the parameter file's (0 = no limit)
         self.max_size = max_size
@@ -69,6 +69,10 @@ class BatchCabana:
         self.args = None  # args for Cabana program
         self.seg_args = parse_args()  # args for segmentation
         self.ims_res = 1.0  # µm/pixel
+        # ``(image paths, µm/pixel)`` of this batch, passed by BatchProcessor
+        # so the whole input folder is not re-read for every batch. None:
+        # split the folder here.
+        self._batch = batch
         self.df_stats = pd.DataFrame()
 
         self.param_file = param_file
@@ -161,9 +165,11 @@ class BatchCabana:
 
     def remove_large_images(self):
         from .stages import prepare_roi_mask
-        img_paths = get_img_paths(self.input_folder)
-        # BatchProcessor already warned about missing resolutions for the whole run
-        path_batches, res_batches = split2batches(img_paths, self.batch_size, warn=False)
+        if self._batch is not None:
+            batch_paths, self.ims_res = self._batch
+        else:
+            path_batches, res_batches = split2batches(get_img_paths(self.input_folder), self.batch_size)
+            batch_paths, self.ims_res = path_batches[self.batch_idx], res_batches[self.batch_idx]
         with_mask = set()       # input images (not blocks) that have an external ROI mask
         n_eligible = 0
 
@@ -172,16 +178,16 @@ class BatchCabana:
         with open(join_path(self.eligible_dir, "IgnoredImages.txt"), 'w') as f:
             count_black = 0
             count_oversized = 0
-            for img_path in path_batches[self.batch_idx]:
+            for img_path in batch_paths:
                 img_name = os.path.basename(img_path)
                 img_name = sanitize_filename(img_name)  # replace special characters in image names with "_"
                 img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
                 if img.dtype == np.uint16:
-                    warnings.warn(f"Image {img_path} is 16-bit. Converting to 8-bit.")
+                    Log.logger.warning(f"Image {img_path} is 16-bit. Converting to 8-bit.")
                     lower = np.percentile(img, 2)
                     upper = np.percentile(img, 98)
                     if upper <= lower:
-                        warnings.warn(f"Image {img_path} has no dynamic range. Skipping.")
+                        Log.logger.warning(f"Image {img_path} has no dynamic range. Skipping.")
                         count_black += 1
                         continue
                     img = np.clip(img, lower, upper)  # clip to 2nd and 98th percentile to remove outliers
@@ -245,7 +251,6 @@ class BatchCabana:
             Log.logger.warning('{} over-sized images have been {}.'.format(count_oversized, msg))
 
         self.input_folder = self.eligible_dir
-        self.ims_res = res_batches[self.batch_idx]
 
     def _roi_mask_path(self, img_path):
         """Prepared ROI mask path for an eligible image, or ``None``."""
@@ -975,7 +980,7 @@ class BatchCabana:
         # save to new csv file
         final_csv = join_path(self.output_folder, 'QuantificationResults.csv')
         df_results.to_csv(final_csv, index=False, float_format='%.3f')
-        Log.logger.debug('Statistics have been normalized and saved to ' + final_csv)
+        Log.logger.info('Statistics have been saved to ' + final_csv)
 
     def generate_color_maps(self):
         if not self._visuals():
@@ -1087,7 +1092,7 @@ class BatchCabana:
                 self.normalize_statistics()
                 self.generate_color_maps()
             else:
-                Log.logger.debug('Segmentation is done. No further analysis will be conducted.')
+                Log.logger.info('Segmentation is done. No further analysis will be conducted.')
 
         # Always finish on 1.0 so the host can advance the bar past this batch
         # even when the estimate above is approximate.
@@ -1224,19 +1229,23 @@ class BatchProcessor():
         if not os.path.exists(self.output_folder):
             os.makedirs(self.output_folder, exist_ok=True)
 
-        # Create 'Logs' folder and record the parameters in the log file
-        Log.init_log_path(join_path(self.output_folder, 'Logs'))
-        Log.logger.info('Log file: {}'.format(Log.log_name))
+        # This run's log file in <output>/Logs; closed by run(), or here if
+        # the rest of the setup fails
+        self.run_log = Log.run_log(join_path(self.output_folder, 'Logs'), self.param_file)
+        try:
+            self._load_params()
+        except Exception:
+            Log.logger.exception('Batch setup failed')
+            self.run_log.close()
+            raise
 
-        # Load parameters from YAML file
+    def _load_params(self):
         self.args = None
         with open(self.param_file) as pf:
             try:
                 self.args = yaml.safe_load(pf)
             except yaml.YAMLError as exc:
-                Log.logger.error(exc)
                 raise ValueError(f"Could not parse the parameter file {self.param_file}: {exc}") from exc
-        Log.log_parameters(self.param_file)
         if self.max_size is not None:
             self.args.setdefault("Configs", {})["Max Size"] = int(self.max_size)
             Log.logger.info(f"Max Size for this run: {int(self.max_size) or 'no limit'}")
@@ -1297,12 +1306,13 @@ class BatchProcessor():
 
         # Initialize output folder if not resuming
         if not self.resume:
-            # Clear the output folder but keep Logs/: this run's log file is
-            # already open there (see __init__)
+            # Clear the output folder but keep the Logs folder: this run's log
+            # file is already open there (see __init__) and earlier runs' logs
+            # are kept as a history
             for entry in os.listdir(self.output_folder):
-                if entry == 'Logs':
-                    continue
                 path = join_path(self.output_folder, entry)
+                if entry == 'Logs' and os.path.isdir(path):
+                    continue
                 if os.path.isdir(path) and not os.path.islink(path):
                     shutil.rmtree(path)
                 else:
@@ -1424,7 +1434,8 @@ class BatchProcessor():
                                   mask_dir=getattr(self, 'mask_dir', None),
                                   status_callback=on_batch_status,
                                   max_size=max_image_size(self.args),
-                                  save_visuals=save_visualisations(self.args))
+                                  save_visuals=save_visualisations(self.args),
+                                  batch=(path_batches[batch_idx], res_batches[batch_idx]))
             batch_cabana.run()
 
             # Update checkpoint file with completed batch
@@ -1694,4 +1705,4 @@ class BatchProcessor():
             Log.logger.exception('Batch processing failed')
             raise
         finally:
-            Log.close_log_file()
+            self.run_log.close()

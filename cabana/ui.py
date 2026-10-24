@@ -588,6 +588,10 @@ class BatchProcessingWorker(QThread):
 
     def run(self):
         self.progress_updated.emit(1)
+        # An exception escaping QThread.run aborts the process, so both steps
+        # are guarded. BatchProcessor logs the traceback of a failure in its
+        # setup or run into the run's log file; only the message is repeated
+        # here (a setup failure before the log opens is a missing file).
         try:
             batch_processor = BatchProcessor(self.param_file, self.input_folder,
                                              self.output_folder, self.batch_size,
@@ -595,15 +599,18 @@ class BatchProcessingWorker(QThread):
                                              self.generate_stats, self.generate_scores,
                                              mask_dir=self.mask_dir, max_size=self.max_size,
                                              save_visuals=self.save_visuals)
+        except Exception as exc:
+            Log.logger.error(f"Batch setup failed: {type(exc).__name__}: {exc}")
+            self.batch_failed.emit(f"{type(exc).__name__}: {exc}")
+            return
 
-            batch_processor.progress_callback = self.update_progress
-            batch_processor.status_callback = self.status_updated.emit
-            batch_processor.cancel_check = lambda: self._cancel_requested
+        batch_processor.progress_callback = self.update_progress
+        batch_processor.status_callback = self.status_updated.emit
+        batch_processor.cancel_check = lambda: self._cancel_requested
 
+        try:
             was_cancelled = batch_processor.run()
-        except Exception as exc:   # an exception escaping QThread.run aborts the process
-            # BatchProcessor.run has already logged the traceback to the run's log file
-            Log.logger.error(f"Batch processing failed: {type(exc).__name__}: {exc}")
+        except Exception as exc:
             self.batch_failed.emit(f"{type(exc).__name__}: {exc}")
             return
         if was_cancelled:

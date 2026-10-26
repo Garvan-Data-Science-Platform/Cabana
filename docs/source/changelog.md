@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Check for Updates** (Help menu; Cabana menu on macOS) installs a newer
+  release from PyPI into the running environment; restart Cabana afterwards
+  to use it. Cabana also checks once a day at startup and offers the update,
+  or lets you skip that version.
+- Fixed: on Windows the taskbar showed a generic or Python icon instead of
+  Cabana's logo.
+- Fixed: on Windows, batch runs failed when Cabana was started with
+  `cabana-gui` (no console window).
+
 ## 0.3.10
 
 ### Measurements

@@ -2,6 +2,7 @@ import os
 os.environ["NUMEXPR_MAX_THREADS"] = "20"
 import sys
 import colorsys
+from datetime import date
 import numpy as np
 import yaml
 import imageio.v3 as iio
@@ -31,6 +32,8 @@ from .tma_editor import TMACoreEditor
 from .tma_maps import MAP_FILE_FILTER, available_arrays, load_map_file, match_map_to_slide, write_templates
 from .tma_editor import MapPreviewDialog
 from . import __version__
+from .updates import CHANGELOG_URL, install_problem, is_newer, restart_command
+from .winshell import set_taskbar_icon
 
 
 class PageStack(QStackedWidget):
@@ -99,6 +102,11 @@ class MainWindow(QMainWindow):
         # Set window properties
         self.setWindowTitle(f"Cabana v{__version__}")
         self.setMinimumSize(800, 600)
+
+        # Windows takes the taskbar icon from the window's properties, which
+        # must be set before the window is first shown
+        if sys.platform == 'win32':
+            set_taskbar_icon(int(self.winId()), restart_command())
 
         # Make window full screen when starting
         self.showMaximized()  # This will maximize the window to full screen
@@ -300,6 +308,11 @@ class MainWindow(QMainWindow):
         # Connect zoom updates from image panel
         self.image_panel.zoomChanged.connect(self._update_zoom_status)
 
+        # Look for a newer release once a day, after the window is up
+        self.update_worker = None
+        if self.check_updates_on_start:
+            QTimer.singleShot(3000, self._startup_update_check)
+
 
     def _setup_menu_bar(self):
         """Build File / Parameters / Analysis / About menus.
@@ -404,6 +417,11 @@ class MainWindow(QMainWindow):
             lambda: QDesktopServices.openUrl(QUrl("https://github.com/lxfhfut/Cabana/issues")))
         about_menu.addAction(issue_action)
         about_menu.addSeparator()
+        self.check_updates_action = QAction("Check for &Updates…", self)
+        # macOS moves it into the application menu, under About Cabana
+        self.check_updates_action.setMenuRole(QAction.ApplicationSpecificRole)
+        self.check_updates_action.triggered.connect(lambda: self.check_for_updates())
+        about_menu.addAction(self.check_updates_action)
         version_action = QAction("&Version", self)
         version_action.setMenuRole(QAction.NoRole)
         version_action.triggered.connect(self._show_about_dialog)
@@ -483,7 +501,8 @@ class MainWindow(QMainWindow):
                    (getattr(self, "tma_worker", None), "a TMA fit or export"),
                    (getattr(self, "segmentation_worker", None), "segmentation"),
                    (getattr(self, "detection_worker", None), "fibre detection"),
-                   (getattr(self, "gap_analysis_worker", None), "gap analysis")]
+                   (getattr(self, "gap_analysis_worker", None), "gap analysis"),
+                   (getattr(self, "update_worker", None), "the Cabana update")]
         for worker, label in running:
             if worker is not None and worker.isRunning():
                 items.append(f"{label} is still running")
@@ -3334,6 +3353,120 @@ class MainWindow(QMainWindow):
             f"QPushButton {{ min-width: 60px; }}"
         )
         dlg.exec_()
+
+    # ------------------------------------------------------------------
+    # Check for Updates
+    # ------------------------------------------------------------------
+    check_updates_on_start = True   # tests and scripts switch the startup check off
+    UPDATE_CHECK_KEY = 'update_last_check'
+    UPDATE_SKIP_KEY = 'update_skipped_version'
+
+    def _startup_update_check(self):
+        """Quiet check at most once a day; speaks only when an update can be installed."""
+        settings = QSettings('Cabana', 'CabanaGUI')
+        today = date.today().isoformat()
+        if settings.value(self.UPDATE_CHECK_KEY, "") == today or install_problem() is not None:
+            return
+        settings.setValue(self.UPDATE_CHECK_KEY, today)
+        self.check_for_updates(quiet=True)
+
+    def check_for_updates(self, quiet=False):
+        """Ask PyPI for the latest version in the background. ``quiet`` (the
+        startup check) shows nothing unless a new, not skipped, version exists."""
+        if self.update_worker is not None and self.update_worker.isRunning():
+            return
+        self.update_worker = UpdateWorker('check')
+        self.update_worker.checked.connect(lambda latest: self._update_checked(latest, quiet))
+        self.update_worker.failed.connect(lambda error: self._update_check_failed(error, quiet))
+        self.update_worker.start()
+
+    def _update_check_failed(self, error, quiet):
+        Log.logger.debug("Update check failed: %s", error)
+        if not quiet:
+            self._ask_update("Check for Updates", "Could not reach PyPI to check for updates.",
+                             f"Check the internet connection and try again.\n\n{error}", ["OK"])
+
+    def _update_checked(self, latest, quiet):
+        if not is_newer(latest, __version__):
+            if not quiet:
+                self._ask_update("Check for Updates", f"Cabana {__version__} is the latest version.",
+                                 "", ["OK"])
+            return
+        settings = QSettings('Cabana', 'CabanaGUI')
+        if quiet and settings.value(self.UPDATE_SKIP_KEY, "") == latest:
+            return
+        text = (f"Cabana {latest} is available (you have {__version__}).<br>"
+                f"<a href='{CHANGELOG_URL}'>See what's new</a>")
+        problem = install_problem()
+        if problem:
+            self._ask_update("Check for Updates", text,
+                             f"{problem}\nUpdate that copy yourself, e.g. with git pull or pip.", ["OK"])
+            return
+        buttons = ["Update", "Later"] + (["Skip This Version"] if quiet else [])
+        choice = self._ask_update(
+            "Check for Updates", text,
+            "Update installs it into this Python environment with pip; "
+            "restart Cabana afterwards to use it.", buttons)
+        if choice == "Update":
+            self.install_update(latest)
+        elif choice == "Skip This Version":
+            settings.setValue(self.UPDATE_SKIP_KEY, latest)
+
+    def install_update(self, version):
+        """Install ``version`` with pip in the background, unless a job is running."""
+        running = [r for r in self._work_at_risk() if r.endswith("still running")]
+        if running:
+            self._ask_update("Check for Updates", "Cabana cannot be updated while work is running.",
+                             "Finish or cancel it first:\n- " + "\n- ".join(running), ["OK"])
+            return
+        self.check_updates_action.setEnabled(False)
+        self.status_bar.showMessage(f"Installing Cabana {version}…")
+        self.update_worker = UpdateWorker('install', version)
+        self.update_worker.installed.connect(lambda ok, output: self._update_installed(version, ok, output))
+        self.update_worker.failed.connect(lambda error: self._update_installed(version, False, error))
+        self.update_worker.start()
+
+    def _update_installed(self, version, ok, output):
+        # The result arrives just before the thread ends; wait for it, or quitting
+        # right after this dialog would still list the update as running
+        if self.update_worker is not None:
+            self.update_worker.wait()
+        self.check_updates_action.setEnabled(True)
+        self.status_bar.clearMessage()
+        if ok:
+            Log.logger.info("Installed Cabana %s", version)
+            Log.logger.debug("pip output:\n%s", output)
+            warned = "WARNING" in output.upper()
+            info = "Close Cabana and start it again to use the new version."
+            if warned:
+                info += "\npip reported warnings; see the details below."
+            self._ask_update("Check for Updates", f"Cabana {version} is installed.", info,
+                             ["OK"], details=output if warned else None)
+        else:
+            Log.logger.warning("Update to Cabana %s failed:\n%s", version, output)
+            self._ask_update("Check for Updates", f"Cabana {version} could not be installed.",
+                             "The update did not complete. Cabana keeps working; see the details below.",
+                             ["OK"], details=output)
+
+    def _ask_update(self, title, text, info, buttons, details=None):
+        """Message box with ``buttons`` (the first is the default); returns the
+        label clicked, or None when closed. Monkeypatched in tests."""
+        msg = QMessageBox(self)
+        msg.setWindowTitle(title)
+        msg.setTextFormat(Qt.RichText)
+        msg.setText(text)
+        msg.setInformativeText(info)
+        if details:
+            msg.setDetailedText(details)
+        msg.setStyleSheet(self.msgbox_style)
+        added = {}
+        for i, label in enumerate(buttons):
+            role = QMessageBox.AcceptRole if i == 0 else QMessageBox.RejectRole
+            added[msg.addButton(label, role)] = label
+        msg.setDefaultButton(next(iter(added)))
+        self._fit_dialog_buttons(msg)
+        msg.exec_()
+        return added.get(msg.clickedButton())
 
     @staticmethod
     def _license_text() -> str:

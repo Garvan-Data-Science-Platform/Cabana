@@ -3,8 +3,8 @@ from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import Qt
 import os
 import sys
-from pathlib import Path
 from .cabana_gui import MainWindow
+from .winshell import ICON_PATH, set_app_id
 
 
 def _set_macos_dock_name(name):
@@ -40,7 +40,17 @@ def _set_macos_dock_name(name):
         pass
 
 
+def _ensure_std_streams():
+    """Without a console (pythonw) sys.stdout/stderr are None, and libraries
+    that write to them (tqdm progress bars) would raise; discard the output."""
+    for name in ("stdout", "stderr"):
+        if getattr(sys, name) is None:
+            setattr(sys, name, open(os.devnull, "w"))
+
+
 def main():
+    _ensure_std_streams()
+
     from .log import setup_logging
     setup_logging()
 
@@ -52,6 +62,8 @@ def main():
 
     if sys.platform == 'darwin':
         _set_macos_dock_name('Cabana')
+    elif sys.platform == 'win32':
+        set_app_id()
 
     # Qt on macOS logs "Back buffer dpr of 2 doesn't match ... contents scale of 1"
     # whenever a window or popup is first shown on a Retina display and then fixes
@@ -65,8 +77,7 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName("Cabana")
-    icon_path = Path(__file__).parent / "cabana-logo.ico"
-    app.setWindowIcon(QIcon(str(icon_path)))
+    app.setWindowIcon(QIcon(str(ICON_PATH)))
 
     window = MainWindow()
     window.show()

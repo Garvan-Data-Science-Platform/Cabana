@@ -825,6 +825,29 @@ class TMAWorker(QThread):
             self.failed.emit(str(exc))
 
 
+class UpdateWorker(QThread):
+    """Background worker for Check for Updates: ``mode='check'`` asks PyPI for
+    the latest version, ``mode='install'`` installs ``version`` with pip."""
+    checked = pyqtSignal(str)             # latest version on PyPI
+    installed = pyqtSignal(bool, str)     # success, pip output
+    failed = pyqtSignal(str)
+
+    def __init__(self, mode, version=None):
+        super().__init__()
+        self.mode = mode
+        self.version = version
+
+    def run(self):
+        from .updates import install_version, latest_version
+        try:
+            if self.mode == 'check':
+                self.checked.emit(latest_version())
+            else:
+                self.installed.emit(*install_version(self.version))
+        except Exception as exc:   # surfaced to the user by the GUI
+            self.failed.emit(str(exc))
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Self-Supervised Semantic Segmentation')
     parser.add_argument('--num_channels', default=48, type=int,

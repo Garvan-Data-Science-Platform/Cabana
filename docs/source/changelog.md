@@ -4,48 +4,28 @@
 
 ### Measurements
 
-- **Results in µm change.** The pixel size read from an image's metadata was
-  rounded to 0.01 µm before measuring, which shifted lengths by up to about
-  2 % and areas by up to about 4 % (on a 0.274 µm/pixel test image, -1.4 % and
-  -2.8 %). It is now kept to four significant figures. Re-run analyses whose
-  pixel size is not a whole multiple of 0.01 µm.
-- **Fixed: images with a resolution in DPI** got a pixel size of 0 or about
-  0.01 µm/pixel (failing gap analysis, or µm results about 100 times too
-  small). DPI values are now ignored and 1.0 µm/pixel is used, with a
-  warning. Units named in ImageJ or QuPath TIFFs (µm, mm, cm, …) are
-  converted properly.
-- **Fixed: gap metrics of images without gaps** were blank instead of 0 when
-  no image in the same batch had gaps, so gap results depended on how images
-  were grouped. Single-image runs now also report 0 for ROI gap metrics.
+- **Results in µm change slightly.** The pixel size is no longer rounded to
+  0.01 µm (up to about 2 % in lengths and 4 % in areas). Re-run analyses
+  whose pixel size is not a multiple of 0.01 µm.
+- Fixed: images with a resolution in DPI got a wrong pixel size; 1.0 µm/pixel
+  is now used, with a warning. Units in ImageJ and QuPath TIFFs are converted.
+- Fixed: images without gaps could get blank gap metrics instead of 0.
 
 ### Logging
 
-- Batch and single-image runs write a log file to `<output>/Logs/`, with
-  timestamps and one file per run. Repeated runs in the GUI no longer write
-  into each other's log.
-- The console shows only run progress, warnings, errors and where results
-  were saved; stage details and parameters go to the log file. Per-image
-  warnings are summarised as counts.
-- Scripts: importing `cabana` no longer prints anything by itself. Call
-  `cabana.log.setup_logging()` to see progress on the console; CABANA's
-  messages also reach your own logging setup.
-- Messages from other GUI actions no longer appear in a running batch's log.
-- Fixed: the GUI could close when a batch run failed during setup (for
-  example, a missing parameter file). The error is now reported.
-- Batch runs no longer re-read every input image's metadata for each batch.
+- Each run writes a log file to `<output>/Logs/`; the console shows only
+  progress, warnings and errors.
+- Scripts: call `cabana.log.setup_logging()` to see progress on the console.
 
 ### Batch
 
-- Fixed: a batch run could delete its own inputs. A new run clears the output
-  folder, so an output folder that is, or contains, the input or ROI mask
-  folder (for example a TMA export folder) is now refused.
-- Fixed: an input folder path containing a comma, or a damaged checkpoint
-  file, made the GUI close when Process was pressed.
-- Fixed: an input folder without supported images reported a successful run
-  and could remove an interrupted run's checkpoint. It is now refused.
-- Fixed: on Windows, the single-image `.txt` results file failed partway
-  through.
-- Blank 16-bit images are listed in `IgnoredImages.txt`.
+- Fixed: a batch run could delete its inputs when the output folder
+  contained them; such output folders are now refused.
+- Fixed: the GUI could close on a failed batch setup, a damaged checkpoint or
+  an input path containing a comma.
+- Fixed: an input folder without supported images was reported as a
+  successful run.
+- Fixed: the single-image `.txt` results file could fail on Windows.
 
 ## 0.3.9
 

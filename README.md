@@ -35,7 +35,7 @@ pip install -U cabana
 or install the latest version on GitHub:
 
 ```bash
-pip install git+https://github.com/lxfhfut/Cabana.git
+pip install git+https://github.com/Garvan-Data-Science-Platform/Cabana.git
 ```
 
 After installation, you can launch the CABANA GUI by running:

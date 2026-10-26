@@ -414,7 +414,7 @@ class MainWindow(QMainWindow):
         about_menu.addAction(docs_action)
         issue_action = QAction("Report an &Issue", self)
         issue_action.triggered.connect(
-            lambda: QDesktopServices.openUrl(QUrl("https://github.com/lxfhfut/Cabana/issues")))
+            lambda: QDesktopServices.openUrl(QUrl("https://github.com/Garvan-Data-Science-Platform/Cabana/issues")))
         about_menu.addAction(issue_action)
         about_menu.addSeparator()
         self.check_updates_action = QAction("Check for &Updates…", self)
@@ -3399,8 +3399,7 @@ class MainWindow(QMainWindow):
                 f"<a href='{CHANGELOG_URL}'>See what's new</a>")
         problem = install_problem()
         if problem:
-            self._ask_update("Check for Updates", text,
-                             f"{problem}\nUpdate that copy yourself, e.g. with git pull or pip.", ["OK"])
+            self._ask_update("Check for Updates", text, problem, ["OK"])
             return
         buttons = ["Update", "Later"] + (["Skip This Version"] if quiet else [])
         choice = self._ask_update(
@@ -3485,7 +3484,7 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         return ("Cabana is released under the MIT License.\n\n"
-                "https://github.com/lxfhfut/Cabana/blob/main/LICENSE")
+                "https://github.com/Garvan-Data-Science-Platform/Cabana/blob/main/LICENSE")
 
     def _show_license_dialog(self) -> None:
         """Show the license text in a read-only dialog."""

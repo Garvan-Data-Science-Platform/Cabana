@@ -635,3 +635,22 @@ def test_blank_16bit_image_is_listed_as_ignored(tmp_path):
     b.remove_large_images()
     with open(out / "Eligible" / "IgnoredImages.txt") as f:
         assert "blank16.png" in f.read()
+
+
+def test_rgba_image_working_copy_drops_alpha(tmp_path):
+    """An RGBA input crashed the colour maps: its working copy kept the alpha channel."""
+    import numpy as np, cv2
+    images = tmp_path / "in"
+    images.mkdir()
+    rgba = np.zeros((60, 60, 4), np.uint8)
+    rgba[..., :3] = (30, 60, 200)
+    rgba[..., 3] = 255
+    cv2.imwrite(str(images / "rgba.png"), rgba)
+    out = tmp_path / "out"
+    out.mkdir()
+    b = BatchCabana(_default_params(), str(images), str(out), batch_size=5, batch_idx=0)
+    b.initialize_params()
+    b.remove_large_images()
+    copy = cv2.imread(str(out / "Eligible" / "rgba.png"), cv2.IMREAD_UNCHANGED)
+    assert copy.shape == (60, 60, 3)
+    assert tuple(copy[0, 0]) == (30, 60, 200)

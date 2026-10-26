@@ -14,12 +14,12 @@ setuptools.setup(
     description="Collagen fibre analyser for quantifying collagen fibre architecture in IHC and fluorescence microscopy images.",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/lxfhfut/cabana.git",
+    url="https://github.com/Garvan-Data-Science-Platform/Cabana.git",
     install_requires=requirements,
     python_requires=">=3.12",
     packages=setuptools.find_packages(exclude=["tests", "tests.*"]),
     package_data={
-        'cabana': ['cabana-logo.ico', 'data/*.csv'],
+        'cabana': ['cabana-logo.ico', 'default_params.yml', 'data/*.csv'],
     },
     entry_points={
             'gui_scripts': [

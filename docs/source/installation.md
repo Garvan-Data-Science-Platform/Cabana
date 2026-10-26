@@ -22,7 +22,7 @@ If you want to create a shortcut on the Windows desktop, follow the steps below:
 
 1) Make sure that Git is installed. If not, download it from this link and install it. Verify the installation by running `git --version` in the command line. 
 
-2) Run `git clone https://github.com/lxfhfut/Cabana.git` in the command line. You will be prompted to log in using your GitHub account. If authentication is successful, a `Cabana` folder will be downloaded to your current working directory. You can move (copy-and-paste) the folder to any installation location and change the current working direction to `Cabana` folder.
+2) Run `git clone https://github.com/Garvan-Data-Science-Platform/Cabana.git` in the command line. You will be prompted to log in using your GitHub account. If authentication is successful, a `Cabana` folder will be downloaded to your current working directory. You can move (copy-and-paste) the folder to any installation location and change the current working direction to `Cabana` folder.
 
 3) Modify the content in cabana.bat. Make sure CONDAPATH is set to the folder where miniconda was installed, ENVNAME is set to `cabana` and the last command before `call conda deactivate` is `python -m cabana`. Keep the `cd /d "%USERPROFILE%"` line before it: `python -m cabana` loads a `cabana` folder in the current folder before the installed package, so started from the downloaded `Cabana` folder it would run that copy instead of the one `pip` installs and updates.
 
@@ -37,3 +37,5 @@ Cabana also checks by itself once a day, a few seconds after it starts, and only
 Versions 0.3.10 and earlier have no update check: update them once by hand with `pip install -U cabana` in the `cabana` env (run `conda activate cabana` first).
 
 When Cabana is not running from the installed package, **Check for Updates** shows the new version but does not install it, and the daily check stays silent. This happens when a `cabana` folder in the folder Cabana was started from is loaded instead (see step 3 of the shortcut instructions above), or when Cabana runs from a git checkout or an editable install (`pip install -e .`). Update such a copy with `git pull` or `pip`.
+
+If an earlier upgrade was interrupted, the environment can hold more than one Cabana install record (`cabana-<version>.dist-info` folders in `site-packages`). Cabana then shows a wrong version number and an update seems not to take effect. **Check for Updates** lists the folders: close Cabana, delete them, and run `pip install --force-reinstall --no-deps cabana` in the `cabana` env. Do not use `pip uninstall` for this, as it may remove files of the current installation.

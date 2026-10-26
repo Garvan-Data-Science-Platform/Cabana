@@ -30,6 +30,15 @@ def create_folder(folder, overwrite=True):
         os.makedirs(folder)
 
 
+def remove_empty_dir(folder):
+    """Delete ``folder`` if it exists and is empty (e.g. Colors/ when
+    visualisations are off); otherwise leave it."""
+    try:
+        os.rmdir(folder)
+    except OSError:
+        pass
+
+
 def get_img_paths(folder,
                   image_types=('*.[Tt][Ii][Ff]*', '*.[Pp][Nn][Gg]',
                                '*.[Jj][Pp][Gg]', '*.[Jj][Pp][Ee][Gg]')):

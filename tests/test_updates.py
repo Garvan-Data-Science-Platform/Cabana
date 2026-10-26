@@ -81,6 +81,22 @@ class TestInstallProblem:
         monkeypatch.setattr(updates, "distribution", lambda name: _FakeDist(str(site)))
         assert "development checkout" in updates.install_problem()
 
+    def test_duplicate_install_records(self, site, monkeypatch):
+        monkeypatch.setattr(updates, "distribution", lambda name: _FakeDist(str(site)))
+        (site / "cabana-0.3.11.dist-info").mkdir()
+        (site / "other_pkg-1.0.dist-info").mkdir()
+        assert updates.install_problem() is None             # one record: fine
+        (site / "cabana-0.3.7.dist-info").mkdir()
+        problem = updates.install_problem()
+        assert "more than one Cabana install record" in problem
+        assert "cabana-0.3.7.dist-info" in problem and "cabana-0.3.11.dist-info" in problem
+        assert "other_pkg" not in problem
+        assert "pip install --force-reinstall --no-deps cabana" in problem
+
+    def test_problems_say_what_to_do(self, site, tmp_path, monkeypatch):
+        monkeypatch.setattr(updates, "distribution", lambda name: _FakeDist(str(tmp_path / "x")))
+        assert "Update that copy yourself" in updates.install_problem()
+
     def test_editable_install(self, site, monkeypatch):
         direct = json.dumps({"url": "file:///src", "dir_info": {"editable": True}})
         monkeypatch.setattr(updates, "distribution", lambda name: _FakeDist(str(site), direct))

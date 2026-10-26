@@ -455,3 +455,15 @@ def test_max_size_below_the_minimum_is_raised():
     assert max_image_size({"Configs": {}, "Segmentation": {"Max Size": 150}}) == 2048
     assert max_image_size({"Configs": {"Max Size": 3000}}) == 3000
     assert max_image_size({"Configs": {"Max Size": 0}}) == 0          # no limit
+
+
+def test_remove_empty_dir(tmp_path):
+    from cabana.io import remove_empty_dir
+    empty, full = tmp_path / "empty", tmp_path / "full"
+    empty.mkdir()
+    full.mkdir()
+    (full / "a.png").write_bytes(b"x")
+    remove_empty_dir(str(empty))
+    remove_empty_dir(str(full))
+    remove_empty_dir(str(tmp_path / "missing"))          # no error
+    assert not empty.exists() and (full / "a.png").exists()

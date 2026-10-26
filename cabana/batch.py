@@ -31,6 +31,7 @@ from .utils import (
     contains_oversized, is_oversized, largest_image, max_image_size, sanitize_filename,
     save_visualisations, read_bar_format, array_divide,
 )
+from .io import remove_empty_dir
 
 
 # Progress cost of the CNN training run of one image relative to an ordinary
@@ -178,6 +179,8 @@ class BatchCabana:
                 img_name = os.path.basename(img_path)
                 img_name = sanitize_filename(img_name)  # replace special characters in image names with "_"
                 img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
+                if img.ndim == 3 and img.shape[2] == 4:     # drop the alpha channel
+                    img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
                 if img.dtype == np.uint16:
                     Log.logger.debug(f"Image {img_path} is 16-bit. Converting to 8-bit.")
                     count_16bit += 1
@@ -1587,6 +1590,7 @@ class BatchProcessor():
         batches_path = join_path(self.output_folder, 'Batches')
         if os.path.exists(batches_path):
             shutil.rmtree(batches_path)
+        remove_empty_dir(join_path(self.output_folder, 'Colors'))   # visualisations off
 
         # Final progress update for post-processing
         self.update_progress(99)  # Set to 99% - final 100% will be set in the run() method

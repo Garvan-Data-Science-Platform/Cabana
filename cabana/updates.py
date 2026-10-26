@@ -34,25 +34,44 @@ def is_newer(latest, current):
     return a + (0,) * (n - len(a)) > b + (0,) * (n - len(b))
 
 
+_UPDATE_YOURSELF = "\nUpdate that copy yourself, e.g. with git pull or pip."
+
+
+def install_records(site_packages):
+    """The ``cabana-*.dist-info`` folders in ``site_packages``; normally exactly one."""
+    return sorted(p for p in Path(site_packages).glob("*.dist-info")
+                  if p.name.lower().startswith("cabana-"))
+
+
 def install_problem():
-    """None when pip can update the running copy of Cabana, else the reason it cannot.
+    """None when pip can update the running copy of Cabana, else the reason it
+    cannot, with what to do about it.
 
     The running code must be the installed package: a ``cabana`` source folder
     in the working folder, a git checkout or an editable install would be
-    left unchanged by pip.
+    left unchanged by pip. More than one install record (a leftover from an
+    interrupted upgrade) makes the reported version, read from the first
+    record found, unreliable, so updates would seem not to take effect.
     """
     try:
         dist = distribution("cabana")
     except PackageNotFoundError:
-        return "Cabana is running from source and is not installed as a package."
+        return "Cabana is running from source and is not installed as a package." + _UPDATE_YOURSELF
     running = Path(__file__).resolve().parent
     if Path(dist.locate_file("cabana")).resolve() != running:
-        return f"Cabana is running from {running}, not from the installed package."
+        return f"Cabana is running from {running}, not from the installed package." + _UPDATE_YOURSELF
     if (running.parent / ".git").exists():
-        return f"Cabana is running from a development checkout ({running.parent})."
+        return f"Cabana is running from a development checkout ({running.parent})." + _UPDATE_YOURSELF
     direct_url = dist.read_text("direct_url.json")
     if direct_url and json.loads(direct_url).get("dir_info", {}).get("editable"):
-        return "Cabana is installed in editable (development) mode."
+        return "Cabana is installed in editable (development) mode." + _UPDATE_YOURSELF
+    records = install_records(running.parent)
+    if len(records) > 1:
+        return ("This environment has more than one Cabana install record, so the version shown "
+                "may be wrong and updates may not take effect:\n"
+                + "\n".join(f"  {p}" for p in records)
+                + "\nClose Cabana, delete these folders, then run in this environment "
+                  "(not pip uninstall):\n  pip install --force-reinstall --no-deps cabana")
     return None
 
 

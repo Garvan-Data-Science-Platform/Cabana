@@ -13,7 +13,7 @@ from .analyzer import SkeletonAnalyzer
 from .orientation import OrientationAnalyzer
 from skimage.color import rgb2hed, hed2rgb, rgb2gray
 from .utils import create_folder, is_oversized, join_path, max_image_size
-from .io import save_visualisations
+from .io import remove_empty_dir, save_visualisations
 from .segmenter import parse_args, segment_single_image, visualize_fibres
 
 
@@ -671,6 +671,7 @@ class Cabana:
                 if self._work_dir is not None:
                     self._work_dir.cleanup()
                     self._work_dir = self.eligible_dir = None
+                remove_empty_dir(self.color_dir)            # visualisations off
 
     def _run(self):
         self.initialize_params()

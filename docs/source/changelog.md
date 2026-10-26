@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.12
+
+- Fixed: batch runs stopped at the colour maps when an input image had a
+  transparency (alpha) channel.
+- With visualisations off, the output no longer contains an empty `Colors`
+  folder.
+- **Check for Updates** detects a leftover install record from an
+  interrupted upgrade, which made Cabana show the wrong version, and explains
+  how to clean it up.
+- The project links (Report an Issue, licence, package home page) point to
+  the repository's new address.
+
 ## 0.3.11
 
 - **Check for Updates** (Help menu; Cabana menu on macOS) installs a newer

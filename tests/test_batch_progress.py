@@ -514,7 +514,12 @@ def test_no_limit_warns_about_the_largest_image(tmp_path, monkeypatch):
     monkeypatch.setattr(Log.logger, "warning", lambda msg, *a, **k: warned.append(str(msg)))
     BatchProcessor(str(param_file), str(input_dir), str(out_dir), batch_size=5, batch_num=0,
                    resume=False, ignore_large=False).process()
-    assert any("no limit" in m and "large.png (200x300 px" in m for m in warned)
+    assert not any("no limit" in m for m in warned)        # every image within 5000 px
+    monkeypatch.setattr(batch_mod, "DEFAULT_MAX_SIZE", 250)  # now large.png counts as very large
+    BatchProcessor(str(param_file), str(input_dir), str(out_dir), batch_size=5, batch_num=0,
+                   resume=False, ignore_large=False).process()
+    msg = [m for m in warned if "no limit" in m]
+    assert len(msg) == 1 and "large.png (200x300 px)" in msg[0] and "GB" not in msg[0]
 
 
 def test_max_size_override_and_checkpoint(tmp_path, monkeypatch):

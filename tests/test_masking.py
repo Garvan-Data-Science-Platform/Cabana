@@ -207,7 +207,9 @@ class TestBatchMasking:
                     mask_dir=mask_dir).run()
         assert sorted(os.listdir(out / "ROIMasks")) == ["core1.png"]
 
-    def test_oversized_image_blocks_get_cropped_masks(self, tmp_path):
+    def test_oversized_image_blocks_get_cropped_masks(self, tmp_path, monkeypatch):
+        import cabana.io
+        monkeypatch.setattr(cabana.io, "MIN_MAX_SIZE", 100)    # small test image: lower the floor
         img_dir, mask_dir = _write_inputs(tmp_path, with_mask=True)
         out = tmp_path / "out"
         out.mkdir()

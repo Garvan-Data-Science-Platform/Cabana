@@ -845,10 +845,8 @@ class MainWindow(QMainWindow):
         # Max Size (0 = no limit): larger images are split into blocks. Filled
         # from the parameter file; a changed value overrides it for the run.
         batch_size_layout.addWidget(QLabel("Max Size:"))
-        self.batch_max_size_spinner = QSpinBox()
-        self.batch_max_size_spinner.setRange(0, 20000)
+        self.batch_max_size_spinner = MaxSizeSpinBox()
         self.batch_max_size_spinner.setSingleStep(256)
-        self.batch_max_size_spinner.setSpecialValueText("No limit")
         self.batch_max_size_spinner.setSuffix(" px")
         self.batch_max_size_spinner.setValue(DEFAULT_MAX_SIZE)
         self.batch_max_size_spinner.setFixedWidth(95)
@@ -856,7 +854,8 @@ class MainWindow(QMainWindow):
         self.batch_max_size_spinner.setToolTip(
             "Images with more pixels than this squared are split into blocks of at most this size,\n"
             "and each block is analysed as a separate image; this keeps memory use down.\n"
-            "No limit = every image is analysed whole (a 4400 px TMA core needs about 7 GB).\n"
+            "The smallest value is 2048 px.\n"
+            "No limit = every image is analysed whole; very large images may run out of memory.\n"
             "Filled from the parameter file (Configs: Max Size); a value set here overrides it for the run.")
         batch_size_layout.addWidget(self.batch_max_size_spinner)
 

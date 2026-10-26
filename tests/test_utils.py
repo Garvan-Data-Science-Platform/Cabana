@@ -446,3 +446,12 @@ class TestPixelSize:
         path_batches, res = split2batches([a, b])
         assert len(path_batches) == 1                       # one slide stays one batch
         assert res[0] == pytest.approx(0.2739)
+
+
+def test_max_size_below_the_minimum_is_raised():
+    from cabana.io import MIN_MAX_SIZE, max_image_size
+    assert MIN_MAX_SIZE == 2048
+    assert max_image_size({"Configs": {"Max Size": 1000}}) == 2048
+    assert max_image_size({"Configs": {}, "Segmentation": {"Max Size": 150}}) == 2048
+    assert max_image_size({"Configs": {"Max Size": 3000}}) == 3000
+    assert max_image_size({"Configs": {"Max Size": 0}}) == 0          # no limit

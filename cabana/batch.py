@@ -29,6 +29,7 @@ from .analyzer import SkeletonAnalyzer
 from .orientation import OrientationAnalyzer
 from .segmenter import parse_args, segment_single_image
 from .version_info import get_version_info
+from .io import DEFAULT_MAX_SIZE
 from .utils import (
     join_path, get_img_paths, create_folder, split2batches,
     contains_oversized, is_oversized, largest_image, mask_color_map, max_image_size, sanitize_filename,
@@ -44,9 +45,6 @@ from .utils import (
 # patches.
 SEG_TICKS_PER_TRAINING = 4
 
-# Approximate peak memory of the full pipeline per megapixel of image, used to
-# warn when Max Size is 0 (no limit). Measured on a 4417 x 4417 px TMA core.
-MEM_GB_PER_MEGAPIXEL = 0.4
 PATCHES_PER_TICK = 5
 
 
@@ -1364,13 +1362,15 @@ class BatchProcessor():
             # Check for oversized images based on configuration
             max_res = max_image_size(self.args)
             if not max_res:
+                # Memory use depends on the image's content as well as its size,
+                # so name the largest image instead of estimating; images within
+                # the default Max Size are no concern
                 big = largest_image(img_paths)
-                if big is not None:
-                    mp = big[1] * big[2] / 1e6
+                if big is not None and max(big[1], big[2]) > DEFAULT_MAX_SIZE:
                     Log.logger.warning(
-                        f"Max Size is 0 (no limit): every image is analysed whole. The largest, "
-                        f"{os.path.basename(big[0])} ({big[2]}x{big[1]} px, {mp:.1f} megapixels), may need "
-                        f"about {MEM_GB_PER_MEGAPIXEL * mp:.0f} GB of memory; set Max Size to split large images.")
+                        f"Max Size is 0 (no limit): every image is analysed whole. The largest is "
+                        f"{os.path.basename(big[0])} ({big[2]}x{big[1]} px). Very large images may run "
+                        f"out of memory; set Max Size to split them.")
             elif contains_oversized(img_paths, max_res):
                 action = "ignored" if self.ignore_large else "split into blocks"
                 Log.logger.warning(f"Oversized (> {max_res:d}x{max_res:d} pixels) images will be {action}.")

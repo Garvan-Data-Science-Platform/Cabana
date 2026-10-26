@@ -425,8 +425,8 @@ masks are honoured whether segmentation is enabled or not.
 
 Cores scanned at 20x are about 4000 to 5000 pixels across. With the default
 Max Size (5000 px, on the Batch Run page) each core is analysed as one
-image, which needs about 7 GB of memory for a 4400 px core; lower Max Size
-to split cores into blocks on a machine with less memory. The default Patch
+image; lower Max Size to split cores into blocks on a machine with little
+memory. The default Patch
 Size (1024 px) lets the segmentation network see the tissue at a useful
 resolution instead of the whole core shrunk to 512 pixels.
 

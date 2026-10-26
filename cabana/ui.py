@@ -13,7 +13,7 @@ from sklearn.metrics.pairwise import euclidean_distances
 
 from PyQt5.QtWidgets import (QSlider, QWidget, QSplitter, QSplitterHandle,
                              QMenu, QAction, QFileDialog, QMessageBox,
-                             QProgressBar, QSizePolicy, QPushButton)
+                             QProgressBar, QSizePolicy, QPushButton, QSpinBox)
 from PyQt5.QtCore import Qt, QSize, QEvent, QPoint, QRect, QRectF, QPropertyAnimation, QEasingCurve, pyqtProperty
 from PyQt5.QtGui import QPixmap, QPainter, QPen, QColor, QDragEnterEvent, QDropEvent, QImage, QBrush, QFont
 from PyQt5.QtCore import QThread, pyqtSignal
@@ -24,6 +24,7 @@ torch.use_deterministic_algorithms(True)
 
 # Color scheme — mutable dict, repopulated by apply_theme()
 from .themes import THEMES, DEFAULT_THEME
+from .io import MIN_MAX_SIZE
 
 COLORS = {}
 
@@ -2262,3 +2263,30 @@ class ToggleButton(QWidget):
         painter.setPen(QPen(COLORS['background'], 1))
         painter.drawEllipse(int(slider_x), int(slider_y),
                             int(slider_radius * 2), int(slider_radius * 2))
+
+
+class MaxSizeSpinBox(QSpinBox):
+    """Max Size box: 0 (shown as *No limit*) or MIN_MAX_SIZE px and above.
+
+    The arrows step between *No limit* and MIN_MAX_SIZE directly, and a typed
+    value below MIN_MAX_SIZE is raised to it when editing finishes.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setRange(0, 20000)
+        self.setSpecialValueText("No limit")
+        self.editingFinished.connect(self._raise_to_minimum)
+
+    def stepBy(self, steps):
+        value = self.value()
+        if value == 0 and steps > 0:
+            self.setValue(MIN_MAX_SIZE)
+        elif value + steps * self.singleStep() < MIN_MAX_SIZE and steps < 0:
+            self.setValue(0)
+        else:
+            super().stepBy(steps)
+
+    def _raise_to_minimum(self):
+        if 0 < self.value() < MIN_MAX_SIZE:
+            self.setValue(MIN_MAX_SIZE)

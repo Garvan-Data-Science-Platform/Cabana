@@ -47,16 +47,19 @@ def sanitize_filename(filename):
 # Default of ``Configs: Max Size``: images with more pixels than its square
 # are split into blocks. It covers TMA cores scanned at 20x (4000 to 5000 px).
 DEFAULT_MAX_SIZE = 5000
+# Smallest Max Size other than 0 (no limit); smaller values are raised to it.
+MIN_MAX_SIZE = 2048
 
 
 def max_image_size(params):
     """``Max Size`` of a parameter dict: ``Configs: Max Size``, else the
     pre-0.3.9 location ``Segmentation: Max Size``, else :data:`DEFAULT_MAX_SIZE`.
-    0 means no limit."""
+    0 means no limit; other values below :data:`MIN_MAX_SIZE` are raised to it."""
     for section in ("Configs", "Segmentation"):
         value = (params.get(section) or {}).get("Max Size")
         if value is not None:
-            return int(value or 0)
+            value = int(value or 0)
+            return max(value, MIN_MAX_SIZE) if value > 0 else 0
     return DEFAULT_MAX_SIZE
 
 

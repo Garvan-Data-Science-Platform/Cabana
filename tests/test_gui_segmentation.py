@@ -99,3 +99,20 @@ def test_imported_old_file_moves_max_size_to_configs(win, tmp_path, monkeypatch)
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(old), ""))
     win.import_parameters()
     assert win.yml_data["Configs"]["Max Size"] == 2048 and "Max Size" not in win.yml_data["Segmentation"]
+
+
+def test_max_size_box_skips_values_below_2048(app):
+    from cabana.ui import MaxSizeSpinBox
+    box = MaxSizeSpinBox()
+    box.setSingleStep(256)
+    box.setValue(0)
+    box.stepBy(1)
+    assert box.value() == 2048            # No limit -> smallest size
+    box.stepBy(1)
+    assert box.value() == 2304
+    box.stepBy(-1)
+    box.stepBy(-1)
+    assert box.value() == 0               # 2048 -> No limit
+    box.setValue(500)
+    box.editingFinished.emit()            # typed value below the minimum
+    assert box.value() == 2048

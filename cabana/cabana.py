@@ -2,6 +2,7 @@ import os
 import cv2
 import yaml
 import shutil
+import tempfile
 import numpy as np
 import pandas as pd
 from .log import Log
@@ -82,11 +83,14 @@ class Cabana:
         self.export_dir = join_path(self.output_folder, 'Exports', "")
         self.color_dir = join_path(self.output_folder, 'Colors', "")
         self.fibre_dir = join_path(self.output_folder, 'Fibres', "")
-        self.eligible_dir = join_path(self.output_folder, 'Eligible')
+        # Working copy of the input (8-bit, cropped) lives in a temporary
+        # folder made by prepare_image, not in the output: run() removes it at
+        # the end, otherwise it goes when this object is discarded
+        self.eligible_dir = None
+        self._work_dir = None
         self.roimask_dir = join_path(self.output_folder, 'ROIMasks', "")
 
         # Create folders
-        create_folder(self.eligible_dir)
         create_folder(self.roimask_dir)
         create_folder(self.fibre_dir)
         create_folder(self.mask_dir)
@@ -183,6 +187,9 @@ class Cabana:
 
         # Store original image
         self.original_img = img
+        if self._work_dir is None:
+            self._work_dir = tempfile.TemporaryDirectory(prefix='cabana_', ignore_cleanup_errors=True)
+            self.eligible_dir = self._work_dir.name
         cv2.imwrite(join_path(self.eligible_dir, self.name_wo_ext + ".png"), img)
 
         # Bring the external ROI mask (if any) alongside the eligible image
@@ -821,7 +828,12 @@ class Cabana:
     def run(self):
         """Run the full analysis pipeline, logging to ``<output>/Logs/``."""
         with Log.run_log(join_path(self.output_folder, 'Logs'), self.param_file):
-            return self._run()
+            try:
+                return self._run()
+            finally:
+                if self._work_dir is not None:
+                    self._work_dir.cleanup()
+                    self._work_dir = self.eligible_dir = None
 
     def _run(self):
         self.initialize_params()

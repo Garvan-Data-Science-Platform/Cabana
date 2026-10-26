@@ -20,6 +20,7 @@
 ### Batch
 
 - Max Size is at least 2048 px (or *No limit*); smaller values are raised.
+- Single-image runs no longer keep a working copy of the input (`Eligible/`).
 - Fixed: a batch run could delete its inputs when the output folder
   contained them; such output folders are now refused.
 - Fixed: the GUI could close on a failed batch setup, a damaged checkpoint or

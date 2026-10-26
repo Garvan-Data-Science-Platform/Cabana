@@ -296,3 +296,13 @@ class TestGapFreeImages:
         assert analyzer.run()
         assert analyzer.stats.loc[0, "Gap Circles Count (ROI)"] == 0
         assert analyzer.stats.loc[0, "Mean (ROI gaps area in µm²)"] == 0
+
+
+def test_single_image_run_keeps_no_working_copy(tmp_path):
+    img_dir, _ = _write_inputs(tmp_path, with_mask=False)
+    out = tmp_path / "out"
+    analyzer = Cabana(_params(tmp_path, False), os.path.join(img_dir, "core1.png"), str(out))
+    assert analyzer.run()
+    assert not (out / "Eligible").exists() and analyzer.eligible_dir is None
+    analyzer.export_results()                     # still works after run()
+    assert (out / "core1_QuantificationResults.csv").exists()

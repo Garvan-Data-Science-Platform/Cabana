@@ -24,6 +24,16 @@ If you want to create a shortcut on the Windows desktop, follow the steps below:
 
 2) Run `git clone https://github.com/lxfhfut/Cabana.git` in the command line. You will be prompted to log in using your GitHub account. If authentication is successful, a `Cabana` folder will be downloaded to your current working directory. You can move (copy-and-paste) the folder to any installation location and change the current working direction to `Cabana` folder.
 
-3) Modify the content in cabana.bat. Make sure CONDAPATH is set to the folder where miniconda was installed, ENVNAME is set to `cabana` and the command on line 19 is set to `python -m cabana`.
+3) Modify the content in cabana.bat. Make sure CONDAPATH is set to the folder where miniconda was installed, ENVNAME is set to `cabana` and the last command before `call conda deactivate` is `python -m cabana`. Keep the `cd /d "%USERPROFILE%"` line before it: `python -m cabana` loads a `cabana` folder in the current folder before the installed package, so started from the downloaded `Cabana` folder it would run that copy instead of the one `pip` installs and updates.
 
 4) Create a `Cabana` shortcut on `C:\\Users\\Public\\Desktop` for `cabana.bat`. Change the icon of Cabana to any icon you want, or you can use the `cabana-logo.ico` in the downloaded `Cabana` folder from Github. You are now ready to use Cabana by double-clicking the shortcut.
+
+## Updating Cabana
+
+Choose **Help > Check for Updates** (on macOS: **Cabana > Check for Updates**). Cabana asks PyPI for the latest release and, when a newer one exists, offers to install it into the environment Cabana is running in. Close Cabana and start it again to use the new version. If the installation fails, the message shows pip's output; Cabana keeps working.
+
+Cabana also checks by itself once a day, a few seconds after it starts, and only speaks up when a newer version is available. Choose **Skip This Version** to stop being reminded of that version; a later version is offered again, and **Check for Updates** always offers it.
+
+Versions 0.3.10 and earlier have no update check: update them once by hand with `pip install -U cabana` in the `cabana` env (run `conda activate cabana` first).
+
+When Cabana is not running from the installed package, **Check for Updates** shows the new version but does not install it, and the daily check stays silent. This happens when a `cabana` folder in the folder Cabana was started from is loaded instead (see step 3 of the shortcut instructions above), or when Cabana runs from a git checkout or an editable install (`pip install -e .`). Update such a copy with `git pull` or `pip`.

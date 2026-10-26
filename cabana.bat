@@ -15,6 +15,10 @@ rem Activate the conda environment
 rem Using call is required here, see: https://stackoverflow.com/questions/24678144/conda-environments-and-bat-files
 call %CONDAPATH%\Scripts\activate.bat %ENVPATH%
 
+rem Start in the home folder: `python -m cabana` would load a cabana folder in
+rem the current folder (e.g. a downloaded copy of Cabana) instead of the installed package
+cd /d "%USERPROFILE%"
+
 rem Run a python script in that environment
 python -m cabana
 

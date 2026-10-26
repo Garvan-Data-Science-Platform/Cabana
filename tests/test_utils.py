@@ -388,3 +388,61 @@ class TestStorageHelpers:
         rgb = rng.integers(0, 255, (16, 16, 3), dtype=np.uint8)
         write_map_tiff(str(tmp_path / "c.tif"), rgb)
         assert np.array_equal(tifffile.imread(tmp_path / "c.tif"), rgb)
+
+
+# ---------------------------------------------------------------------------
+# pixel_size_um  (resolution metadata with units)
+# ---------------------------------------------------------------------------
+
+class TestPixelSize:
+    @staticmethod
+    def _tiff(tmp_path, name, res, unit, description=None):
+        from PIL import Image
+        info = {282: res, 283: res, 296: unit}
+        if description is not None:
+            info[270] = description
+        path = str(tmp_path / name)
+        Image.fromarray(np.zeros((20, 20), np.uint8)).save(path, tiffinfo=info)
+        return path
+
+    def test_imagej_micron_description(self, tmp_path):
+        from cabana.io import pixel_size_um
+        p = self._tiff(tmp_path, "a.tif", 3.6516, 1, "ImageJ=1.53i\nunit=\\u00B5m\n")
+        assert pixel_size_um(p)[0] == pytest.approx(1 / 3.6516, rel=1e-5)
+
+    def test_imagej_millimetre_description(self, tmp_path):
+        from cabana.io import pixel_size_um
+        p = self._tiff(tmp_path, "a.tif", 2000.0, 1, "ImageJ=1.54f\nunit=mm\n")
+        assert pixel_size_um(p)[0] == pytest.approx(0.5)
+
+    def test_unit_none_without_description_is_microns(self, tmp_path):
+        from cabana.io import pixel_size_um
+        p = self._tiff(tmp_path, "a.tif", 2.0, 1)
+        assert pixel_size_um(p)[0] == pytest.approx(0.5)
+
+    def test_centimetre_unit(self, tmp_path):
+        from cabana.io import pixel_size_um
+        p = self._tiff(tmp_path, "a.tif", 20000.0, 3)
+        assert pixel_size_um(p)[0] == pytest.approx(0.5)
+
+    @pytest.mark.parametrize("dpi", [72.0, 300.0])
+    def test_dpi_is_not_a_pixel_size(self, tmp_path, dpi):
+        """DPI used to give 0.01 or 0.0 µm/pixel; it now falls back to 1.0."""
+        from cabana.io import pixel_size_um
+        p = self._tiff(tmp_path, "a.tif", dpi, 2)
+        assert pixel_size_um(p) is None
+        _, res = split2batches([p])
+        assert res == [1.0]
+
+    def test_imagej_inch_or_pixel_unit_is_not_a_pixel_size(self, tmp_path):
+        from cabana.io import pixel_size_um
+        assert pixel_size_um(self._tiff(tmp_path, "a.tif", 72.0, 1, "ImageJ=1.54f\nunit=inch\n")) is None
+        assert pixel_size_um(self._tiff(tmp_path, "b.tif", 1.0, 1, "ImageJ=1.54f\nunit=pixel\n")) is None
+
+    def test_pixel_size_is_not_rounded_to_hundredths(self, tmp_path):
+        """0.27385 µm/pixel used to become 0.27 (-1.4 % in lengths, -2.8 % in areas)."""
+        a = self._tiff(tmp_path, "a.tif", 3.651577, 1, "ImageJ=1.53i\nunit=\\u00B5m\n")
+        b = self._tiff(tmp_path, "b.tif", 3.651611, 1, "ImageJ=1.53i\nunit=\\u00B5m\n")
+        path_batches, res = split2batches([a, b])
+        assert len(path_batches) == 1                       # one slide stays one batch
+        assert res[0] == pytest.approx(0.2739)

@@ -410,9 +410,17 @@ class Cabana:
         gap_result_dir = join_path(self.mask_dir, 'GapAnalysis')
         Path(gap_result_dir).mkdir(parents=True, exist_ok=True)
 
-        # Check if gap analysis was performed
+        from .stages import summary_stats
+
+        # analyze_gaps writes no file for an image without gaps: it has none
+        # inside the fibres either, so its ROI gap metrics are 0
         csv_file_path = join_path(gap_result_dir, f'IndividualGaps_{self.name_wo_ext}.csv')
         if not os.path.exists(csv_file_path):
+            for k, v in summary_stats([], 'ROI gaps area in µm²', include_count=True,
+                                      count_label='Gap Circles Count (ROI)').items():
+                self.stats.loc[0, k] = v
+            for k, v in summary_stats([], 'ROI gaps radius in µm').items():
+                self.stats.loc[0, k] = v
             return
 
         Log.logger.info('Performing intra gap analysis')
@@ -443,7 +451,6 @@ class Cabana:
         cv2.imwrite(join_path(gap_result_dir, self.name_wo_ext + "_GapImage_intra_gaps.png"), color_img_fibre)
         cv2.imwrite(join_path(self.export_img_dir, "GapImage_intra_gaps.png"), color_img)
 
-        from .stages import summary_stats
         areas = np.array(areas)
         radius = np.sqrt(areas / np.pi) if len(areas) else np.array([])
 

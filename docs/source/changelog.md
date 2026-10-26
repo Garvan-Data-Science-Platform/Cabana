@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Measurements
+
+- **Results in µm change.** The pixel size read from an image's metadata was
+  rounded to 0.01 µm before measuring, which shifted lengths by up to about
+  2 % and areas by up to about 4 % (on a 0.274 µm/pixel test image, -1.4 % and
+  -2.8 %). It is now kept to four significant figures. Re-run analyses whose
+  pixel size is not a whole multiple of 0.01 µm.
+- **Fixed: images with a resolution in DPI** got a pixel size of 0 or about
+  0.01 µm/pixel (failing gap analysis, or µm results about 100 times too
+  small). DPI values are now ignored and 1.0 µm/pixel is used, with a
+  warning. Units named in ImageJ or QuPath TIFFs (µm, mm, cm, …) are
+  converted properly.
+- **Fixed: gap metrics of images without gaps** were blank instead of 0 when
+  no image in the same batch had gaps, so gap results depended on how images
+  were grouped. Single-image runs now also report 0 for ROI gap metrics.
+
 ### Logging
 
 - Batch and single-image runs write a log file to `<output>/Logs/`, with

@@ -103,41 +103,66 @@ def largest_image(img_paths):
     return best
 
 
+# Micrometres per unit, for the unit an ImageJ description names
+# (``unit=µm`` in the TIFF ImageDescription; QuPath exports write it too).
+# Inch is left out: ImageJ sets it from an image's DPI, which is not a pixel size.
+_IMAGEJ_UNITS_UM = {'µm': 1.0, 'um': 1.0, 'micron': 1.0, 'microns': 1.0, 'nm': 1e-3,
+                    'mm': 1e3, 'cm': 1e4, 'm': 1e6}
+_TIFF_RESOLUTION_UNIT = 296
+_TIFF_IMAGE_DESCRIPTION = 270
+
+
+def pixel_size_um(img_path):
+    """``(x, y)`` pixel size in µm from an image's resolution metadata, or None.
+
+    The TIFF resolution is pixels per unit. The unit is the one an ImageJ
+    description names (``unit=µm``); without one, ResolutionUnit 3 is a
+    centimetre and "none" is taken as a micrometre (as before). Inch-based
+    resolutions (DPI) are written by image editors as a default and say
+    nothing about the specimen, so they count as no pixel size, as does an
+    ImageJ ``unit=pixel``.
+    """
+    with Image.open(img_path) as img:
+        exif = img.getexif()
+    xres = exif.get(ExifTags.Base.XResolution)
+    yres = exif.get(ExifTags.Base.YResolution, xres)
+    if not xres or not yres or float(xres) <= 0 or float(yres) <= 0:
+        return None
+    desc = exif.get(_TIFF_IMAGE_DESCRIPTION) or ''
+    match = re.search(r'^unit=(.+)$', desc, re.M) if desc.startswith('ImageJ') else None
+    if match:
+        unit = match.group(1).strip().replace('\\u00B5', 'µ').replace('\\u00b5', 'µ').lower()
+        um_per_unit = _IMAGEJ_UNITS_UM.get(unit)
+    else:
+        # ResolutionUnit: 1 none (taken as µm), 2 inch (DPI: no pixel size), 3 cm
+        um_per_unit = {2: None, 3: 1e4}.get(exif.get(_TIFF_RESOLUTION_UNIT, 1), 1.0)
+    if um_per_unit is None:
+        return None
+    return um_per_unit / float(xres), um_per_unit / float(yres)
+
+
 def split2batches(img_paths, max_batch_size=5):
     pixel_res = []
     no_res, mismatched = 0, 0
     for img_path in img_paths:
-        img_info = Image.open(img_path)
-        img_exif = img_info.getexif()
-
-        if img_exif is None:
+        size = pixel_size_um(img_path)
+        if size is None:
             no_res += 1
             pixel_res.append(1.0)
-        else:
-            xres, yres = 1.0, 1.0
-            found = False
-            for key, val in img_exif.items():
-                if key in ExifTags.TAGS:
-                    if ExifTags.TAGS[key] == "XResolution":
-                        xres = round(1.0 / float(val), 2)
-                        found = True
-                    if ExifTags.TAGS[key] == "YResolution":
-                        yres = round(1.0 / float(val), 2)
-                        found = True
-            if found:
-                if abs(xres - yres) > 0.01:
-                    mismatched += 1
-                pixel_res.append(xres)
-            else:
-                no_res += 1
-                pixel_res.append(1.0)
+            continue
+        xres, yres = size
+        if abs(xres - yres) > 1e-3 * xres:
+            mismatched += 1
+        # 4 significant figures: exact enough to measure with (< 0.05 %),
+        # coarse enough that one slide's images share a batch
+        pixel_res.append(float(f'{xres:.4g}'))
     assert len(pixel_res) == len(img_paths)
     if mismatched:
         Log.logger.warning(f'{mismatched} of {len(img_paths)} images have different X and Y resolutions '
                            f'in their metadata; using XResolution.')
     if no_res:
-        Log.logger.warning(f'{no_res} of {len(img_paths)} images have no pixel resolution in their metadata; '
-                           f'using 1.0 µm/pixel.')
+        Log.logger.warning(f'{no_res} of {len(img_paths)} images have no usable pixel size in their metadata '
+                           f'(missing, or in DPI); using 1.0 µm/pixel.')
 
     img_paths = [x for _, x in sorted(zip(pixel_res, img_paths))]
     pixel_res = [y for y, _ in sorted(zip(pixel_res, img_paths))]

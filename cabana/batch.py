@@ -584,6 +584,15 @@ class BatchCabana:
             self._status(f"Intra-fibre gap analysis: {base_name}")
             csv_file_path = join_path(gap_result_dir, 'IndividualGaps_' + base_name + '_roi.csv')
             if not os.path.exists(csv_file_path):
+                # analyze_all_gaps writes no file for an image without gaps: it
+                # has none inside the fibres either. Recording the zeros keeps
+                # the gap columns present when a whole batch has no gaps.
+                Log.logger.debug('No gaps found in ' + base_name + '_roi.png')
+                names.append(base_name + "_roi.png")
+                for lst in [means, stds, pct5, medians, pct95, means_radius, stds_radius,
+                            pct5_radius, medians_radius, pct95_radius, counts]:
+                    lst.append(0)
+                no_gaps += 1
                 self._tick()
                 continue
 

@@ -263,3 +263,34 @@ class TestBatchStorage:
         assert not list((out / "Masks" / "GapAnalysis").glob("*GapImage*"))
         assert (out / "Exports" / "core1_roi" / "Energy.tif").exists()
         assert (out / "QuantificationResults.csv").exists()
+
+
+class TestGapFreeImages:
+    """An image without gaps reports 0 for every gap metric, never NaN or a
+    missing column, whatever else is in its batch."""
+
+    def _no_gap_params(self, tmp_path):
+        params = _params(tmp_path, True)          # with segmentation: ROI columns are kept
+        data = yaml.safe_load(open(params))
+        data["Gap Analysis"]["Minimum Gap Diameter"] = 1000      # larger than the image
+        yaml.safe_dump(data, open(params, "w"))
+        return params
+
+    def test_batch_of_gap_free_images_has_zero_gap_columns(self, tmp_path):
+        img_dir, _ = _write_inputs(tmp_path, with_mask=False)
+        out = tmp_path / "out"
+        out.mkdir()
+        BatchCabana(self._no_gap_params(tmp_path), img_dir, str(out), batch_size=5, batch_idx=0,
+                    ignore_large=True).run()
+        stats = pd.read_csv(out / "QuantificationResults.csv")
+        gap_cols = [c for c in stats.columns if "gaps" in c or "Gap Circles" in c]
+        assert "Gap Circles Count (ROI)" in gap_cols and "Gap Circles Count (All)" in gap_cols
+        assert (stats[gap_cols] == 0).all().all()
+
+    def test_single_gap_free_image_has_zero_roi_gap_metrics(self, tmp_path):
+        img_dir, _ = _write_inputs(tmp_path, with_mask=False)
+        analyzer = Cabana(self._no_gap_params(tmp_path), os.path.join(img_dir, "core1.png"),
+                          str(tmp_path / "out"))
+        assert analyzer.run()
+        assert analyzer.stats.loc[0, "Gap Circles Count (ROI)"] == 0
+        assert analyzer.stats.loc[0, "Mean (ROI gaps area in µm²)"] == 0

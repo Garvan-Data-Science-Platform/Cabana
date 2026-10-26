@@ -114,23 +114,23 @@ iii. **Colors**
 
    Visualisations: these images are only written when **Visualisations** is ticked (`Configs: Save Visualisations`). Figures with a colour bar draw the image at its own pixel size.
 
-   a. all_gaps: gap analysis of whole tissue
+   a. all_gaps: gaps in the whole tissue, over the faded image: intra-fibre gaps in orange, other gaps in blue with a dashed outline
    b. angular_hist: angular distribution of fibre orientations.
    c. color_coherency: orientation coherency/alignment in a local window =2 for OrientationJ plugin) of the original image. The rule of thumb for the filter size is to be about 3 times the standard deviation (sigma value) in each direction, i.e. window size ~6*2=12px.
-   d. colour_curve: vector field visualization of orientation, with vector lengths weighted by coherency.
+   d. colour_curve: detected fibres coloured by curliness (one image per curvature window).
    e. colour_energy: vector field visualization of orientation, with vector lengths weighted by energy, i.e., gradient vector magnitude.
-   f. colour_length: detected ridges are colour-coded according to fibre length. Note: this only applies to fibres without branches.
+   f. colour_length: detected fibres coloured by fibre length. Note: this only applies to fibres without branches.
    g. colour_mask: detected ridges and branches
    h. colour_orientation: fibre orientation in [] within a local window
    i. colour_skeleton: detected fibres with branchpoints (yellow) and endpoints (green)
    j. colour_width: detected ridges with calculated fibre widths
    k. gray_width: widths in terms of integer pixel numbers at ridge points/pixels.
-   l. intra_gaps: gap analysis of intra-collagen fibre gaps
+   l. intra_gaps: intra-fibre gaps only (orange), over the faded image
    m. orient_colour_survey: color coding of orientation in HSB colour space, where hue is orientation, saturation is coherency, brightness is the grayscale of the original image.
 
    ![Circular color map coding for orientation](media/color_survey.jpg)
 
-   n. orient_vf_constant: vector field visualization of orientation with constant/equal weights
+   n. orient_vf: mean fibre direction in blocks containing fibres, coloured by direction; the line length shows how well aligned the fibres in the block are.
 
 iv. **IgnoredImages.txt**
 

@@ -25,7 +25,8 @@ from skimage.feature import peak_local_max
 from sklearn.metrics.pairwise import euclidean_distances
 
 from .utils import join_path
-from .viz import mask_color_map, overlay_colorbar, color_survey_with_colorbar
+from .viz import (mask_color_map, overlay_colorbar, color_survey_with_colorbar, skeleton_value_map,
+                  image_with_colorbar, DIRECTION_CMAP)
 
 
 
@@ -436,6 +437,15 @@ def quantify_one_skeleton(skel_analyzer, mask_path, export_subdir,
     return metrics, curve_maps, skel_analyzer.key_pts_image, skel_analyzer.length_map_all
 
 
+def _detected_fibres(export_subdir, mask_roi):
+    """Detected fibre pixels inside the ROI (``Mask.png`` from fibre detection,
+    fibres = 0); the ROI itself when detection has not run."""
+    path = join_path(export_subdir, "Mask.png")
+    if not os.path.exists(path):
+        return mask_roi > 0
+    return (iio.imread(path) == 0) & (mask_roi > 0)
+
+
 def analyze_one_orientation(orient_analyzer, roi_img_path, mask_roi_path,
                             mask_hdm_path, mask_width_path,
                             export_subdir, color_subdir):
@@ -480,7 +490,7 @@ def analyze_one_orientation(orient_analyzer, roi_img_path, mask_roi_path,
         'coherency': orient_analyzer.get_coherency_image(),
         'orientation': orient_analyzer.get_orientation_image(),
         'color_survey': orient_analyzer.draw_color_survey(),
-        'vector_field': orient_analyzer.draw_vector_field(mask_roi / 255.0),
+        'vector_field': orient_analyzer.draw_vector_field(fibre_mask=_detected_fibres(export_subdir, mask_roi)),
         'angular_hist': orient_analyzer.draw_angular_hist(mask=mask_roi),
     }
 
@@ -489,7 +499,8 @@ def analyze_one_orientation(orient_analyzer, roi_img_path, mask_roi_path,
     write_map_tiff(join_path(export_subdir, "Orientation.tif"), images['orientation'])
     write_map_tiff(join_path(export_subdir, "Color_Survey.tif"), images['color_survey'])
     if color_subdir is not None:
-        iio.imwrite(join_path(color_subdir, "orient_vf.png"), images['vector_field'])
+        image_with_colorbar(images['vector_field'], join_path(color_subdir, "orient_vf.png"),
+                            DIRECTION_CMAP, 0, 180, "Direction (°)", ticks=[0, 45, 90, 135, 180])
         iio.imwrite(join_path(color_subdir, "angular_hist.png"), images['angular_hist'])
 
     return metrics, images
@@ -537,12 +548,10 @@ def write_color_maps(rgb_img, export_subdir, color_subdir):
                                clabel="Orientation (rad)")
     overlay_colorbar(rgb_img, cohere_map, join_path(color_subdir, "color_coherency.png"),
                      clabel="Coherency", mode="overlay")
-    overlay_colorbar(rgb_img, length_map, join_path(color_subdir, "color_length.png"),
-                     clabel="Length (µm)", cmap='plasma', dpi=200, font_size=10)
+    skeleton_value_map(length_map, join_path(color_subdir, "color_length.png"), "Length (µm)", "viridis", rgb_img)
     for suffix, path in curves:
-        overlay_colorbar(rgb_img, tifffile.imread(path) / 180,
-                         join_path(color_subdir, "color_curve" + suffix + ".png"),
-                         clabel="Curliness", cmap='plasma', dpi=200, font_size=10)
+        skeleton_value_map(tifffile.imread(path) / 180, join_path(color_subdir, "color_curve" + suffix + ".png"),
+                           "Curliness", "viridis", rgb_img)
     color_survey_with_colorbar(orient_map, cohere_map, energy_map,
                                join_path(color_subdir, "orient_color_survey.png"))
 

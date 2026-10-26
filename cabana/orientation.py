@@ -356,99 +356,45 @@ class OrientationAnalyzer:
         X = np.frombuffer(s, np.uint8).reshape((height, width, 4))
         return X[..., :3]  # Return RGB image
 
-    def draw_vector_field(self, wgts_map=None, color=(0, 0, 255), thickness=2, size=15, scale=80):
-        """
-        Draw a vector field visualization of the orientations.
+    def draw_vector_field(self, fibre_mask=None, size=15, min_cover=0.05, fade=0.6):
+        """Draw the mean fibre direction of each ``size`` px block over the faded image.
 
-        Parameters
-        ----------
-        wgts_map : ndarray, optional
-            Weights map to scale vector lengths. Default is None.
-        color : tuple, optional
-            RGB color for vectors. Default is (255, 255, 0).
-        thickness : int, optional
-            Line thickness for vectors. Default is 1.
-        size : int, optional
-            Grid size for vector placement. Default is 15.
-        scale : int, optional
-            Scaling factor for vector lengths. Default is 80.
+        Only blocks where at least ``min_cover`` of the pixels are fibre
+        (``fibre_mask``; every pixel when None) get a line. Directions are
+        axial, so they are averaged on doubled angles; each line is coloured
+        by its direction (``viz.DIRECTION_CMAP``, 0 to 180 degrees counted
+        anticlockwise from horizontal) and its length shows how well the
+        fibres in the block are aligned (the mean resultant length).
 
         Returns
         -------
         ndarray
-            RGB image with vector field overlay.
+            RGB image.
         """
+        from .viz import direction_rgb
         ny, nx = self.orient.shape[:2]
+        fibres = np.ones((ny, nx), bool) if fibre_mask is None else np.asarray(fibre_mask) > 0
 
-        # Calculate starting points to center the grid
-        xstart = (nx - (nx // size) * size) // 2
-        ystart = (ny - (ny // size) * size) // 2
+        img = self.image if self.image.ndim == 3 else cv2.cvtColor(self.image, cv2.COLOR_GRAY2RGB)
+        img_draw = (img[:, :, :3].astype(np.float32) * (1 - fade) + 255 * fade).astype(np.uint8)
 
-        # Calculate number of blocks in each dimension
-        x_blk_num = len(range(xstart, nx, size))
-        y_blk_num = len(range(ystart, ny, size))
-
-        # Initialize arrays for block statistics and weights
-        blk_stats = np.zeros((y_blk_num, x_blk_num, 4))  # [y, x, dy, dx]
-        blk_wgts = np.ones((y_blk_num, x_blk_num))
-
-        # Calculate average orientation for each block
-        for y in range(ystart, ny, size):
-            for x in range(xstart, nx, size):
-                # Store block center coordinates
-                blk_stats[(y - ystart) // size, (x - xstart) // size, 0] = y
-                blk_stats[(y - ystart) // size, (x - xstart) // size, 1] = x
-
-                # Calculate block boundaries with bounds checking
-                top = y - size // 2 if y - size // 2 >= 0 else 0
-                bot = y + size // 2 if y + size // 2 <= ny else ny
-                lft = x - size // 2 if x - size // 2 >= 0 else 0
-                rht = x + size // 2 if x + size // 2 <= nx else nx
-
-                # Calculate average orientation components
-                dx = np.mean(np.cos(self.orient[top:bot, lft:rht]))
-                dy = np.mean(np.sin(self.orient[top:bot, lft:rht]))
-                blk_stats[(y - ystart) // size, (x - xstart) // size, 2] = dy
-                blk_stats[(y - ystart) // size, (x - xstart) // size, 3] = dx
-
-                # If weights map provided, calculate maximum weight for this block
-                if wgts_map is not None:
-                    blk_wgts[(y - ystart) // size, (x - xstart) // size] = np.max(
-                        wgts_map[top:bot, lft:rht]
-                    )
-
-        # Normalize weights if they vary
-        min_val = np.min(blk_wgts)
-        max_val = np.max(blk_wgts)
-
-        if min_val != max_val:
-            blk_wgts = normalize(blk_wgts, pmin=0, pmax=100, axis=[0, 1])
-
-        # Prepare image to draw on (convert to RGB if grayscale)
-        if self.image.ndim == 2 or self.image.shape[2] == 1:
-            img_draw = cv2.cvtColor(self.image, cv2.COLOR_GRAY2BGR)
-        else:
-            img_draw = self.image.copy()
-
-        # Draw vectors directly on the image
-        for blk_yi in range(y_blk_num):
-            for blk_xi in range(x_blk_num):
-                r = blk_wgts[blk_yi, blk_xi] * scale / 100.0 * size * 0.5
-
-                y0 = int(blk_stats[blk_yi, blk_xi, 0])
-                x0 = int(blk_stats[blk_yi, blk_xi, 1])
-                dy = blk_stats[blk_yi, blk_xi, 2]
-                dx = blk_stats[blk_yi, blk_xi, 3]
-
-                y1 = int(y0 - r * dy)
-                x1 = int(x0 + r * dx)
-                y2 = int(y0 + r * dy)
-                x2 = int(x0 - r * dx)
-
-                # Draw line
-                cv2.line(img_draw, (x1, y1), (x2, y2), color, thickness)
-
+        half = size // 2
+        for y in range(half, ny, size):
+            for x in range(half, nx, size):
+                block = (slice(max(0, y - half), y + half + 1), slice(max(0, x - half), x + half + 1))
+                inside = fibres[block]
+                if inside.mean() < min_cover:
+                    continue
+                theta = self.orient[block][inside]
+                c2, s2 = np.mean(np.cos(2 * theta)), np.mean(np.sin(2 * theta))
+                mean_theta = 0.5 * np.arctan2(s2, c2)
+                r = 0.45 * size * max(np.hypot(c2, s2), 0.25)
+                dx, dy = r * np.cos(mean_theta), r * np.sin(mean_theta)
+                # y points down in the image, so a positive angle draws upwards
+                cv2.line(img_draw, (int(x - dx), int(y + dy)), (int(x + dx), int(y - dy)),
+                         direction_rgb(mean_theta), 2, cv2.LINE_AA)
         return img_draw
+
     def draw_color_survey(self, mask=None):
         """
         Create a colored visualization of orientations using HSV color space.

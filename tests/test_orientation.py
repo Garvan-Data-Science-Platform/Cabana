@@ -221,10 +221,27 @@ class TestDrawVectorField:
         result = computed.draw_vector_field()
         assert result.ndim == 3
 
-    def test_with_weights_map(self, computed):
-        wgts = np.random.rand(64, 64).astype(np.float32)
-        result = computed.draw_vector_field(wgts_map=wgts)
-        assert result is not None
+    def test_fibre_mask_limits_the_lines(self, computed):
+        empty = computed.draw_vector_field(fibre_mask=np.zeros((64, 64), bool))
+        full = computed.draw_vector_field()
+        assert not np.array_equal(empty, full)          # lines only where there are fibres
+
+    @pytest.mark.parametrize("angle", [0, 45, 90, 135])
+    def test_lines_follow_the_fibre_direction(self, angle):
+        """Stripes at ``angle`` (anticlockwise from horizontal) give lines at that angle."""
+        from cabana.orientation import OrientationAnalyzer
+        yy, xx = np.mgrid[0:90, 0:90]
+        t = np.radians(angle)
+        stripes = (127 + 120 * np.sin(2 * np.pi * (xx * np.sin(t) + yy * np.cos(t)) / 8)).astype(np.uint8)
+        oa = OrientationAnalyzer(2.0)
+        oa.compute_orient(np.stack([stripes] * 3, axis=2))
+        out = oa.draw_vector_field(size=30)
+        faded = oa.draw_vector_field(fibre_mask=np.zeros((90, 90), bool), size=30)
+        ys, xs = np.nonzero(np.any(out != faded, axis=2)[30:60, 30:60])   # the centre block's line
+        drawn = np.degrees(np.arctan2(-(ys - ys.mean()), xs - xs.mean()))   # y up
+        fit = np.degrees(0.5 * np.arctan2(np.mean(np.sin(np.radians(2 * drawn))),
+                                          np.mean(np.cos(np.radians(2 * drawn))))) % 180
+        assert min(abs(fit - angle), 180 - abs(fit - angle)) < 12
 
 
 # ---------------------------------------------------------------------------

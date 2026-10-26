@@ -22,6 +22,12 @@
 - Max Size is at least 2048 px (or *No limit*); smaller values are raised.
 - Single-image runs no longer keep a working copy of the input (`Eligible/`).
 - Single-image runs now write the same colour maps as batch runs.
+- Clearer colour maps: fibre length and curvature are drawn as wider lines
+  over the faded image with a colour scale that ignores outliers; the orientation vector
+  field shows lines only on fibres, coloured by direction. Gap overlays use
+  the same colours as the GUI.
+- Fixed: the orientation vector field averaged fibre directions wrongly near
+  horizontal.
 
 ### GUI
 

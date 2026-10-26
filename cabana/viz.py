@@ -168,3 +168,51 @@ def add_colorbar(rgb_img, img, clabel="Curvature (degrees)", cmap='inferno',
     s, (width, height) = canvas.print_to_buffer()
     full_frame = np.frombuffer(s, np.uint8).reshape((height, width, 4))[..., :3]
     return full_frame
+
+
+# Fibre direction (0 to 180 degrees) as hue; saturation and value are kept
+# below 1 so the colours stay readable on white and on faded tissue.
+DIRECTION_CMAP = matplotlib.colors.ListedColormap(matplotlib.colors.hsv_to_rgb(
+    np.stack([np.linspace(0, 1, 256), np.full(256, 0.85), np.full(256, 0.8)], axis=1)), name="direction")
+
+
+def direction_rgb(theta):
+    """RGB (0-255) of an axial direction ``theta`` in radians, from DIRECTION_CMAP."""
+    hue = (theta % np.pi) / np.pi
+    return tuple(int(255 * c) for c in matplotlib.colors.hsv_to_rgb([hue, 0.85, 0.8]))
+
+
+def image_with_colorbar(img_rgb, save_path, cmap, vmin, vmax, clabel, ticks=None,
+                        extend="neither", font_size=10):
+    """Save ``img_rgb`` with a colour bar beside it, drawn at its own pixel size."""
+    height, width = img_rgb.shape[:2]
+    fig = Figure(figsize=(width / 100 * 1.25, height / 100), dpi=100)
+    FigureCanvasAgg(fig)
+    gs = fig.add_gridspec(1, 2, width_ratios=[20, 1], wspace=0.03)
+    ax = fig.add_subplot(gs[0, 0])
+    ax.imshow(img_rgb, interpolation="nearest")
+    ax.axis("off")
+    sm = matplotlib.cm.ScalarMappable(cmap=cmap, norm=matplotlib.colors.Normalize(vmin=vmin, vmax=vmax))
+    cbar = fig.colorbar(sm, cax=fig.add_subplot(gs[0, 1]), extend=extend, ticks=ticks)
+    cbar.ax.set_ylabel(clabel, fontsize=font_size)
+    cbar.ax.tick_params(labelsize=font_size)
+    _save_figure(fig, ax, height, save_path)
+    fig.clf()
+
+
+def skeleton_value_map(values, save_path, clabel, cmap, rgb_img, percentile=99, fade=0.6):
+    """Save a per-skeleton-pixel map (zero = no fibre) as 3 px wide coloured
+    lines over the faded image ``rgb_img``. The colour scale runs from 0 to the
+    ``percentile`` of the fibre values so a few extreme fibres do not wash out
+    the rest; the colour bar marks values above it. The widening is for
+    display only."""
+    on = values > 0
+    vmax = float(np.percentile(values[on], percentile)) if on.any() else 1.0
+    vmax = vmax if vmax > 0 else 1.0
+    wide = cv2.dilate(values.astype(np.float32), np.ones((3, 3), np.uint8))   # keeps the larger value
+    out = (rgb_img[:, :, :3].astype(np.float32) * (1 - fade) + 255 * fade).astype(np.uint8)
+    shown = wide > 0
+    colours = matplotlib.colormaps[cmap](np.clip(wide[shown] / vmax, 0, 1))[:, :3]
+    out[shown] = (colours * 255).astype(np.uint8)
+    image_with_colorbar(out, save_path, cmap, 0, vmax, clabel, extend="max")
+

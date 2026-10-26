@@ -15,27 +15,23 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from PIL import Image
-import tifffile as tiff
 import imageio.v3 as iio
 from skimage.feature import peak_local_max
 from skimage.color import rgb2hed, hed2rgb, rgb2gray
 from sklearn.metrics.pairwise import euclidean_distances
 
 # Local application imports
-from .log import Log
+from .log import Log, LOGS_DIR
 from .hdm import HDM
 from .detector import FibreDetector
 from .analyzer import SkeletonAnalyzer
 from .orientation import OrientationAnalyzer
 from .segmenter import parse_args, segment_single_image
 from .version_info import get_version_info
-from .io import DEFAULT_MAX_SIZE
 from .utils import (
     join_path, get_img_paths, create_folder, split2batches,
-    contains_oversized, is_oversized, largest_image, mask_color_map, max_image_size, sanitize_filename,
-    save_visualisations,
-    read_bar_format, array_divide, overlay_colorbar,
-    color_survey_with_colorbar
+    contains_oversized, is_oversized, largest_image, max_image_size, sanitize_filename,
+    save_visualisations, read_bar_format, array_divide,
 )
 
 
@@ -46,6 +42,9 @@ from .utils import (
 SEG_TICKS_PER_TRAINING = 4
 
 PATCHES_PER_TICK = 5
+
+# With Max Size 0 (no limit), warn when an image is larger than this
+LARGE_IMAGE_WARN_PX = 5000
 
 
 class BatchCabana:
@@ -518,11 +517,17 @@ class BatchCabana:
                                               int(circle[2]), (0, 255, 255), 2)
                     color_result = cv2.circle(color_result, (int(circle[1]), int(circle[0])),
                                               int(circle[2]), (0, 255, 255), 2)
-                if self._visuals():
-                    cv2.imwrite(join_path(gap_result_dir, os.path.splitext(img_name)[0] + "_GapImage.png"),
-                                final_result)
-                    cv2.imwrite(join_path(self.export_dir, os.path.splitext(img_name)[0],
-                                          "GapImage.png"), color_result)
+                stem = os.path.splitext(img_name)[0]
+                color_subdir = self._color_subdir(stem)
+                if color_subdir:
+                    cv2.imwrite(join_path(gap_result_dir, stem + "_GapImage.png"), final_result)
+                    Path(color_subdir).mkdir(parents=True, exist_ok=True)
+                    cv2.imwrite(join_path(color_subdir, "all_gaps.png"), color_result)
+                # Written even without gaps, so intra-gap analysis sees every image
+                circles = np.array(final_circles) if final_circles else np.zeros((0, 3))
+                areas = np.pi * (circles[:, 2] ** 2) * self.ims_res**2
+                pd.DataFrame({'Area (µm²)': areas, 'X': circles[:, 1], 'Y': circles[:, 0]}).to_csv(
+                    join_path(gap_result_dir, "IndividualGaps_" + stem + ".csv"), index=False)
                 if len(final_circles) == 0:
                     names.append(img_name)
                     for lst in (means, stds, percentile5, median, percentile95, counts,
@@ -530,7 +535,6 @@ class BatchCabana:
                         lst.append(0)
                     self._tick()
                     continue
-                areas = np.pi * (np.array(final_circles)[:, 2] ** 2) * self.ims_res**2
                 radii = np.sqrt(areas / np.pi)
                 names.append(img_name)
                 means.append(np.mean(areas))
@@ -544,12 +548,6 @@ class BatchCabana:
                 pct5_radius.append(np.percentile(radii, 5))
                 medians_radius.append(np.median(radii))
                 pct95_radius.append(np.percentile(radii, 95))
-                final_circles = np.array(final_circles)
-                data = {'Area (µm²)': areas,
-                        'X': final_circles[:, 1],
-                        'Y': final_circles[:, 0]}
-                df = pd.DataFrame(data)
-                df.to_csv(join_path(gap_result_dir, "IndividualGaps_" + os.path.splitext(img_name)[0] + ".csv"), index=False)
                 self._tick()
 
             if len(names) > 0:
@@ -582,15 +580,6 @@ class BatchCabana:
             self._status(f"Intra-fibre gap analysis: {base_name}")
             csv_file_path = join_path(gap_result_dir, 'IndividualGaps_' + base_name + '_roi.csv')
             if not os.path.exists(csv_file_path):
-                # analyze_all_gaps writes no file for an image without gaps: it
-                # has none inside the fibres either. Recording the zeros keeps
-                # the gap columns present when a whole batch has no gaps.
-                Log.logger.debug('No gaps found in ' + base_name + '_roi.png')
-                names.append(base_name + "_roi.png")
-                for lst in [means, stds, pct5, medians, pct95, means_radius, stds_radius,
-                            pct5_radius, medians_radius, pct95_radius, counts]:
-                    lst.append(0)
-                no_gaps += 1
                 self._tick()
                 continue
 
@@ -609,11 +598,12 @@ class BatchCabana:
                     color_img = cv2.circle(color_img, (x, y), radius, (0, 255, 255), 1)
                     areas.append(area)
                     circle_cnt += 1
-            if self._visuals():
+            color_subdir = self._color_subdir(base_name + "_roi")
+            if color_subdir:
                 cv2.imwrite(join_path(gap_result_dir,
                                       base_name + "_roi_GapImage_intra_gaps.png"), color_img_fibre)
-                cv2.imwrite(join_path(self.export_dir, base_name + "_roi",
-                                      "GapImage_intra_gaps.png"), color_img)
+                Path(color_subdir).mkdir(parents=True, exist_ok=True)
+                cv2.imwrite(join_path(color_subdir, "intra_gaps.png"), color_img)
             areas = np.array(areas)
             radius = np.sqrt(areas / np.pi)
             names.append(base_name + "_roi.png")
@@ -995,6 +985,7 @@ class BatchCabana:
         Log.logger.debug('Statistics have been saved to ' + final_csv)
 
     def generate_color_maps(self):
+        from .stages import write_color_maps
         if not self._visuals():
             Log.logger.debug('Visualisations are off (Configs: Save Visualisations); no colour maps written.')
             return
@@ -1005,76 +996,8 @@ class BatchCabana:
             self._status(f"Colour maps: {ori_img_name}")
             name_wo_ext = ori_img_name[:ori_img_name.rindex('.')] + "_roi"
 
-            # Create a sub-folder for better readability
-            Path(join_path(self.color_dir, name_wo_ext)).mkdir(parents=True, exist_ok=True)
-
-            # the gap overlays join the other colour maps (moved: one copy only)
-            for src, dst in (("GapImage.png", "all_gaps.png"), ("GapImage_intra_gaps.png", "intra_gaps.png")):
-                if os.path.exists(join_path(self.export_dir, name_wo_ext, src)):
-                    shutil.move(join_path(self.export_dir, name_wo_ext, src),
-                                join_path(self.color_dir, name_wo_ext, dst))
-
-            rgb_img = iio.imread(ori_img_path)
-            mask_img = 255 - iio.imread(join_path(self.export_dir, name_wo_ext, "Mask.png"))
-            if np.sum(mask_img) == 0:
-                iio.imwrite(join_path(self.color_dir, name_wo_ext, "color_mask.png"), np.zeros_like(rgb_img))
-                iio.imwrite(join_path(self.color_dir, name_wo_ext, "color_skeleton.png"), np.zeros_like(rgb_img))
-                iio.imwrite(join_path(self.color_dir, name_wo_ext, "color_energy.png"), np.zeros_like(rgb_img))
-                iio.imwrite(join_path(self.color_dir, name_wo_ext, "color_coherency.png"), np.zeros_like(rgb_img))
-                iio.imwrite(join_path(self.color_dir, name_wo_ext, "color_orientation.png"), np.zeros_like(rgb_img))
-                iio.imwrite(join_path(self.color_dir, name_wo_ext, "color_length.png"), np.zeros_like(rgb_img))
-                iio.imwrite(join_path(self.color_dir, name_wo_ext, "orient_color_survey.png"), np.zeros_like(rgb_img))
-                curve_paths = glob(join_path(self.export_dir, name_wo_ext, "Curve_Map_*"))
-                for curve_path in curve_paths:
-                    suffix = os.path.basename(curve_path)[len("Curve_Map"):-4]
-                    iio.imwrite(join_path(self.color_dir, name_wo_ext, "color_curve" + suffix + ".png"), np.zeros_like(rgb_img))
-                self._tick()
-                continue
-
-            mask_img = np.repeat(mask_img[:, :, np.newaxis], 3, axis=2)
-            mask_glow = mask_color_map(rgb_img, mask_img)
-
-            Image.fromarray(mask_glow).save(join_path(self.color_dir, name_wo_ext, "color_mask.png"))
-
-            skeleton = iio.imread(join_path(self.export_dir, name_wo_ext, "Skeleton.png"))
-            red_pos = np.where((skeleton[..., 0] == 255) & (skeleton[..., 1] == 0) & (skeleton[..., 2] == 0))
-            skeleton[red_pos[0], red_pos[1], :] = [0, 255, 0]
-            index_pos = np.where(cv2.cvtColor(skeleton, cv2.COLOR_BGR2GRAY) == 0)
-            skeleton[index_pos[0], index_pos[1], :] = rgb_img[index_pos[0], index_pos[1], :]
-            Image.fromarray(skeleton).save(join_path(self.color_dir, name_wo_ext, "color_skeleton.png"))
-
-            energy_map = iio.imread(join_path(self.export_dir, name_wo_ext, "Energy.tif"))
-            cohere_map = iio.imread(join_path(self.export_dir, name_wo_ext, "Coherency.tif"))
-            orient_map = iio.imread(join_path(self.export_dir, name_wo_ext, "Orientation.tif"))
-            length_map = iio.imread(join_path(self.export_dir, name_wo_ext, "Length_Map.tif"))
-
-            overlay_colorbar(rgb_img, energy_map,
-                             join_path(self.color_dir, name_wo_ext, "color_energy.png"),
-                             clabel="Normalized Energy", mode="overlay")
-
-            color_survey_with_colorbar(orient_map, np.ones_like(orient_map), np.ones_like(orient_map),
-                                       join_path(self.color_dir, name_wo_ext, "color_orientation.png"),
-                                       clabel="Orientation (rad)")
-
-            overlay_colorbar(rgb_img, cohere_map,
-                             join_path(self.color_dir, name_wo_ext, "color_coherency.png"),
-                             clabel="Coherency", mode="overlay")
-
-            save_path = join_path(self.color_dir, name_wo_ext, "color_length.png")
-            overlay_colorbar(rgb_img, length_map, save_path,
-                             clabel="Length (µm)", cmap='plasma', dpi=200, font_size=10)
-
-            curve_paths = glob(join_path(self.export_dir, name_wo_ext, "Curve_Map_*"))
-            for curve_path in curve_paths:
-                suffix = os.path.basename(curve_path)[len("Curve_Map"):-4]
-                curve_map = tiff.imread(curve_path) / 180
-                save_path = join_path(self.color_dir, name_wo_ext, "color_curve" + suffix + ".png")
-                overlay_colorbar(rgb_img, curve_map, save_path,
-                                 clabel="Curliness", cmap='plasma', dpi=200, font_size=10)
-
-            color_survey_with_colorbar(orient_map, cohere_map, energy_map,
-                                       join_path(self.color_dir, name_wo_ext, "orient_color_survey.png"))
-
+            write_color_maps(iio.imread(ori_img_path), join_path(self.export_dir, name_wo_ext),
+                             join_path(self.color_dir, name_wo_ext))
             self._tick()
 
     def run(self):
@@ -1150,6 +1073,9 @@ _CHECKPOINT_FIELDS = {
     "Max Size": ("max_size", int),
     "Save Visualisations": ("save_visuals", lambda v: v.lower() == 'true'),
 }
+# Values for keys a checkpoint lacks (None: not recorded, keep the current setting)
+_CHECKPOINT_DEFAULTS = {"input_folder": "", "batch_size": 5, "batch_num": 0, "ignore_large": False,
+                        "max_size": None, "save_visuals": None}
 
 
 def read_checkpoint(path):
@@ -1157,8 +1083,8 @@ def read_checkpoint(path):
     ``input_folder``, ``batch_size``, ``batch_num``, ``ignore_large``,
     ``max_size`` and ``save_visuals``. Values are split at the first comma (a
     path may contain commas); unknown keys and unreadable values are left out,
-    so a truncated file yields fewer keys instead of an error."""
-    settings = {}
+    and take their defaults, so a truncated file never raises."""
+    settings = dict(_CHECKPOINT_DEFAULTS)
     with open(path, "r") as f:
         for line in f:
             key, _, value = line.rstrip("\n").partition(",")
@@ -1352,7 +1278,7 @@ class BatchProcessor():
             # kept as a history. Any case: macOS and Windows reuse a 'logs' folder.
             for entry in os.listdir(self.output_folder):
                 path = join_path(self.output_folder, entry)
-                if entry.lower() == 'logs' and os.path.isdir(path):
+                if entry.lower() == LOGS_DIR.lower() and os.path.isdir(path):
                     continue
                 if os.path.isdir(path) and not os.path.islink(path):
                     shutil.rmtree(path)
@@ -1366,7 +1292,7 @@ class BatchProcessor():
                 # so name the largest image instead of estimating; images within
                 # the default Max Size are no concern
                 big = largest_image(img_paths)
-                if big is not None and max(big[1], big[2]) > DEFAULT_MAX_SIZE:
+                if big is not None and max(big[1], big[2]) > LARGE_IMAGE_WARN_PX:
                     Log.logger.warning(
                         f"Max Size is 0 (no limit): every image is analysed whole. The largest is "
                         f"{os.path.basename(big[0])} ({big[2]}x{big[1]} px). Very large images may run "
@@ -1730,7 +1656,7 @@ class BatchProcessor():
         """
         start_time = time.time()
 
-        with Log.run_log(join_path(self.output_folder, 'Logs'), self.param_file):
+        with Log.run_log(join_path(self.output_folder, LOGS_DIR), self.param_file):
             if self.max_size is not None:
                 Log.logger.info(f"Max Size for this run: {int(self.max_size) or 'no limit'}")
             if self.save_visuals is not None:

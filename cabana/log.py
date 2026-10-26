@@ -28,6 +28,8 @@ import yaml
 import colorlog
 
 LOGGER_NAME = 'cabana'
+# A run's log folder inside its output folder (kept when a new batch run clears it)
+LOGS_DIR = 'Logs'
 
 logger = logging.getLogger(LOGGER_NAME)
 logger.addHandler(logging.NullHandler())
@@ -139,16 +141,7 @@ class _LogFacade:
     """The historical ``Log`` API, kept so call sites need not change."""
 
     logger = logger
-    log_name = None          # session log file of the last init_log_path call
-
-    def init_log_path(self, log_path=None):
-        """Same as ``setup_logging(log_path)``; defaults to ``cabana/logs``."""
-        if not log_path:
-            log_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'logs')
-        self.log_name = setup_logging(log_path)
-
     run_log = staticmethod(run_log)
-    log_parameters = staticmethod(log_parameters)
 
 
 Log = _LogFacade()

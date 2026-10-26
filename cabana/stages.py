@@ -6,6 +6,7 @@ prevents the two pipelines from drifting apart.
 """
 
 import os
+from glob import glob
 from pathlib import Path
 
 import cv2
@@ -19,7 +20,10 @@ from .hdm import HDM
 from .detector import FibreDetector
 from .analyzer import SkeletonAnalyzer
 from .orientation import OrientationAnalyzer
+from PIL import Image
+
 from .utils import join_path
+from .viz import mask_color_map, overlay_colorbar, color_survey_with_colorbar
 
 
 
@@ -487,3 +491,55 @@ def analyze_one_orientation(orient_analyzer, roi_img_path, mask_roi_path,
         iio.imwrite(join_path(color_subdir, "angular_hist.png"), images['angular_hist'])
 
     return metrics, images
+
+def write_color_maps(rgb_img, export_subdir, color_subdir):
+    """Colour overlays of one image's analysis maps (from ``export_subdir``)
+    into ``color_subdir``.
+
+    ``rgb_img`` is the analysed image (RGB). Callers skip this when
+    ``Configs: Save Visualisations`` is off; the gap overlays are written
+    there by the gap analysis itself.
+    """
+    Path(color_subdir).mkdir(parents=True, exist_ok=True)
+    curves = [(os.path.basename(p)[len("Curve_Map"):-4], p)
+              for p in glob(join_path(export_subdir, "Curve_Map_*"))]
+
+    mask_img = 255 - iio.imread(join_path(export_subdir, "Mask.png"))
+    if np.sum(mask_img) == 0:
+        blank = np.zeros_like(rgb_img)
+        names = ["color_mask", "color_skeleton", "color_energy", "color_coherency",
+                 "color_orientation", "color_length", "orient_color_survey"]
+        for name in names + ["color_curve" + suffix for suffix, _ in curves]:
+            iio.imwrite(join_path(color_subdir, name + ".png"), blank)
+        return
+
+    mask_img = np.repeat(mask_img[:, :, np.newaxis], 3, axis=2)
+    Image.fromarray(mask_color_map(rgb_img, mask_img)).save(join_path(color_subdir, "color_mask.png"))
+
+    skeleton = iio.imread(join_path(export_subdir, "Skeleton.png"))
+    red_pos = np.where((skeleton[..., 0] == 255) & (skeleton[..., 1] == 0) & (skeleton[..., 2] == 0))
+    skeleton[red_pos[0], red_pos[1], :] = [0, 255, 0]
+    index_pos = np.where(cv2.cvtColor(skeleton, cv2.COLOR_BGR2GRAY) == 0)
+    skeleton[index_pos[0], index_pos[1], :] = rgb_img[index_pos[0], index_pos[1], :]
+    Image.fromarray(skeleton).save(join_path(color_subdir, "color_skeleton.png"))
+
+    energy_map = iio.imread(join_path(export_subdir, "Energy.tif"))
+    cohere_map = iio.imread(join_path(export_subdir, "Coherency.tif"))
+    orient_map = iio.imread(join_path(export_subdir, "Orientation.tif"))
+    length_map = iio.imread(join_path(export_subdir, "Length_Map.tif"))
+
+    overlay_colorbar(rgb_img, energy_map, join_path(color_subdir, "color_energy.png"),
+                     clabel="Normalized Energy", mode="overlay")
+    color_survey_with_colorbar(orient_map, np.ones_like(orient_map), np.ones_like(orient_map),
+                               join_path(color_subdir, "color_orientation.png"),
+                               clabel="Orientation (rad)")
+    overlay_colorbar(rgb_img, cohere_map, join_path(color_subdir, "color_coherency.png"),
+                     clabel="Coherency", mode="overlay")
+    overlay_colorbar(rgb_img, length_map, join_path(color_subdir, "color_length.png"),
+                     clabel="Length (µm)", cmap='plasma', dpi=200, font_size=10)
+    for suffix, path in curves:
+        overlay_colorbar(rgb_img, tifffile.imread(path) / 180,
+                         join_path(color_subdir, "color_curve" + suffix + ".png"),
+                         clabel="Curliness", cmap='plasma', dpi=200, font_size=10)
+    color_survey_with_colorbar(orient_map, cohere_map, energy_map,
+                               join_path(color_subdir, "orient_color_survey.png"))

@@ -1,15 +1,11 @@
 import os
 import cv2
 import yaml
-import shutil
 import tempfile
 import numpy as np
 import pandas as pd
-from .log import Log
+from .log import Log, LOGS_DIR
 from .hdm import HDM
-from glob import glob
-from PIL import Image
-import tifffile as tiff
 import imageio.v3 as iio
 from pathlib import Path
 from .detector import FibreDetector
@@ -18,9 +14,9 @@ from skimage.feature import peak_local_max
 from .orientation import OrientationAnalyzer
 from skimage.color import rgb2hed, hed2rgb, rgb2gray
 from sklearn.metrics.pairwise import euclidean_distances
-from .utils import create_folder, is_oversized, join_path, mask_color_map, max_image_size
+from .utils import create_folder, is_oversized, join_path, max_image_size
+from .io import save_visualisations
 from .segmenter import parse_args, segment_single_image, visualize_fibres
-from .utils import overlay_colorbar, color_survey_with_colorbar
 
 
 class Cabana:
@@ -64,13 +60,6 @@ class Cabana:
         self.intra_gap_img = None  # Intra-gaps
 
         # Store color-mapped visualizations
-        self.color_mask = None
-        self.color_skeleton = None
-        self.color_energy = None
-        self.color_coherency = None
-        self.color_orientation = None
-        self.color_length = None
-        self.color_curves = {}
         self.orient_vector_field = None
         self.angular_hist = None
         self.orient_color_survey = None
@@ -242,11 +231,19 @@ class Cabana:
         result = detect_one_image(det, img_path,
                                   mask_dir=self.mask_dir,
                                   export_subdir=self.export_img_dir,
-                                  color_subdir=self.color_img_dir,
+                                  color_subdir=self._color_subdir(),
                                   roi_mask=roi_mask_for(self.roimask_dir, self.name_wo_ext),
                                   roi_erode_px=int(self.args['Detection']['Max Line Width']))
         self.contour_img = result['contour_img']
         self.width_img = result['width_img']
+
+    def _visuals(self):
+        """Whether visualisations are saved (Configs: Save Visualisations)."""
+        return save_visualisations(self.args)
+
+    def _color_subdir(self):
+        """Colour-image folder, or None when visualisations are off."""
+        return self.color_img_dir if self._visuals() else None
 
     def analyze_orientation(self):
         """Analyze orientation of fibres"""
@@ -258,7 +255,7 @@ class Cabana:
             mask_hdm_path=join_path(self.hdm_dir, self.name_wo_ext + "_roi.png"),
             mask_width_path=join_path(self.export_img_dir, "Width.png"),
             export_subdir=self.export_img_dir,
-            color_subdir=self.color_img_dir,
+            color_subdir=self._color_subdir(),
         )
         for k, v in metrics.items():
             self.stats.loc[0, k] = v
@@ -382,8 +379,9 @@ class Cabana:
         self.gap_img = color_result
 
         # Save images
-        cv2.imwrite(join_path(gap_result_dir, self.name_wo_ext + "_GapImage.png"), final_result)
-        cv2.imwrite(join_path(self.export_img_dir, "GapImage.png"), color_result)
+        if self._visuals():
+            cv2.imwrite(join_path(gap_result_dir, self.name_wo_ext + "_GapImage.png"), final_result)
+            cv2.imwrite(join_path(self.color_img_dir, "all_gaps.png"), color_result)
 
         # Calculate gap metrics
         from .stages import summary_stats
@@ -397,16 +395,10 @@ class Cabana:
         for k, v in summary_stats(radius_values, 'All gaps radius in µm').items():
             self.stats.loc[0, k] = v
 
-        # Save gap data to CSV
-        if len(final_circles) > 0:
-            final_circles = np.array(final_circles)
-            data = {
-                'Area (µm²)': areas,
-                'X': final_circles[:, 1],
-                'Y': final_circles[:, 0]
-            }
-            df = pd.DataFrame(data)
-            df.to_csv(join_path(gap_result_dir, f"IndividualGaps_{self.name_wo_ext}.csv"), index=False)
+        # Save gap data to CSV, even without gaps (intra-gap analysis reads it)
+        circles = np.array(final_circles) if len(final_circles) else np.zeros((0, 3))
+        pd.DataFrame({'Area (µm²)': areas, 'X': circles[:, 1], 'Y': circles[:, 0]}).to_csv(
+            join_path(gap_result_dir, f"IndividualGaps_{self.name_wo_ext}.csv"), index=False)
 
     def analyze_intra_gaps(self):
         """Analyze gaps within the ROI"""
@@ -419,15 +411,9 @@ class Cabana:
 
         from .stages import summary_stats
 
-        # analyze_gaps writes no file for an image without gaps: it has none
-        # inside the fibres either, so its ROI gap metrics are 0
+        # Check if gap analysis was performed
         csv_file_path = join_path(gap_result_dir, f'IndividualGaps_{self.name_wo_ext}.csv')
         if not os.path.exists(csv_file_path):
-            for k, v in summary_stats([], 'ROI gaps area in µm²', include_count=True,
-                                      count_label='Gap Circles Count (ROI)').items():
-                self.stats.loc[0, k] = v
-            for k, v in summary_stats([], 'ROI gaps radius in µm').items():
-                self.stats.loc[0, k] = v
             return
 
         Log.logger.info('Performing intra gap analysis')
@@ -455,8 +441,9 @@ class Cabana:
         self.intra_gap_img = color_img
 
         # Save images
-        cv2.imwrite(join_path(gap_result_dir, self.name_wo_ext + "_GapImage_intra_gaps.png"), color_img_fibre)
-        cv2.imwrite(join_path(self.export_img_dir, "GapImage_intra_gaps.png"), color_img)
+        if self._visuals():
+            cv2.imwrite(join_path(gap_result_dir, self.name_wo_ext + "_GapImage_intra_gaps.png"), color_img_fibre)
+            cv2.imwrite(join_path(self.color_img_dir, "intra_gaps.png"), color_img)
 
         areas = np.array(areas)
         radius = np.sqrt(areas / np.pi) if len(areas) else np.array([])
@@ -590,101 +577,6 @@ class Cabana:
             roi_columns = [col for col in self.stats.columns if 'ROI' in col]
             self.stats = self.stats.drop(columns=roi_columns)
 
-    def generate_color_maps(self):
-        """Generate color maps for visualization"""
-        Log.logger.info('Generating color maps')
-
-        # Load original image
-        rgb_img = iio.imread(join_path(self.eligible_dir, self.name_wo_ext + ".png"))
-        mask_img = 255 - iio.imread(join_path(self.export_img_dir, "Mask.png"))
-
-        if np.sum(mask_img) == 0:
-            # Create empty placeholder images if no mask
-            empty_img = np.zeros_like(rgb_img)
-            color_maps = ["color_mask", "color_skeleton", "color_energy", "color_coherency",
-                          "color_orientation", "color_length", "orient_color_survey"]
-
-            for map_name in color_maps:
-                iio.imwrite(join_path(self.color_img_dir, f"{self.name_wo_ext}_{map_name}.png"), empty_img)
-
-            # Handle curve maps
-            if hasattr(self, 'curve_maps') and self.curve_maps:
-                for win_sz in self.curve_maps.keys():
-                    iio.imwrite(join_path(self.color_img_dir, f"{self.name_wo_ext}_color_curve_{win_sz}.png"),
-                                empty_img)
-
-            return
-
-        # Create mask color map
-        mask_img = np.repeat(mask_img[:, :, np.newaxis], 3, axis=2)
-        mask_glow = mask_color_map(rgb_img, mask_img)
-        self.color_mask = mask_glow
-        Image.fromarray(mask_glow).save(join_path(self.color_img_dir, f"{self.name_wo_ext}_color_mask.png"))
-
-        # Create skeleton color map
-        if os.path.exists(join_path(self.export_img_dir, "Skeleton.png")):
-            skeleton = iio.imread(join_path(self.export_img_dir, "Skeleton.png"))
-            red_pos = np.where((skeleton[..., 0] == 255) & (skeleton[..., 1] == 0) & (skeleton[..., 2] == 0))
-            skeleton[red_pos[0], red_pos[1], :] = [0, 255, 0]
-            index_pos = np.where(cv2.cvtColor(skeleton, cv2.COLOR_BGR2GRAY) == 0)
-            skeleton[index_pos[0], index_pos[1], :] = rgb_img[index_pos[0], index_pos[1], :]
-            self.color_skeleton = skeleton
-            Image.fromarray(skeleton).save(join_path(self.color_img_dir, f"{self.name_wo_ext}_color_skeleton.png"))
-
-        # Create energy, coherency, orientation, and length color maps
-        if os.path.exists(join_path(self.export_img_dir, "Energy.tif")):
-            energy_map = iio.imread(join_path(self.export_img_dir, "Energy.tif"))
-            overlay_colorbar(rgb_img, energy_map,
-                             join_path(self.color_img_dir, f"{self.name_wo_ext}_color_energy.png"),
-                             clabel="Normalized Energy", mode="overlay")
-
-        if os.path.exists(join_path(self.export_img_dir, "Orientation.tif")):
-            orient_map = iio.imread(join_path(self.export_img_dir, "Orientation.tif"))
-            color_survey_with_colorbar(orient_map, np.ones_like(orient_map), np.ones_like(orient_map),
-                                       join_path(self.color_img_dir, f"{self.name_wo_ext}_color_orientation.png"),
-                                       clabel="Orientation (rad)")
-
-        if os.path.exists(join_path(self.export_img_dir, "Coherency.tif")):
-            cohere_map = iio.imread(join_path(self.export_img_dir, "Coherency.tif"))
-            overlay_colorbar(rgb_img, cohere_map,
-                             join_path(self.color_img_dir, f"{self.name_wo_ext}_color_coherency.png"),
-                             clabel="Coherency", mode="overlay")
-
-        if os.path.exists(join_path(self.export_img_dir, "Length_Map.tif")):
-            length_map = iio.imread(join_path(self.export_img_dir, "Length_Map.tif"))
-            overlay_colorbar(rgb_img, length_map,
-                             join_path(self.color_img_dir, f"{self.name_wo_ext}_color_length.png"),
-                             clabel="Length (µm)", cmap='plasma', dpi=200, font_size=10)
-
-        # Create curvature color maps
-        curve_paths = glob(join_path(self.export_img_dir, "Curve_Map_*"))
-        for curve_path in curve_paths:
-            curve_name_wo_ext = os.path.splitext(os.path.basename(curve_path))[0]
-            suffix = curve_name_wo_ext[len("Curve_Map"):]
-            curve_map = tiff.imread(curve_path) / 180
-            save_path = join_path(self.color_img_dir, f"{self.name_wo_ext}_color_curve{suffix}.png")
-            overlay_colorbar(rgb_img, curve_map, save_path,
-                             clabel="Curliness", cmap='plasma', dpi=200, font_size=10)
-
-        # Create orientation color survey
-        if os.path.exists(join_path(self.export_img_dir, "Orientation.tif")) and \
-                os.path.exists(join_path(self.export_img_dir, "Coherency.tif")):
-            orient_map = iio.imread(join_path(self.export_img_dir, "Orientation.tif"))
-            cohere_map = iio.imread(join_path(self.export_img_dir, "Coherency.tif"))
-            energy_map = iio.imread(join_path(self.export_img_dir, "Energy.tif"))
-            color_survey_with_colorbar(orient_map, cohere_map, energy_map,
-                                       join_path(self.color_img_dir, f"{self.name_wo_ext}_orient_color_survey.png"))
-
-        # Move the gap images to the other colour maps (one copy only)
-        if os.path.exists(join_path(self.export_img_dir, "GapImage.png")):
-            shutil.move(join_path(self.export_img_dir, "GapImage.png"),
-                        join_path(self.color_img_dir, f"{self.name_wo_ext}_all_gaps.png"))
-
-        if os.path.exists(join_path(self.export_img_dir, "GapImage_intra_gaps.png")):
-            shutil.move(join_path(self.export_img_dir, "GapImage_intra_gaps.png"),
-                        join_path(self.color_img_dir, f"{self.name_wo_ext}_intra_gaps.png"))
-        Log.logger.info(f"Color maps have been saved to {self.color_img_dir}")
-
     def export_results(self):
         """Export all results to files"""
         # Export stats to CSV
@@ -773,7 +665,7 @@ class Cabana:
 
             # Orientation
             ax5 = fig.add_subplot(gs[1, 1])
-            orient_survey_path = join_path(self.color_img_dir, f"{self.name_wo_ext}_orient_color_survey.png")
+            orient_survey_path = join_path(self.color_img_dir, "orient_color_survey.png")
             if os.path.exists(orient_survey_path):
                 orient_survey = cv2.imread(orient_survey_path)
                 ax5.imshow(cv2.cvtColor(orient_survey, cv2.COLOR_BGR2RGB))
@@ -827,7 +719,7 @@ class Cabana:
 
     def run(self):
         """Run the full analysis pipeline, logging to ``<output>/Logs/``."""
-        with Log.run_log(join_path(self.output_folder, 'Logs'), self.param_file):
+        with Log.run_log(join_path(self.output_folder, LOGS_DIR), self.param_file):
             try:
                 return self._run()
             finally:
@@ -867,6 +759,12 @@ class Cabana:
             # Combine and normalize statistics
             self.combine_statistics()
             self.normalize_statistics()
+
+            # Colour maps, as in batch runs
+            if self._visuals():
+                from .stages import write_color_maps
+                write_color_maps(cv2.cvtColor(self.original_img, cv2.COLOR_BGR2RGB),
+                                 self.export_img_dir, self.color_img_dir)
 
             return True
         else:

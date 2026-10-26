@@ -515,7 +515,7 @@ def test_no_limit_warns_about_the_largest_image(tmp_path, monkeypatch):
     BatchProcessor(str(param_file), str(input_dir), str(out_dir), batch_size=5, batch_num=0,
                    resume=False, ignore_large=False).process()
     assert not any("no limit" in m for m in warned)        # every image within 5000 px
-    monkeypatch.setattr(batch_mod, "DEFAULT_MAX_SIZE", 250)  # now large.png counts as very large
+    monkeypatch.setattr(batch_mod, "LARGE_IMAGE_WARN_PX", 250)  # now large.png counts as very large
     BatchProcessor(str(param_file), str(input_dir), str(out_dir), batch_size=5, batch_num=0,
                    resume=False, ignore_large=False).process()
     msg = [m for m in warned if "no limit" in m]
@@ -615,10 +615,12 @@ def test_read_checkpoint_tolerates_commas_and_truncation(tmp_path):
     ckpt.write_text("Input Folder,D:/Data/TMA 3, 4/Images\nBatch Size,\nBatch Number,2\n"
                     "Ignore Large,False\nMax Size,5000\nSave Visualisations,True\nJunk line\n")
     assert read_checkpoint(str(ckpt)) == {
-        "input_folder": "D:/Data/TMA 3, 4/Images", "batch_num": 2, "ignore_large": False,
-        "max_size": 5000, "save_visuals": True}
+        "input_folder": "D:/Data/TMA 3, 4/Images", "batch_size": 5, "batch_num": 2,
+        "ignore_large": False, "max_size": 5000, "save_visuals": True}
     ckpt.write_text("")
-    assert read_checkpoint(str(ckpt)) == {}
+    assert read_checkpoint(str(ckpt)) == {
+        "input_folder": "", "batch_size": 5, "batch_num": 0, "ignore_large": False,
+        "max_size": None, "save_visuals": None}
 
 
 def test_blank_16bit_image_is_listed_as_ignored(tmp_path):

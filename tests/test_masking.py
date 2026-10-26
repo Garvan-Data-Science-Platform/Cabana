@@ -159,8 +159,6 @@ class TestBatchMasking:
         cv2.imwrite(os.path.join(img_dir, "core2.png"), corner_fibre_image())
         out = tmp_path / "out"
         out.mkdir()
-        from cabana.log import Log
-        Log.init_log_path(str(tmp_path / "Logs"))
         b = BatchCabana(_params(tmp_path, segmentation), img_dir, str(out), batch_size=5,
                         batch_idx=0, ignore_large=True, mask_dir=mask_dir)
         b.run()
@@ -185,7 +183,6 @@ class TestBatchMasking:
         data["Configs"]["Quantification"] = False
         yaml.safe_dump(data, open(params, "w"))
         from cabana.log import Log
-        Log.init_log_path(str(tmp_path / "Logs"))
         said = []
         monkeypatch.setattr(Log.logger, "info", lambda msg, *a, **k: said.append(str(msg)))
         BatchCabana(params, img_dir, str(out), batch_size=5, batch_idx=0, ignore_large=True,
@@ -201,8 +198,6 @@ class TestBatchMasking:
         data.setdefault("Configs", {})["Max Size"] = 0         # no limit: no blocks, nothing ignored
         data["Configs"]["Quantification"] = False
         yaml.safe_dump(data, open(params, "w"))
-        from cabana.log import Log
-        Log.init_log_path(str(tmp_path / "Logs"))
         BatchCabana(params, img_dir, str(out), batch_size=5, batch_idx=0, ignore_large=True,
                     mask_dir=mask_dir).run()
         assert sorted(os.listdir(out / "ROIMasks")) == ["core1.png"]
@@ -220,8 +215,6 @@ class TestBatchMasking:
         data["Segmentation"]["Max Size"] = 150
         data["Configs"]["Quantification"] = False
         yaml.safe_dump(data, open(params, "w"))
-        from cabana.log import Log
-        Log.init_log_path(str(tmp_path / "Logs"))
         b = BatchCabana(params, img_dir, str(out), batch_size=5, batch_idx=0, ignore_large=False,
                         mask_dir=mask_dir)
         b.run()
@@ -306,3 +299,36 @@ def test_single_image_run_keeps_no_working_copy(tmp_path):
     assert not (out / "Eligible").exists() and analyzer.eligible_dir is None
     analyzer.export_results()                     # still works after run()
     assert (out / "core1_QuantificationResults.csv").exists()
+
+
+class TestColourMaps:
+    """Single-image and batch runs write the same colour maps (one shared stage)."""
+
+    def _params(self, tmp_path, visuals):
+        params = _params(tmp_path, True)
+        data = yaml.safe_load(open(params))
+        data["Configs"]["Save Visualisations"] = visuals
+        yaml.safe_dump(data, open(params, "w"))
+        return params
+
+    def test_single_image_matches_batch(self, tmp_path):
+        img_dir, _ = _write_inputs(tmp_path, with_mask=False)
+        params = self._params(tmp_path, True)
+        single = tmp_path / "single"
+        assert Cabana(params, os.path.join(img_dir, "core1.png"), str(single)).run()
+        batch = tmp_path / "batch"
+        batch.mkdir()
+        BatchCabana(params, img_dir, str(batch), batch_size=5, batch_idx=0, ignore_large=True).run()
+        single_maps = sorted(os.listdir(single / "Colors" / "core1"))
+        batch_maps = sorted(os.listdir(batch / "Colors" / "core1_roi"))
+        assert single_maps == batch_maps
+        assert {"color_energy.png", "color_skeleton.png", "orient_color_survey.png",
+                "all_gaps.png"} <= set(single_maps)
+        assert not (single / "Exports" / "core1" / "GapImage.png").exists()     # moved, not copied
+
+    def test_single_image_without_visualisations_writes_no_colour_maps(self, tmp_path):
+        img_dir, _ = _write_inputs(tmp_path, with_mask=False)
+        single = tmp_path / "single"
+        assert Cabana(self._params(tmp_path, False), os.path.join(img_dir, "core1.png"), str(single)).run()
+        assert os.listdir(single / "Colors" / "core1") == []
+        assert not (single / "Exports" / "core1" / "GapImage.png").exists()

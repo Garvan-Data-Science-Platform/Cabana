@@ -79,12 +79,9 @@ class BatchProcessor(_BatchProcessor):
 
         Log.logger.warning("A checkpoint file exists in the output folder.")
         ckpt = read_checkpoint(ckpt_path)
-        input_folder = ckpt.get("input_folder", "")
-        batch_size = ckpt.get("batch_size", 5)
-        batch_num = ckpt.get("batch_num", 0)
-        ignore_large = ckpt.get("ignore_large", False)
-        max_size = ckpt.get("max_size")
-        save_visuals = ckpt.get("save_visuals")
+        input_folder, batch_size, batch_num, ignore_large, max_size, save_visuals = (
+            ckpt[k] for k in ("input_folder", "batch_size", "batch_num", "ignore_large",
+                              "max_size", "save_visuals"))
 
         self.resume = (os.path.exists(input_folder)
                        and os.path.samefile(input_folder, self.input_folder))

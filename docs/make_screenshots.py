@@ -21,8 +21,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 
-from cabana.log import Log  # noqa: E402
-Log.init_log_path(tempfile.mkdtemp())
+from cabana.log import setup_logging  # noqa: E402
+setup_logging(tempfile.mkdtemp())
 
 from PyQt5.QtCore import QEventLoop, QPoint, QRect, QTimer, Qt  # noqa: E402
 from PyQt5.QtGui import QColor, QFont, QPainter, QPen  # noqa: E402

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.10
 
 ### Measurements
 
@@ -11,35 +11,38 @@
   is now used, with a warning. Units in ImageJ and QuPath TIFFs are converted.
 - Fixed: images without gaps could get blank gap metrics instead of 0.
 
-### Logging
+### Visualisations
 
-- Each run writes a log file to `<output>/Logs/`; the console shows only
-  progress, warnings and errors.
-- Scripts: call `cabana.log.setup_logging()` to see progress on the console.
+- Clearer colour maps: fibre length and curvature are drawn as wider lines
+  over the faded image with a colour scale that ignores outliers; the
+  orientation vector field shows lines only on fibres, coloured by direction.
+  Gap overlays use the same colours as the GUI.
+- Single-image runs now write the same colour maps as batch runs.
+- Fixed: the orientation vector field averaged fibre directions wrongly near
+  horizontal.
 
 ### Batch
 
 - Max Size is at least 2048 px (or *No limit*); smaller values are raised.
-- Single-image runs no longer keep a working copy of the input (`Eligible/`).
-- Single-image runs now write the same colour maps as batch runs.
-- Clearer colour maps: fibre length and curvature are drawn as wider lines
-  over the faded image with a colour scale that ignores outliers; the orientation vector
-  field shows lines only on fibres, coloured by direction. Gap overlays use
-  the same colours as the GUI.
-- Fixed: the orientation vector field averaged fibre directions wrongly near
-  horizontal.
-
-### GUI
-
-- The Gap Analysis page shows intra-fibre and other gaps in different
-  colours over clearer fibres, with a summary of the gaps found.
 - Fixed: a batch run could delete its inputs when the output folder
   contained them; such output folders are now refused.
 - Fixed: the GUI could close on a failed batch setup, a damaged checkpoint or
   an input path containing a comma.
 - Fixed: an input folder without supported images was reported as a
   successful run.
+- Single-image runs no longer keep a working copy of the input (`Eligible/`).
 - Fixed: the single-image `.txt` results file could fail on Windows.
+
+### GUI
+
+- The Gap Analysis page shows intra-fibre and other gaps in different
+  colours over clearer fibres, with a summary of the gaps found.
+
+### Logging
+
+- Each run writes a log file to `<output>/Logs/`; the console shows only
+  progress, warnings and errors.
+- Scripts: call `cabana.log.setup_logging()` to see progress on the console.
 
 ## 0.3.9
 

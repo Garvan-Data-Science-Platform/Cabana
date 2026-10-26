@@ -439,7 +439,8 @@ class BatchCabana:
             Log.logger.debug('Areas have been saved in {}'.format(join_path(self.bin_dir, 'ResultsROI.csv')))
 
     def analyze_all_gaps(self):
-        from .stages import fit_gap_circles, roi_mask_for
+        from .stages import (fit_gap_circles, roi_mask_for, gap_intra, gap_base_image,
+                             draw_gap_circles, write_rgb)
         min_gap_diameter = self.args["Gap Analysis"]["Minimum Gap Diameter"]
         if min_gap_diameter == 0:
             Log.logger.warning("minimum gap diameter = 0 pixels. Skipping gap analysis.")
@@ -464,19 +465,16 @@ class BatchCabana:
                 final_circles = fit_gap_circles(
                     img, min_gap_diameter, roi_mask_for(self.roimask_dir, os.path.splitext(img_name)[0][:-4]))
 
-                final_result = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-                color_result = color_img.copy()
-                for circle in final_circles:
-                    final_result = cv2.circle(final_result, (int(circle[1]), int(circle[0])),
-                                              int(circle[2]), (0, 255, 255), 2)
-                    color_result = cv2.circle(color_result, (int(circle[1]), int(circle[0])),
-                                              int(circle[2]), (0, 255, 255), 2)
                 stem = os.path.splitext(img_name)[0]
                 color_subdir = self._color_subdir(stem)
                 if color_subdir:
-                    cv2.imwrite(join_path(gap_result_dir, stem + "_GapImage.png"), final_result)
+                    intra = gap_intra(final_circles, cv2.imread(join_path(self.bin_dir, stem[:-4] + '_mask.png'), 0))
+                    write_rgb(join_path(gap_result_dir, stem + "_GapImage.png"),
+                              draw_gap_circles(gap_base_image(img), final_circles, intra))
                     Path(color_subdir).mkdir(parents=True, exist_ok=True)
-                    cv2.imwrite(join_path(color_subdir, "all_gaps.png"), color_result)
+                    write_rgb(join_path(color_subdir, "all_gaps.png"),
+                              draw_gap_circles(gap_base_image(img, cv2.cvtColor(color_img, cv2.COLOR_BGR2RGB)),
+                                               final_circles, intra))
                 # Written even without gaps, so intra-gap analysis sees every image
                 areas = np.pi * (final_circles[:, 2] ** 2) * self.ims_res**2
                 pd.DataFrame({'Area (µm²)': areas, 'X': final_circles[:, 1], 'Y': final_circles[:, 0]}).to_csv(
@@ -527,6 +525,7 @@ class BatchCabana:
         names, means, stds, means_radius, stds_radius, counts = [], [], [], [], [], []
         medians, medians_radius, pct5, pct95, pct5_radius, pct95_radius = [], [], [], [], [], []
         Log.logger.debug('Performing intra gap analysis for {} images'.format(len(img_paths)))
+        from .stages import gap_intra, gap_base_image, draw_gap_circles, write_rgb
         no_gaps = 0
         for img_path in img_paths:
             base_name = os.path.basename(img_path)[:-9]
@@ -538,25 +537,24 @@ class BatchCabana:
 
             df_circles = pd.read_csv(csv_file_path)
             binary_mask = cv2.imread(img_path, 0)
-            img_fibre = cv2.imread(join_path(self.mask_dir, base_name + '_roi.png'), 0)
-            color_img_fibre = cv2.cvtColor(img_fibre, cv2.COLOR_GRAY2BGR)
-            color_img = cv2.imread(join_path(self.eligible_dir, base_name + ".png"))
-            areas = []
-            circle_cnt = 0
-            for index, row in df_circles.iterrows():
-                area, x, y = row['Area (µm²)'], int(row['X']), int(row['Y'])
-                radius = int(np.sqrt(area / np.pi) / self.ims_res)   # convert back to measurements in pixels
-                if binary_mask[y, x] > 0:
-                    color_img_fibre = cv2.circle(color_img_fibre, (x, y), radius, (0, 255, 255), 1)
-                    color_img = cv2.circle(color_img, (x, y), radius, (0, 255, 255), 1)
-                    areas.append(area)
-                    circle_cnt += 1
+            # (row, col, radius px) of the gaps whose centre lies in the segmentation mask
+            circles = np.column_stack([df_circles['Y'], df_circles['X'],
+                                       np.sqrt(df_circles['Area (µm²)'] / np.pi) / self.ims_res]) \
+                if len(df_circles) else np.zeros((0, 3))
+            inside = gap_intra(circles, binary_mask)
+            circles = circles[inside]
+            areas = df_circles['Area (µm²)'].to_numpy()[inside]
             color_subdir = self._color_subdir(base_name + "_roi")
             if color_subdir:
-                cv2.imwrite(join_path(gap_result_dir,
-                                      base_name + "_roi_GapImage_intra_gaps.png"), color_img_fibre)
+                img_fibre = cv2.imread(join_path(self.mask_dir, base_name + '_roi.png'), 0)
+                color_img = cv2.cvtColor(cv2.imread(join_path(self.eligible_dir, base_name + ".png")),
+                                         cv2.COLOR_BGR2RGB)
+                all_intra = np.ones(len(circles), bool)
+                write_rgb(join_path(gap_result_dir, base_name + "_roi_GapImage_intra_gaps.png"),
+                          draw_gap_circles(gap_base_image(img_fibre), circles, all_intra))
                 Path(color_subdir).mkdir(parents=True, exist_ok=True)
-                cv2.imwrite(join_path(color_subdir, "intra_gaps.png"), color_img)
+                write_rgb(join_path(color_subdir, "intra_gaps.png"),
+                          draw_gap_circles(gap_base_image(img_fibre, color_img), circles, all_intra))
             areas = np.array(areas)
             radius = np.sqrt(areas / np.pi)
             names.append(base_name + "_roi.png")
@@ -571,7 +569,7 @@ class BatchCabana:
                 pct5_radius.append(np.percentile(radius, 5))
                 medians_radius.append(np.median(radius))
                 pct95_radius.append(np.percentile(radius, 95))
-                counts.append(circle_cnt)
+                counts.append(len(areas))
             else:
                 Log.logger.debug('No gaps found in ' + os.path.basename(img_path))
                 no_gaps += 1

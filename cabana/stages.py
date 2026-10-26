@@ -592,3 +592,59 @@ def fit_gap_circles(gap_mask, min_gap_diameter, roi_mask=None, progress=None):
             progress(np.count_nonzero(mask == 0) / mask.size)
     return np.array(circles) if circles else np.zeros((0, 3))
 
+
+# Gap display, shared by the GUI and the saved overlays: intra-fibre gaps
+# (centre inside the segmentation mask) in orange, other gaps in blue with a
+# dashed outline, both lightly filled
+GAP_INTRA_RGB = (230, 120, 20)
+GAP_OTHER_RGB = (40, 110, 210)
+GAP_FILL_ALPHA = 35          # of 255
+
+
+def write_rgb(path, rgb):
+    """Write an RGB image (OpenCV writes BGR)."""
+    cv2.imwrite(path, cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+
+
+def gap_intra(circles, seg_mask):
+    """Per circle: centre inside ``seg_mask`` (all True without a mask)."""
+    if seg_mask is None:
+        return np.ones(len(circles), bool)
+    return seg_mask[circles[:, 0].astype(int), circles[:, 1].astype(int)] > 0
+
+
+def gap_base_image(gap_mask, tissue_rgb=None):
+    """RGB image the gap circles are drawn on: the fibres (zero in
+    ``gap_mask``) in dark grey on white, or over the faded tissue."""
+    fibres = gap_mask == 0
+    if tissue_rgb is None:
+        return np.where(fibres[:, :, None], 70, 255).astype(np.uint8).repeat(3, axis=2)
+    base = (tissue_rgb.astype(np.float32) * 0.45 + 255 * 0.55).astype(np.uint8)
+    base[fibres] = (25, 25, 25)
+    return base
+
+
+def draw_gap_circles(base_rgb, circles, intra, thickness=2):
+    """``base_rgb`` with the gap circles drawn in the shared gap colours."""
+    out = base_rgb.copy()
+    if len(circles) == 0:
+        return out
+    centres = [(int(round(c)), int(round(r))) for r, c in circles[:, :2]]
+    radii = [int(round(r)) for r in circles[:, 2]]
+    fill, covered = out.copy(), np.zeros(out.shape[:2], np.uint8)
+    for centre, radius, is_intra in zip(centres, radii, intra):
+        cv2.circle(fill, centre, radius, GAP_INTRA_RGB if is_intra else GAP_OTHER_RGB, -1)
+        cv2.circle(covered, centre, radius, 255, -1)
+    a = GAP_FILL_ALPHA / 255
+    on = covered > 0
+    out[on] = (out[on] * (1 - a) + fill[on] * a).astype(np.uint8)
+    for centre, radius, is_intra in zip(centres, radii, intra):
+        if is_intra:
+            cv2.circle(out, centre, radius, GAP_INTRA_RGB, thickness, cv2.LINE_AA)
+            continue
+        step = max(1.0, np.degrees(6.0 / max(radius, 1)))          # ~6 px dashes and gaps
+        for start in np.arange(0, 360, 2 * step):
+            cv2.ellipse(out, centre, (radius, radius), 0, start, start + step,
+                        GAP_OTHER_RGB, thickness, cv2.LINE_AA)
+    return out
+

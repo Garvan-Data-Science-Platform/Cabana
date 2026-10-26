@@ -26,6 +26,7 @@ from .themes import THEMES, DEFAULT_THEME
 from .tma import AUTO_START_DIAMETER_UM, ORIENTATIONS, EDITS_FILE
 from .io import DEFAULT_MAX_SIZE, max_image_size, migrate_max_size, pixel_size_um, save_visualisations
 from .segmenter import generate_rois, mask_from_score
+from .stages import GAP_FILL_ALPHA, GAP_INTRA_RGB, GAP_OTHER_RGB, gap_base_image, gap_intra
 from .tma_editor import TMACoreEditor
 from .tma_maps import MAP_FILE_FILTER, available_arrays, load_map_file, match_map_to_slide, write_templates
 from .tma_editor import MapPreviewDialog
@@ -3100,12 +3101,6 @@ class MainWindow(QMainWindow):
 
         self.gap_analysis_worker.start()
 
-    # Gap circles: intra-fibre (centre inside the segmentation mask) in orange,
-    # other gaps in blue with a dashed outline; both with a light fill
-    GAP_INTRA_RGB = (230, 120, 20)
-    GAP_OTHER_RGB = (40, 110, 210)
-    GAP_FILL_ALPHA = 35
-
     def _clear_gap_results(self):
         self.gap_img = None
         self.gap_circles = None
@@ -3118,8 +3113,7 @@ class MainWindow(QMainWindow):
         faded tissue image with the fibres drawn over it."""
         if self.overlay_gaps_cb.isChecked():
             tissue = self.ori_img if (self.seg_img is None or not self.toggle_seg_btn.isChecked()) else self.seg_img
-            base = (tissue.astype(np.float32) * 0.45 + 255 * 0.55).astype(np.uint8)
-            base[self.frb_img == 0] = (25, 25, 25)
+            base = gap_base_image(self.frb_img, tissue)
         else:
             base = self.gap_img
         self.image_panel.setImage(base, preserve_view=preserve_view)
@@ -3137,14 +3131,14 @@ class MainWindow(QMainWindow):
         if self.gap_circles is None:
             return
         for (row, col, radius), intra in zip(self.gap_circles, self._gap_intra):
-            colour = QColor(*(self.GAP_INTRA_RGB if intra else self.GAP_OTHER_RGB))
+            colour = QColor(*(GAP_INTRA_RGB if intra else GAP_OTHER_RGB))
             pen = QPen(colour)
             pen.setWidthF(1.5)
             pen.setCosmetic(True)
             if not intra:
                 pen.setStyle(Qt.DashLine)
             fill = QColor(colour)
-            fill.setAlpha(self.GAP_FILL_ALPHA)
+            fill.setAlpha(GAP_FILL_ALPHA)
             painter.setPen(pen)
             painter.setBrush(fill)
             painter.drawEllipse(QPointF(col + 0.5, row + 0.5), radius, radius)
@@ -3163,11 +3157,9 @@ class MainWindow(QMainWindow):
     def handle_gap_analysis_complete(self, circles):
         """Show the fitted gap circles and their summary."""
         self.gap_circles = circles
-        self.gap_img = np.where(self.frb_img[:, :, None] == 0, 70, 255).astype(np.uint8).repeat(3, axis=2)
+        self.gap_img = gap_base_image(self.frb_img)
         # Intra-fibre: centre inside the segmentation mask; all gaps without segmentation
-        seg_mask = self._segmentation_mask()
-        rows, cols = circles[:, 0].astype(int), circles[:, 1].astype(int)
-        self._gap_intra = (seg_mask[rows, cols] > 0) if seg_mask is not None else np.ones(len(circles), bool)
+        self._gap_intra = gap_intra(circles, self._segmentation_mask())
         self.gap_summary_label.setText(self._gap_summary(circles))
         self.overlay_gaps_cb.blockSignals(True)
         self.overlay_gaps_cb.setChecked(False)

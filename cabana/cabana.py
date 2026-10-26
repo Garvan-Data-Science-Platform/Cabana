@@ -318,23 +318,18 @@ class Cabana:
         from .stages import fit_gap_circles, roi_mask_for
         final_circles = fit_gap_circles(img, min_gap_diameter, roi_mask_for(self.roimask_dir, self.name_wo_ext))
 
-        # Create visualizations
-        final_result = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-        color_result = color_img.copy()
-
-        for circle in final_circles:
-            final_result = cv2.circle(final_result, (int(circle[1]), int(circle[0])),
-                                      int(circle[2]), (0, 255, 255), 2)
-            color_result = cv2.circle(color_result, (int(circle[1]), int(circle[0])),
-                                      int(circle[2]), (0, 255, 255), 2)
-
-        # Store gap image
-        self.gap_img = color_result
+        # Visualisations in the shared gap colours (intra-fibre orange, others dashed blue)
+        from .stages import gap_intra, gap_base_image, draw_gap_circles, write_rgb
+        intra = gap_intra(final_circles, cv2.imread(join_path(self.bin_dir, self.name_wo_ext + '_mask.png'), 0))
+        color_result = draw_gap_circles(gap_base_image(img, cv2.cvtColor(color_img, cv2.COLOR_BGR2RGB)),
+                                        final_circles, intra)
+        self.gap_img = cv2.cvtColor(color_result, cv2.COLOR_RGB2BGR)
 
         # Save images
         if self._visuals():
-            cv2.imwrite(join_path(gap_result_dir, self.name_wo_ext + "_GapImage.png"), final_result)
-            cv2.imwrite(join_path(self.color_img_dir, "all_gaps.png"), color_result)
+            write_rgb(join_path(gap_result_dir, self.name_wo_ext + "_GapImage.png"),
+                      draw_gap_circles(gap_base_image(img), final_circles, intra))
+            write_rgb(join_path(self.color_img_dir, "all_gaps.png"), color_result)
 
         # Calculate gap metrics
         from .stages import summary_stats
@@ -374,28 +369,26 @@ class Cabana:
         df_circles = pd.read_csv(csv_file_path)
         binary_mask = cv2.imread(join_path(self.bin_dir, self.name_wo_ext + '_mask.png'), 0)
         img_fibre = cv2.imread(join_path(self.mask_dir, self.name_wo_ext + '_roi.png'), 0)
-        color_img_fibre = cv2.cvtColor(img_fibre, cv2.COLOR_GRAY2BGR)
-        color_img = cv2.imread(join_path(self.eligible_dir, self.name_wo_ext + ".png"))
+        color_img = cv2.cvtColor(cv2.imread(join_path(self.eligible_dir, self.name_wo_ext + ".png")),
+                                 cv2.COLOR_BGR2RGB)
 
-        areas = []
-        circle_cnt = 0
-
-        for index, row in df_circles.iterrows():
-            area, x, y = row['Area (µm²)'], int(row['X']), int(row['Y'])
-            radius = int(np.sqrt(area / np.pi) / self.ims_res)  # convert back to measurements in pixels
-            if binary_mask[y, x] > 0:
-                color_img_fibre = cv2.circle(color_img_fibre, (x, y), radius, (0, 255, 255), 1)
-                color_img = cv2.circle(color_img, (x, y), radius, (0, 255, 255), 1)
-                areas.append(area)
-                circle_cnt += 1
-
-        # Store intra gap image
-        self.intra_gap_img = color_img
+        # (row, col, radius px) of the gaps whose centre lies in the segmentation mask
+        from .stages import gap_intra, gap_base_image, draw_gap_circles, write_rgb
+        circles = np.column_stack([df_circles['Y'], df_circles['X'],
+                                   np.sqrt(df_circles['Area (µm²)'] / np.pi) / self.ims_res]) \
+            if len(df_circles) else np.zeros((0, 3))
+        inside = gap_intra(circles, binary_mask)
+        circles = circles[inside]
+        areas = df_circles['Area (µm²)'].to_numpy()[inside]
+        all_intra = np.ones(len(circles), bool)
+        color_result = draw_gap_circles(gap_base_image(img_fibre, color_img), circles, all_intra)
+        self.intra_gap_img = cv2.cvtColor(color_result, cv2.COLOR_RGB2BGR)
 
         # Save images
         if self._visuals():
-            cv2.imwrite(join_path(gap_result_dir, self.name_wo_ext + "_GapImage_intra_gaps.png"), color_img_fibre)
-            cv2.imwrite(join_path(self.color_img_dir, "intra_gaps.png"), color_img)
+            write_rgb(join_path(gap_result_dir, self.name_wo_ext + "_GapImage_intra_gaps.png"),
+                      draw_gap_circles(gap_base_image(img_fibre), circles, all_intra))
+            write_rgb(join_path(self.color_img_dir, "intra_gaps.png"), color_result)
 
         areas = np.array(areas)
         radius = np.sqrt(areas / np.pi) if len(areas) else np.array([])

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.11
 
 - **Check for Updates** (Help menu; Cabana menu on macOS) installs a newer
   release from PyPI into the running environment; restart Cabana afterwards

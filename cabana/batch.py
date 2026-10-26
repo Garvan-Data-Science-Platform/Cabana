@@ -178,12 +178,14 @@ class BatchCabana:
         with open(join_path(self.eligible_dir, "IgnoredImages.txt"), 'w') as f:
             count_black = 0
             count_oversized = 0
+            count_16bit = 0
             for img_path in batch_paths:
                 img_name = os.path.basename(img_path)
                 img_name = sanitize_filename(img_name)  # replace special characters in image names with "_"
                 img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
                 if img.dtype == np.uint16:
-                    Log.logger.warning(f"Image {img_path} is 16-bit. Converting to 8-bit.")
+                    Log.logger.debug(f"Image {img_path} is 16-bit. Converting to 8-bit.")
+                    count_16bit += 1
                     lower = np.percentile(img, 2)
                     upper = np.percentile(img, 98)
                     if upper <= lower:
@@ -244,6 +246,8 @@ class BatchCabana:
             else:
                 Log.logger.info(f'No eligible images in this batch, so no ROI masks were looked up in '
                                 f'{self.ext_mask_dir}')
+        if count_16bit > 0:
+            Log.logger.info(f'{count_16bit} 16-bit images have been converted to 8-bit.')
         if count_black > 0:
             Log.logger.warning('{} black or small-sized images have been ignored.'.format(count_black))
         if count_oversized > 0:
@@ -980,7 +984,7 @@ class BatchCabana:
         # save to new csv file
         final_csv = join_path(self.output_folder, 'QuantificationResults.csv')
         df_results.to_csv(final_csv, index=False, float_format='%.3f')
-        Log.logger.info('Statistics have been saved to ' + final_csv)
+        Log.logger.debug('Statistics have been saved to ' + final_csv)
 
     def generate_color_maps(self):
         if not self._visuals():
@@ -1229,17 +1233,7 @@ class BatchProcessor():
         if not os.path.exists(self.output_folder):
             os.makedirs(self.output_folder, exist_ok=True)
 
-        # This run's log file in <output>/Logs; closed by run(), or here if
-        # the rest of the setup fails
-        self.run_log = Log.run_log(join_path(self.output_folder, 'Logs'), self.param_file)
-        try:
-            self._load_params()
-        except Exception:
-            Log.logger.exception('Batch setup failed')
-            self.run_log.close()
-            raise
-
-    def _load_params(self):
+        # Load parameters from YAML file
         self.args = None
         with open(self.param_file) as pf:
             try:
@@ -1248,10 +1242,8 @@ class BatchProcessor():
                 raise ValueError(f"Could not parse the parameter file {self.param_file}: {exc}") from exc
         if self.max_size is not None:
             self.args.setdefault("Configs", {})["Max Size"] = int(self.max_size)
-            Log.logger.info(f"Max Size for this run: {int(self.max_size) or 'no limit'}")
         if self.save_visuals is not None:
             self.args.setdefault("Configs", {})["Save Visualisations"] = bool(self.save_visuals)
-            Log.logger.info(f"Save Visualisations for this run: {bool(self.save_visuals)}")
 
     def update_progress(self, value):
         """
@@ -1307,11 +1299,11 @@ class BatchProcessor():
         # Initialize output folder if not resuming
         if not self.resume:
             # Clear the output folder but keep the Logs folder: this run's log
-            # file is already open there (see __init__) and earlier runs' logs
-            # are kept as a history
+            # file is already open there (see run()) and earlier runs' logs are
+            # kept as a history. Any case: macOS and Windows reuse a 'logs' folder.
             for entry in os.listdir(self.output_folder):
                 path = join_path(self.output_folder, entry)
-                if entry == 'Logs' and os.path.isdir(path):
+                if entry.lower() == 'logs' and os.path.isdir(path):
                     continue
                 if os.path.isdir(path) and not os.path.islink(path):
                     shutil.rmtree(path)
@@ -1639,6 +1631,8 @@ class BatchProcessor():
         if len(results_df) > 0:
             merged_df = pd.concat(results_df, ignore_index=True)
             merged_df.to_csv(join_path(self.output_folder, 'QuantificationResults.csv'), index=False)
+            Log.logger.info('Statistics have been saved to '
+                            + join_path(self.output_folder, 'QuantificationResults.csv'))
 
         # Generate per-patient statistics and scores
         if self.generate_stats or self.generate_scores:
@@ -1685,7 +1679,12 @@ class BatchProcessor():
         """
         start_time = time.time()
 
-        try:
+        with Log.run_log(join_path(self.output_folder, 'Logs'), self.param_file):
+            if self.max_size is not None:
+                Log.logger.info(f"Max Size for this run: {int(self.max_size) or 'no limit'}")
+            if self.save_visuals is not None:
+                Log.logger.info(f"Save Visualisations for this run: {bool(self.save_visuals)}")
+
             self.process()
 
             if getattr(self, '_cancelled', False):
@@ -1701,8 +1700,3 @@ class BatchProcessor():
             seconds = (time_secs % 3600) % 60
             Log.logger.info("--- Finished in {:.0f} hours {:.0f} mins {:.0f} seconds ---".format(hours, minutes, seconds))
             return False
-        except Exception:
-            Log.logger.exception('Batch processing failed')
-            raise
-        finally:
-            self.run_log.close()

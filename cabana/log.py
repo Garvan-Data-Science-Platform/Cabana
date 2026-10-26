@@ -1,68 +1,47 @@
-"""Lightweight logging facade.
+"""Logging for CABANA.
 
-A thin wrapper around stdlib :mod:`logging`. The public surface
-(``Log.logger``, ``Log.init_log_path(path)``, ``Log.log_parameters(param_path)``)
-is kept so call sites do not need to change.
+Library code logs to the ``cabana`` logger (``Log.logger``) or to module
+loggers (``logging.getLogger(__name__)``, children of ``cabana``) and attaches
+no output when imported, the standard practice for Python libraries. Where
+messages go is decided by the application:
 
-``Log.logger`` is the ``cabana`` logger (module loggers such as
-``logging.getLogger(__name__)`` are its children), so the root logger and other
-libraries' logging are left alone. The console shows INFO and above in colour;
-log files record DEBUG and above in plain text with timestamps.
+* :func:`setup_logging` is called once by the GUI and the command lines (and by
+  scripts that want console output): a coloured console at INFO and, if a
+  folder is given, a timestamped DEBUG log file there.
+* :func:`run_log` is used by ``Cabana.run`` and ``BatchProcessor.run``: for the
+  duration of a ``with`` block, the calling thread's messages are also written
+  to a new file in the run's ``Logs`` folder.
 
-Two kinds of log file:
-
-* ``Log.init_log_path(dir)`` opens the session log for a script or the tests;
-  calling it again replaces the previous session log.
-* ``Log.run_log(dir, param_path)`` opens a per-run log (one file per batch or
-  single-image run, in the run's output folder). It is independent of the
-  session log: both receive every message while the run log is open, and
-  closing the run log leaves the session log in place.
+The ``cabana`` logger is set to INFO at import so a run log records progress
+even when the host has not set up logging; :func:`setup_logging` lowers it to
+DEBUG so log files get the stage details too.
 """
 
 import os
 import time
 import logging
+import threading
+import contextlib
 import logging.handlers
 
 import yaml
 import colorlog
 
-logging.getLogger('matplotlib.font_manager').setLevel(logging.ERROR)
-
 LOGGER_NAME = 'cabana'
 
-_LOG_COLORS = {
-    'DEBUG': 'green',
-    'INFO': 'white',
-    'WARNING': 'yellow',
-    'ERROR': 'red',
-    'CRITICAL': 'red',
-}
+logger = logging.getLogger(LOGGER_NAME)
+logger.addHandler(logging.NullHandler())
+logger.setLevel(logging.INFO)
+
 _CONSOLE_FORMATTER = colorlog.ColoredFormatter(
-    '%(log_color)s[%(levelname)s]- %(message)s', log_colors=_LOG_COLORS)
+    '%(log_color)s[%(levelname)s]- %(message)s',
+    log_colors={'DEBUG': 'green', 'INFO': 'white', 'WARNING': 'yellow',
+                'ERROR': 'red', 'CRITICAL': 'red'})
 _FILE_FORMATTER = logging.Formatter(
     '%(asctime)s [%(levelname)s] %(name)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
-
-def _build_logger():
-    """Return the ``cabana`` logger with a console handler attached.
-
-    Always usable from import time so callers can log without first calling
-    :func:`init_log_path`.
-    """
-    logger = logging.getLogger(LOGGER_NAME)
-    for h in list(logger.handlers):
-        logger.removeHandler(h)
-    logger.setLevel(logging.DEBUG)
-    # The console handler lives here, so do not hand records to the root
-    # logger as well: a root handler (logging.basicConfig in a script or
-    # notebook) would print every line twice.
-    logger.propagate = False
-    sh = logging.StreamHandler()
-    sh.setLevel(logging.INFO)
-    sh.setFormatter(_CONSOLE_FORMATTER)
-    logger.addHandler(sh)
-    return logger
+# Handlers added by setup_logging, replaced when it is called again.
+_app_handlers = []
 
 
 def _new_log_file(log_dir):
@@ -81,98 +60,95 @@ def _new_log_file(log_dir):
     return fh
 
 
-class RunLog:
-    """The log file of one run; see :meth:`_LogFacade.run_log`.
+def setup_logging(log_dir=None):
+    """Send log messages to the console and, with ``log_dir``, to a log file.
 
-    Close it with :meth:`close` or by using it as a context manager. An
-    exception leaving the ``with`` block is recorded with its traceback
-    before the file is closed.
+    For applications and scripts; library code never calls it. Handlers go on
+    the root logger, so warnings from other libraries are shown too. Calling it
+    again replaces the handlers of the previous call. Returns the log file's
+    path, or None.
     """
+    root = logging.getLogger()
+    for h in _app_handlers:
+        root.removeHandler(h)
+        h.close()
+    _app_handlers.clear()
 
-    def __init__(self, logger, log_dir, param_path=None):
-        self._logger = logger
-        self._handler = _new_log_file(log_dir)
-        self.path = self._handler.baseFilename
-        logger.addHandler(self._handler)
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
+    console.setFormatter(_CONSOLE_FORMATTER)
+    _app_handlers.append(console)
+    path = None
+    if log_dir:
+        fh = _new_log_file(log_dir)
+        path = fh.baseFilename
+        _app_handlers.append(fh)
+    for h in _app_handlers:
+        root.addHandler(h)
+
+    logger.setLevel(logging.DEBUG)
+    logging.getLogger('matplotlib.font_manager').setLevel(logging.ERROR)
+    return path
+
+
+@contextlib.contextmanager
+def run_log(log_dir, param_path=None):
+    """Write this thread's ``cabana`` messages to a new file in ``log_dir``.
+
+    Records ``param_path`` at the start and any exception (including Ctrl+C)
+    leaving the block. Yields the file's path.
+    """
+    handler = _new_log_file(log_dir)
+    thread_id = threading.get_ident()
+    # Only this run: other GUI actions log from other threads meanwhile
+    handler.addFilter(lambda record: record.thread == thread_id)
+    logger.addHandler(handler)
+    try:
+        logger.info('Log file: %s', handler.baseFilename)
+        if param_path:
+            log_parameters(param_path)
+        yield handler.baseFilename
+    except (Exception, KeyboardInterrupt):
+        logger.exception('Run failed')
+        raise
+    finally:
+        logger.removeHandler(handler)
+        handler.close()
+
+
+def log_parameters(param_path):
+    """Write the parameter file to the log (DEBUG: log files only)."""
+    if not os.path.exists(param_path):
+        logger.error("{} not exists.".format(param_path))
+        return
+    header = "********{}********".format(os.path.basename(param_path))
+    logger.debug(header)
+    with open(param_path, 'r') as pf:
         try:
-            logger.info('Log file: {}'.format(self.path))
-            if param_path:
-                Log.log_parameters(param_path)
-        except Exception:
-            self.close()
-            raise
-
-    def close(self):
-        """Detach and close the file; safe to call more than once."""
-        if self._handler is not None:
-            self._logger.removeHandler(self._handler)
-            self._handler.close()
-            self._handler = None
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        if exc is not None:
-            self._logger.exception('Run failed')
-        self.close()
-        return False
+            data = yaml.safe_load(pf)
+        except yaml.YAMLError as exc:
+            logger.error("Could not parse {}: {}".format(param_path, exc))
+            return
+    for line in yaml.dump(data, default_flow_style=False).split("\n"):
+        logger.debug(line)
+    footer = '*' * ((len(header) - 3) // 2) + "End" + '*' * ((len(header) - 3) // 2)
+    logger.debug(footer)
 
 
 class _LogFacade:
-    """Module-level singleton providing the historical ``Log`` API."""
+    """The historical ``Log`` API, kept so call sites need not change."""
 
-    def __init__(self):
-        self.log_path = None
-        self.log_name = None
-        self._file_handler = None
-        self.logger = _build_logger()
+    logger = logger
+    log_name = None          # session log file of the last init_log_path call
 
     def init_log_path(self, log_path=None):
-        """Start a new timestamped session log file in ``log_path``.
+        """Same as ``setup_logging(log_path)``; defaults to ``cabana/logs``."""
+        if not log_path:
+            log_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'logs')
+        self.log_name = setup_logging(log_path)
 
-        A session log opened by a previous call is closed first. Run logs
-        (:meth:`run_log`) are not affected.
-        """
-        if log_path:
-            self.log_path = log_path
-        else:
-            self.log_path = os.path.join(
-                os.path.dirname(os.path.realpath(__file__)), 'logs')
-        self.close_log_file()
-        fh = _new_log_file(self.log_path)
-        self.log_name = fh.baseFilename
-        self.logger.addHandler(fh)
-        self._file_handler = fh
-
-    def run_log(self, log_dir, param_path=None):
-        """Open a :class:`RunLog` in ``log_dir``, recording ``param_path`` in it."""
-        return RunLog(self.logger, log_dir, param_path)
-
-    def close_log_file(self):
-        """Detach and close the session log file, if any."""
-        if self._file_handler is not None:
-            self.logger.removeHandler(self._file_handler)
-            self._file_handler.close()
-            self._file_handler = None
-
-    def log_parameters(self, param_path):
-        """Write the parameter file to the log file (DEBUG, not shown on the console)."""
-        if not os.path.exists(param_path):
-            self.logger.error("{} not exists.".format(param_path))
-            return
-        header = "********{}********".format(os.path.basename(param_path))
-        self.logger.debug(header)
-        with open(param_path, 'r') as pf:
-            try:
-                data = yaml.safe_load(pf)
-            except yaml.YAMLError as exc:
-                self.logger.error("Could not parse {}: {}".format(param_path, exc))
-                return
-            for line in yaml.dump(data, default_flow_style=False).split("\n"):
-                self.logger.debug(line)
-        footer = '*' * ((len(header) - 3) // 2) + "End" + '*' * ((len(header) - 3) // 2)
-        self.logger.debug(footer)
+    run_log = staticmethod(run_log)
+    log_parameters = staticmethod(log_parameters)
 
 
 Log = _LogFacade()

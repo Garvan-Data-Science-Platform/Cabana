@@ -2,7 +2,6 @@ import os
 import cv2
 import yaml
 import shutil
-import warnings
 import numpy as np
 import pandas as pd
 from .log import Log
@@ -136,11 +135,11 @@ class Cabana:
 
         # Convert 16-bit to 8-bit if needed
         if img.dtype == np.uint16:
-            warnings.warn(f"Image {self.input_image_path} is 16-bit. Converting to 8-bit.")
+            Log.logger.warning(f"Image {self.input_image_path} is 16-bit. Converting to 8-bit.")
             lower = np.percentile(img, 2)
             upper = np.percentile(img, 98)
             if upper <= lower:
-                warnings.warn(f"Image {self.input_image_path} has no dynamic range. Skipping.")
+                Log.logger.warning(f"Image {self.input_image_path} has no dynamic range. Skipping.")
                 return
             img = np.clip(img, lower, upper)  # clip to 2nd and 98th percentile to remove outliers
             # Scale to full 8-bit range
@@ -158,28 +157,28 @@ class Cabana:
 
         # Check for black or small images
         if np.min([height, width]) < 2 * max_line_width or bright_percent <= 0.01:
-            warnings.warn('Image is too dark or too small. No analysis will be performed.')
+            Log.logger.warning('Image is too dark or too small. No analysis will be performed.')
             return False
 
         # Check if image is too large
         crop_box = None
         if is_oversized(height, width, max_size):
             if self.ignore_large:
-                warnings.warn('Image is too large. No analysis will be performed.')
+                Log.logger.warning('Image is too large. No analysis will be performed.')
                 return False
             else:
                 # The single-image pipeline analyses the top-left block only; BatchProcessor
                 # writes and analyses every block of an oversized image.
                 row_blk_sz = int(np.ceil(height / int(np.ceil(height / max_size))))
                 col_blk_sz = int(np.ceil(width / int(np.ceil(width / max_size))))
-                warnings.warn(f'Image is oversized ({width}x{height} > Max Size {max_size}); only its '
-                              f'top-left {col_blk_sz}x{row_blk_sz} block is analysed. Use BatchProcessor '
-                              f'to analyse every block.')
+                Log.logger.warning(f'Image is oversized ({width}x{height} > Max Size {max_size}); only its '
+                                   f'top-left {col_blk_sz}x{row_blk_sz} block is analysed. Use BatchProcessor '
+                                   f'to analyse every block.')
                 crop_box = (0, 0, col_blk_sz, row_blk_sz)
                 img = img[crop_box[1]:crop_box[3], crop_box[0]:crop_box[2]]
                 bright_percent = np.sum(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) > 5) / img.shape[0] / img.shape[1]
                 if bright_percent <= 0.01:
-                    warnings.warn('The analysed block is too dark. No analysis will be performed.')
+                    Log.logger.warning('The analysed block is too dark. No analysis will be performed.')
                     return False
 
         # Store original image
@@ -297,7 +296,7 @@ class Cabana:
         """Analyze gaps in the image"""
         min_gap_diameter = self.args["Gap Analysis"]["Minimum Gap Diameter"]
         if min_gap_diameter == 0:
-            warnings.warn("minimum gap diameter = 0 pixels. Skipping gap analysis.")
+            Log.logger.warning("minimum gap diameter = 0 pixels. Skipping gap analysis.")
             return
 
         Log.logger.info(f"Performing gap analysis with "
@@ -810,7 +809,7 @@ class Cabana:
             plt.close()
 
         except Exception as e:
-            warnings.warn(f"Could not create summary visualization: {str(e)}")
+            Log.logger.warning(f"Could not create summary visualization: {str(e)}")
 
     def run(self):
         """Run the full analysis pipeline, logging to ``<output>/Logs/``."""

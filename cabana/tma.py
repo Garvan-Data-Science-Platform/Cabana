@@ -1987,6 +1987,8 @@ def _diameter_arg(text):
 def main(argv=None):
     import argparse
     from tqdm import tqdm
+    from .log import setup_logging
+    setup_logging()
     argv = sys.argv[1:] if argv is None else list(argv)
     if argv and argv[0] == "map":
         return map_main(argv[1:])

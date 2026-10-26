@@ -589,9 +589,8 @@ class BatchProcessingWorker(QThread):
     def run(self):
         self.progress_updated.emit(1)
         # An exception escaping QThread.run aborts the process, so both steps
-        # are guarded. BatchProcessor logs the traceback of a failure in its
-        # setup or run into the run's log file; only the message is repeated
-        # here (a setup failure before the log opens is a missing file).
+        # are guarded. A failure inside run() is logged, with its traceback,
+        # by the run's log (Log.run_log); setup happens before that log opens.
         try:
             batch_processor = BatchProcessor(self.param_file, self.input_folder,
                                              self.output_folder, self.batch_size,
@@ -600,7 +599,7 @@ class BatchProcessingWorker(QThread):
                                              mask_dir=self.mask_dir, max_size=self.max_size,
                                              save_visuals=self.save_visuals)
         except Exception as exc:
-            Log.logger.error(f"Batch setup failed: {type(exc).__name__}: {exc}")
+            Log.logger.exception("Batch setup failed")
             self.batch_failed.emit(f"{type(exc).__name__}: {exc}")
             return
 

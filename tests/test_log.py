@@ -1,21 +1,28 @@
-"""Tests for the ``cabana.log`` facade."""
+"""Tests for ``cabana.log``: library logger, setup_logging and run logs."""
 
 import os
-import re
 import glob
 import logging
+import threading
 
 import yaml
 import pytest
 
-from cabana.log import Log, LOGGER_NAME
+from cabana import log as cabana_log
+from cabana.log import Log, LOGGER_NAME, setup_logging, run_log
 
 
 @pytest.fixture
-def fresh_log():
-    """Leave no file handler behind for other tests."""
-    yield Log
-    Log.close_log_file()
+def app_logging():
+    """Undo setup_logging's root handlers and level after the test."""
+    level = cabana_log.logger.level
+    yield
+    root = logging.getLogger()
+    for h in cabana_log._app_handlers:
+        root.removeHandler(h)
+        h.close()
+    cabana_log._app_handlers.clear()
+    cabana_log.logger.setLevel(level)
 
 
 def _read(path):
@@ -23,114 +30,106 @@ def _read(path):
         return f.read()
 
 
-def test_logger_is_named_and_root_untouched(fresh_log, tmp_path):
+def _run_handlers():
+    return [h for h in Log.logger.handlers if isinstance(h, logging.FileHandler)]
+
+
+def test_library_logger_attaches_no_output():
+    """Importing cabana must not print or write anything by itself."""
     assert Log.logger.name == LOGGER_NAME
-    Log.init_log_path(str(tmp_path))
-    assert Log._file_handler not in logging.getLogger().handlers
-    logging.getLogger('PIL').warning('third-party warning')   # WARNING: not dropped by level
-    Log.logger.info('own message')
-    text = _read(Log.log_name)
-    assert 'own message' in text
-    assert 'third-party warning' not in text
+    assert all(isinstance(h, logging.NullHandler) for h in Log.logger.handlers)
+    assert Log.logger.propagate
 
 
-def test_console_lines_are_not_duplicated_by_root_handlers():
-    """A root handler (logging.basicConfig in a script) must not repeat our lines."""
-    assert Log.logger.propagate is False
+def test_records_reach_root_handlers_once(app_logging):
+    """Host handlers (caplog, a script's basicConfig) see each record once."""
     seen = []
-    root_handler = logging.Handler()
-    root_handler.emit = seen.append
-    logging.getLogger().addHandler(root_handler)
+    host = logging.Handler()
+    host.emit = seen.append
+    logging.getLogger().addHandler(host)
     try:
-        Log.logger.warning('once')
+        Log.logger.info('hello')
     finally:
-        logging.getLogger().removeHandler(root_handler)
-    assert seen == []
+        logging.getLogger().removeHandler(host)
+    assert [r.getMessage() for r in seen] == ['hello']
 
 
-def test_reinit_replaces_file_handler(fresh_log, tmp_path):
-    Log.init_log_path(str(tmp_path / 'a'))
-    first = Log.log_name
-    Log.logger.info('first run')
-    Log.init_log_path(str(tmp_path / 'b'))
-    Log.logger.info('second run')
-    file_handlers = [h for h in Log.logger.handlers if isinstance(h, logging.FileHandler)]
-    assert len(file_handlers) == 1
-    assert 'second run' not in _read(first)
-    assert 'second run' in _read(Log.log_name)
-
-
-def test_file_is_plain_text_with_timestamps(fresh_log, tmp_path):
-    Log.init_log_path(str(tmp_path))
+def test_setup_logging_writes_plain_timestamped_file(app_logging, tmp_path):
+    path = setup_logging(str(tmp_path))
     Log.logger.warning('careful')
     Log.logger.debug('details')
-    text = _read(Log.log_name)
-    assert '\x1b[' not in text
-    assert re.search(r'^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d \[WARNING\] cabana: careful$', text, re.M)
-    assert '[DEBUG] cabana: details' in text
-
-
-def test_module_loggers_reach_the_file(fresh_log, tmp_path):
-    Log.init_log_path(str(tmp_path))
     logging.getLogger('cabana.scores').info('from scores')
-    assert '[INFO] cabana.scores: from scores' in _read(Log.log_name)
+    logging.getLogger('PIL').info('third-party info')       # PIL stays at WARNING: dropped
+    text = _read(path)
+    assert '\x1b[' not in text
+    assert '[WARNING] cabana: careful' in text
+    assert '[DEBUG] cabana: details' in text
+    assert '[INFO] cabana.scores: from scores' in text
+    assert 'third-party info' not in text
 
 
-def test_parameters_are_logged_at_debug(fresh_log, tmp_path):
+def test_setup_logging_again_replaces_its_handlers(app_logging, tmp_path):
+    first = setup_logging(str(tmp_path / 'a'))
+    second = setup_logging(str(tmp_path / 'b'))
+    Log.logger.info('after second call')
+    assert 'after second call' not in _read(first)
+    assert 'after second call' in _read(second)
+    assert len(cabana_log._app_handlers) == 2          # one console, one file
+
+
+def test_run_log_records_parameters_and_closes(tmp_path):
     params = tmp_path / 'p.yml'
     yaml.safe_dump({'Detection': {'Min Line Width': 5}}, open(params, 'w'))
-    Log.init_log_path(str(tmp_path / 'logs'))
-    records = []
-    handler = logging.Handler()
-    handler.emit = records.append
-    Log.logger.addHandler(handler)
-    try:
-        Log.log_parameters(str(params))
-    finally:
-        Log.logger.removeHandler(handler)
-    assert records and all(r.levelno == logging.DEBUG for r in records)
-    assert 'Min Line Width: 5' in _read(Log.log_name)
-
-
-def test_close_log_file_is_idempotent(fresh_log, tmp_path):
-    Log.init_log_path(str(tmp_path))
-    Log.close_log_file()
-    Log.close_log_file()
-    assert not any(isinstance(h, logging.FileHandler) for h in Log.logger.handlers)
-
-
-def test_run_log_leaves_session_log_in_place(fresh_log, tmp_path):
-    """A script's own log (init_log_path) keeps receiving messages after a run."""
-    Log.init_log_path(str(tmp_path / 'session'))
-    with Log.run_log(str(tmp_path / 'run')) as run:
+    with run_log(str(tmp_path / 'Logs'), str(params)) as path:
         Log.logger.info('during run')
     Log.logger.info('after run')
-    session = _read(Log.log_name)
-    assert 'during run' in session and 'after run' in session
-    run_text = _read(run.path)
-    assert 'during run' in run_text and 'after run' not in run_text
-    assert [h for h in Log.logger.handlers if isinstance(h, logging.FileHandler)] == [Log._file_handler]
+    text = _read(path)
+    assert 'during run' in text and 'Min Line Width' not in text   # INFO by default
+    assert 'after run' not in text
+    assert _run_handlers() == []
 
 
-def test_run_log_records_exception_and_closes(tmp_path):
+def test_run_log_gets_debug_details_after_setup_logging(app_logging, tmp_path):
+    params = tmp_path / 'p.yml'
+    yaml.safe_dump({'Detection': {'Min Line Width': 5}}, open(params, 'w'))
+    setup_logging()
+    with run_log(str(tmp_path / 'Logs'), str(params)) as path:
+        pass
+    assert 'Min Line Width: 5' in _read(path)
+
+
+def test_run_log_records_exception(tmp_path):
     with pytest.raises(RuntimeError):
-        with Log.run_log(str(tmp_path)) as run:
+        with run_log(str(tmp_path)) as path:
             raise RuntimeError('boom')
-    text = _read(run.path)
+    text = _read(path)
     assert 'Run failed' in text and 'RuntimeError: boom' in text
-    assert not any(isinstance(h, logging.FileHandler) for h in Log.logger.handlers)
-    run.close()        # idempotent
+    assert _run_handlers() == []
+
+
+def test_run_log_ignores_other_threads(tmp_path):
+    """GUI actions on other threads must not land in a running batch's log."""
+    with run_log(str(tmp_path)) as path:
+        t = threading.Thread(target=lambda: Log.logger.warning('from another thread'))
+        t.start()
+        t.join()
+        Log.logger.info('from the run')
+    text = _read(path)
+    assert 'from the run' in text and 'from another thread' not in text
 
 
 def test_run_logs_in_the_same_second_get_distinct_files(tmp_path):
-    a = Log.run_log(str(tmp_path))
-    b = Log.run_log(str(tmp_path))
-    try:
-        assert a.path != b.path
-        assert len(glob.glob(str(tmp_path / '*.log'))) == 2
-    finally:
-        a.close()
-        b.close()
+    with run_log(str(tmp_path)) as a, run_log(str(tmp_path)) as b:
+        assert a != b
+    assert len(glob.glob(str(tmp_path / '*.log'))) == 2
+
+
+def test_bad_parameter_file_is_reported_not_raised(tmp_path):
+    bad = tmp_path / 'bad.yml'
+    bad.write_text('Configs: [unclosed')
+    with run_log(str(tmp_path / 'Logs'), str(bad)) as path:
+        pass
+    assert 'Could not parse' in _read(path)
 
 
 class _FakeBatchCabana:
@@ -141,52 +140,49 @@ class _FakeBatchCabana:
         pass
 
 
-def test_batch_log_lives_in_output_and_survives_a_new_run(fresh_log, tmp_path, monkeypatch):
+def _batch_inputs(tmp_path):
     import numpy as np
     import cv2
+    input_dir = tmp_path / 'in'
+    input_dir.mkdir()
+    cv2.imwrite(str(input_dir / 'a.png'), np.full((40, 40, 3), 200, np.uint8))
+    out_dir = tmp_path / 'out'
+    out_dir.mkdir()
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return input_dir, out_dir, os.path.join(root, 'cabana', 'default_params.yml')
+
+
+@pytest.mark.parametrize('logs_name', ['Logs', 'logs'])
+def test_batch_log_lives_in_output_and_survives_a_new_run(tmp_path, monkeypatch, logs_name):
     import cabana.batch as batch_mod
     from cabana.batch import BatchProcessor
 
-    input_dir = tmp_path / 'in'
-    input_dir.mkdir()
-    cv2.imwrite(str(input_dir / 'a.png'), np.full((40, 40, 3), 200, np.uint8))
-    out_dir = tmp_path / 'out'
-    out_dir.mkdir()
+    input_dir, out_dir, param_file = _batch_inputs(tmp_path)
     (out_dir / 'stale.txt').write_text('old result')
     (out_dir / 'StaleDir').mkdir()
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    param_file = os.path.join(root, 'cabana', 'default_params.yml')
+    (out_dir / logs_name).mkdir()
+    (out_dir / logs_name / 'old.log').write_text('earlier run')
     monkeypatch.setattr(batch_mod, 'BatchCabana', _FakeBatchCabana)
+    monkeypatch.setattr(BatchProcessor, 'post_process', lambda self: None)   # no batch outputs
 
-    bp = BatchProcessor(param_file, str(input_dir), str(out_dir), batch_size=5, batch_num=0,
-                        resume=False, ignore_large=False)
-    assert os.path.dirname(bp.run_log.path) == os.path.join(str(out_dir), 'Logs').replace('\\', '/')
-    bp.process()
+    BatchProcessor(param_file, str(input_dir), str(out_dir), batch_size=5, batch_num=0,
+                   resume=False, ignore_large=False).run()
     assert not (out_dir / 'stale.txt').exists() and not (out_dir / 'StaleDir').exists()
-    logs = glob.glob(str(out_dir / 'Logs' / '*.log'))
-    assert len(logs) == 1
-    Log.logger.info('still writing')
-    assert 'still writing' in _read(logs[0])
-    assert 'Min Line Width' in _read(logs[0])      # parameters recorded in the file
-    bp.run_log.close()
+    logs = sorted(os.listdir(out_dir / logs_name))
+    assert 'old.log' in logs and len(logs) == 2          # history kept, new log added
+    new = [f for f in logs if f != 'old.log'][0]
+    assert 'Finished in' in _read(out_dir / logs_name / new)
+    assert _run_handlers() == []
 
 
-def test_batch_setup_failure_closes_its_log(tmp_path):
-    """A bad parameter file must not leave the run's log attached to the logger."""
-    import numpy as np
-    import cv2
+def test_batch_setup_failure_opens_no_log(tmp_path):
     from cabana.batch import BatchProcessor
 
-    input_dir = tmp_path / 'in'
-    input_dir.mkdir()
-    cv2.imwrite(str(input_dir / 'a.png'), np.full((40, 40, 3), 200, np.uint8))
-    out_dir = tmp_path / 'out'
-    out_dir.mkdir()
+    input_dir, out_dir, _ = _batch_inputs(tmp_path)
     bad = tmp_path / 'bad.yml'
     bad.write_text('Configs: [unclosed')
     with pytest.raises(ValueError):
         BatchProcessor(str(bad), str(input_dir), str(out_dir), batch_size=5, batch_num=0,
                        resume=False, ignore_large=False)
-    assert not any(isinstance(h, logging.FileHandler) for h in Log.logger.handlers)
-    logs = glob.glob(str(out_dir / 'Logs' / '*.log'))
-    assert len(logs) == 1 and 'Batch setup failed' in _read(logs[0])
+    assert _run_handlers() == []
+    assert not (out_dir / 'Logs').exists()

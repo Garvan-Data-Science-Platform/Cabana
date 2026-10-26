@@ -115,3 +115,18 @@ defaults as the `cabana-tma` command line options (`core_diameter_um`,
 The segmentation network runs on CUDA when available, on the Apple GPU (MPS)
 on macOS, else on the CPU. Set the environment variable `CABANA_DEVICE` to
 `cpu`, `cuda` or `mps` before importing `cabana` to override the choice.
+
+## Logging
+
+Each run writes a log file to `<output>/Logs/`. To also see progress on the
+console, set up logging once at the start of your script:
+
+```python
+from cabana.log import setup_logging
+setup_logging()              # setup_logging("my_logs") also keeps a log file there
+```
+
+CABANA logs to the `cabana` logger, so it works with your own logging setup
+as well. If you configure logging with `logging.config.dictConfig` after
+importing `cabana`, pass `disable_existing_loggers=False`, otherwise CABANA's
+messages are switched off.

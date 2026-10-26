@@ -10,8 +10,10 @@
 - The console shows only run progress, warnings, errors and where results
   were saved; stage details and parameters go to the log file. Per-image
   warnings are summarised as counts.
-- A run's log does not interfere with a log file your own script has opened
-  with `Log.init_log_path`.
+- Scripts: importing `cabana` no longer prints anything by itself. Call
+  `cabana.log.setup_logging()` to see progress on the console; CABANA's
+  messages also reach your own logging setup.
+- Messages from other GUI actions no longer appear in a running batch's log.
 - Fixed: the GUI could close when a batch run failed during setup (for
   example, a missing parameter file). The error is now reported.
 - Batch runs no longer re-read every input image's metadata for each batch.

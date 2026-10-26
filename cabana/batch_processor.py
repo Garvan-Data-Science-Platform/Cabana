@@ -139,6 +139,8 @@ class BatchProcessor(_BatchProcessor):
 
 if __name__ == "__main__":
     import time
+    from .log import setup_logging
+    setup_logging()
     start_time = time.time()
     BatchProcessor(5).run()
     elapsed = time.time() - start_time

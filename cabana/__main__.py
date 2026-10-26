@@ -41,6 +41,9 @@ def _set_macos_dock_name(name):
 
 
 def main():
+    from .log import setup_logging
+    setup_logging()
+
     # ``python -m cabana tma ...`` runs the TMA preprocessing CLI headless.
     if len(sys.argv) > 1 and sys.argv[1] == 'tma':
         from .tma import main as tma_main

@@ -680,7 +680,7 @@ class Cabana:
 
         # Export stats as formatted text
         stats_txt = join_path(self.output_folder, f"{self.name_wo_ext}_QuantificationResults.txt")
-        with open(stats_txt, 'w') as f:
+        with open(stats_txt, 'w', encoding='utf-8') as f:     # metric names use µm⁻¹
             f.write(f"Quantification Results for {self.name_wo_ext}\n")
             f.write("=" * 50 + "\n\n")
 

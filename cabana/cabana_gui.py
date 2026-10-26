@@ -21,6 +21,7 @@ from PyQt5.QtGui import QDesktopServices
 
 from .ui import *
 from .log import Log
+from .batch import read_checkpoint
 from .themes import THEMES, DEFAULT_THEME
 from .tma import AUTO_START_DIAMETER_UM, ORIENTATIONS, EDITS_FILE
 from .io import DEFAULT_MAX_SIZE, max_image_size, migrate_max_size, save_visualisations
@@ -1966,24 +1967,16 @@ class MainWindow(QMainWindow):
 
         # Read checkpoint file
         Log.logger.info("A checkpoint file exists in the output folder.")
-        with open(checkpoint_path, "r") as f:
-            for line in f:
-                key, value = line.rstrip().split(",")
-                if key == "Input Folder":
-                    input_folder = value
-                elif key == "Batch Size":
-                    batch_size = int(value)
-                elif key == "Batch Number":
-                    batch_num = int(value)
-                elif key == "Ignore Large":
-                    ignore_large = value.lower() == 'true'
-                elif key == "Max Size":
-                    max_size = int(value)
-                elif key == "Save Visualisations":
-                    save_visuals = value.lower() == 'true'
+        ckpt = read_checkpoint(checkpoint_path)
+        input_folder = ckpt.get("input_folder", "")
+        batch_size = ckpt.get("batch_size", batch_size)
+        batch_num = ckpt.get("batch_num", batch_num)
+        ignore_large = ckpt.get("ignore_large", ignore_large)
+        max_size = ckpt.get("max_size")
+        save_visuals = ckpt.get("save_visuals")
 
         # Check if input folder matches
-        if os.path.exists(input_folder):
+        if input_folder and os.path.exists(input_folder):
             resume = os.path.samefile(input_folder, self.input_folder)
 
         # Verify all batch folders exist

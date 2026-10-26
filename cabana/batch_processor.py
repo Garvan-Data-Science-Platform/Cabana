@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 from tkinter import Tk, filedialog
 
-from .batch import BatchProcessor as _BatchProcessor
+from .batch import BatchProcessor as _BatchProcessor, read_checkpoint
 from .log import Log
 from .utils import join_path
 
@@ -77,28 +77,14 @@ class BatchProcessor(_BatchProcessor):
             self.resume = False
             return
 
-        input_folder = ""
-        batch_size = 5
-        batch_num = 0
-        ignore_large = False
-        max_size = None
-        save_visuals = None
         Log.logger.warning("A checkpoint file exists in the output folder.")
-        with open(ckpt_path, "r") as f:
-            for line in f:
-                key, _, value = line.rstrip().partition(",")
-                if key == "Input Folder":
-                    input_folder = value
-                elif key == "Batch Size":
-                    batch_size = int(value)
-                elif key == "Batch Number":
-                    batch_num = int(value)
-                elif key == "Ignore Large":
-                    ignore_large = value.lower() == 'true'
-                elif key == "Max Size":
-                    max_size = int(value)
-                elif key == "Save Visualisations":
-                    save_visuals = value.lower() == 'true'
+        ckpt = read_checkpoint(ckpt_path)
+        input_folder = ckpt.get("input_folder", "")
+        batch_size = ckpt.get("batch_size", 5)
+        batch_num = ckpt.get("batch_num", 0)
+        ignore_large = ckpt.get("ignore_large", False)
+        max_size = ckpt.get("max_size")
+        save_visuals = ckpt.get("save_visuals")
 
         self.resume = (os.path.exists(input_folder)
                        and os.path.samefile(input_folder, self.input_folder))

@@ -18,6 +18,19 @@
   example, a missing parameter file). The error is now reported.
 - Batch runs no longer re-read every input image's metadata for each batch.
 
+### Batch
+
+- Fixed: a batch run could delete its own inputs. A new run clears the output
+  folder, so an output folder that is, or contains, the input or ROI mask
+  folder (for example a TMA export folder) is now refused.
+- Fixed: an input folder path containing a comma, or a damaged checkpoint
+  file, made the GUI close when Process was pressed.
+- Fixed: an input folder without supported images reported a successful run
+  and could remove an interrupted run's checkpoint. It is now refused.
+- Fixed: on Windows, the single-image `.txt` results file failed partway
+  through.
+- Blank 16-bit images are listed in `IgnoredImages.txt`.
+
 ## 0.3.9
 
 ### Segmentation

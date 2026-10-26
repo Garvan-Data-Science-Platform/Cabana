@@ -191,6 +191,7 @@ class BatchCabana:
                     if upper <= lower:
                         Log.logger.warning(f"Image {img_path} has no dynamic range. Skipping.")
                         count_black += 1
+                        f.write(img_path + "\n")
                         continue
                     img = np.clip(img, lower, upper)  # clip to 2nd and 98th percentile to remove outliers
 
@@ -1134,6 +1135,42 @@ class BatchCabana:
             ticks += n_eligible if visuals else 0       # generate_color_maps
         return max(1, ticks)
 
+_CHECKPOINT_FIELDS = {
+    "Input Folder": ("input_folder", str),
+    "Batch Size": ("batch_size", int),
+    "Batch Number": ("batch_num", int),
+    "Ignore Large": ("ignore_large", lambda v: v.lower() == 'true'),
+    "Max Size": ("max_size", int),
+    "Save Visualisations": ("save_visuals", lambda v: v.lower() == 'true'),
+}
+
+
+def read_checkpoint(path):
+    """Settings recorded in a ``.CheckPoint.txt`` as a dict keyed by
+    ``input_folder``, ``batch_size``, ``batch_num``, ``ignore_large``,
+    ``max_size`` and ``save_visuals``. Values are split at the first comma (a
+    path may contain commas); unknown keys and unreadable values are left out,
+    so a truncated file yields fewer keys instead of an error."""
+    settings = {}
+    with open(path, "r") as f:
+        for line in f:
+            key, _, value = line.rstrip("\n").partition(",")
+            if key in _CHECKPOINT_FIELDS:
+                name, convert = _CHECKPOINT_FIELDS[key]
+                try:
+                    settings[name] = convert(value)
+                except ValueError:
+                    pass
+    return settings
+
+
+def _contains(folder, path):
+    """True when ``path`` is ``folder`` or lies inside it."""
+    folder = os.path.normcase(os.path.realpath(folder))
+    path = os.path.normcase(os.path.realpath(path))
+    return os.path.commonpath([folder, path]) == folder
+
+
 class BatchProcessor():
     """
     A class for batch processing of image data for segmentation and analysis.
@@ -1226,8 +1263,13 @@ class BatchProcessor():
             raise FileNotFoundError(f"Parameter file not found: {self.param_file}")
         if not os.path.exists(self.input_folder):
             raise FileNotFoundError(f"Input folder does not exist: {self.input_folder}")
-        if not os.listdir(self.input_folder):
-            raise ValueError(f"Input folder is empty (no images found): {self.input_folder}")
+        if not get_img_paths(self.input_folder):
+            raise ValueError(f"No supported images (tif, png, jpg) in the input folder: {self.input_folder}")
+        # A new run clears the output folder, so it must not hold the inputs
+        for name, folder in (("input", self.input_folder), ("ROI mask", self.mask_dir)):
+            if folder and os.path.exists(self.output_folder) and _contains(self.output_folder, folder):
+                raise ValueError(f"The output folder must not be, or contain, the {name} folder "
+                                 f"(a new run clears the output folder): {self.output_folder}")
 
         # Create output directory if it doesn't exist
         if not os.path.exists(self.output_folder):

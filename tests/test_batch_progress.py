@@ -552,3 +552,79 @@ def test_estimate_progress_total_without_visualisations():
     bc.args = {"Configs": {"Quantification": True, "Gap Analysis": True, "Save Visualisations": False}}
     # the full pipeline (45) minus the colour maps (5)
     assert bc._estimate_progress_total(n_eligible=5, n_input=5) == 40
+
+
+# --- Input safety and checkpoint parsing -------------------------------------
+
+def _default_params():
+    proj_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(proj_root, "cabana", "default_params.yml")
+
+
+def _one_image_folder(folder):
+    import numpy as np, cv2
+    folder.mkdir(parents=True)
+    cv2.imwrite(str(folder / "a.png"), np.full((40, 40, 3), 200, np.uint8))
+    return folder
+
+
+@pytest.mark.parametrize("output", ["same", "parent"])
+def test_output_folder_holding_the_inputs_is_refused(tmp_path, output):
+    """A new run clears the output folder; it must never delete the inputs."""
+    images = _one_image_folder(tmp_path / "cores" / "BF" / "Images")
+    (tmp_path / "cores" / "cores_edits.json").write_text("{}")
+    out = images if output == "same" else tmp_path / "cores"
+    with pytest.raises(ValueError, match="must not be, or contain, the input folder"):
+        BatchProcessor(_default_params(), str(images), str(out), batch_size=5, batch_num=0,
+                       resume=False)
+    assert (images / "a.png").exists() and (tmp_path / "cores" / "cores_edits.json").exists()
+
+
+def test_output_folder_holding_the_masks_is_refused(tmp_path):
+    images = _one_image_folder(tmp_path / "in")
+    masks = tmp_path / "out" / "Masks"
+    masks.mkdir(parents=True)
+    with pytest.raises(ValueError, match="ROI mask folder"):
+        BatchProcessor(_default_params(), str(images), str(tmp_path / "out"), batch_size=5,
+                       batch_num=0, resume=False, mask_dir=str(masks))
+
+
+def test_output_inside_the_input_folder_is_allowed(tmp_path):
+    images = _one_image_folder(tmp_path / "in")
+    BatchProcessor(_default_params(), str(images), str(images / "results"), batch_size=5,
+                   batch_num=0, resume=False)
+
+
+def test_input_folder_without_supported_images_is_refused(tmp_path):
+    folder = tmp_path / "in"
+    folder.mkdir()
+    (folder / "slide.vsi").write_text("not an image")
+    with pytest.raises(ValueError, match="No supported images"):
+        BatchProcessor(_default_params(), str(folder), str(tmp_path / "out"), batch_size=5,
+                       batch_num=0, resume=False)
+
+
+def test_read_checkpoint_tolerates_commas_and_truncation(tmp_path):
+    from cabana.batch import read_checkpoint
+    ckpt = tmp_path / ".CheckPoint.txt"
+    ckpt.write_text("Input Folder,D:/Data/TMA 3, 4/Images\nBatch Size,\nBatch Number,2\n"
+                    "Ignore Large,False\nMax Size,5000\nSave Visualisations,True\nJunk line\n")
+    assert read_checkpoint(str(ckpt)) == {
+        "input_folder": "D:/Data/TMA 3, 4/Images", "batch_num": 2, "ignore_large": False,
+        "max_size": 5000, "save_visuals": True}
+    ckpt.write_text("")
+    assert read_checkpoint(str(ckpt)) == {}
+
+
+def test_blank_16bit_image_is_listed_as_ignored(tmp_path):
+    import numpy as np, cv2
+    images = tmp_path / "in"
+    images.mkdir()
+    cv2.imwrite(str(images / "blank16.png"), np.full((60, 60), 1000, np.uint16))
+    out = tmp_path / "out"
+    out.mkdir()
+    b = BatchCabana(_default_params(), str(images), str(out), batch_size=5, batch_idx=0)
+    b.initialize_params()
+    b.remove_large_images()
+    with open(out / "Eligible" / "IgnoredImages.txt") as f:
+        assert "blank16.png" in f.read()

@@ -16,9 +16,7 @@ import pandas as pd
 from tqdm import tqdm
 from PIL import Image
 import imageio.v3 as iio
-from skimage.feature import peak_local_max
 from skimage.color import rgb2hed, hed2rgb, rgb2gray
-from sklearn.metrics.pairwise import euclidean_distances
 
 # Local application imports
 from .log import Log, LOGS_DIR
@@ -441,7 +439,7 @@ class BatchCabana:
             Log.logger.debug('Areas have been saved in {}'.format(join_path(self.bin_dir, 'ResultsROI.csv')))
 
     def analyze_all_gaps(self):
-        from .stages import roi_mask_for
+        from .stages import fit_gap_circles, roi_mask_for
         min_gap_diameter = self.args["Gap Analysis"]["Minimum Gap Diameter"]
         if min_gap_diameter == 0:
             Log.logger.warning("minimum gap diameter = 0 pixels. Skipping gap analysis.")
@@ -460,55 +458,11 @@ class BatchCabana:
             for img_path in img_paths:
                 img_name = os.path.basename(img_path)
                 self._status(f"Gap analysis: {img_name}")
-                min_gap_radius = min_gap_diameter / 2
-                min_dist = int(np.max([1, min_gap_radius]))
                 img = cv2.imread(img_path, 0)
                 color_img = cv2.imread(join_path(self.eligible_dir, os.path.splitext(img_name)[0][:-4] + ".png"))
-                mask = img.copy()
-
                 # space outside the external ROI mask (e.g. TMA core corners) is not a gap
-                roi = roi_mask_for(self.roimask_dir, os.path.splitext(img_name)[0][:-4])
-                if roi is not None:
-                    mask[roi == 0] = 0
-
-                # set border pixels to zero to avoid partial circles
-                mask[0, :] = mask[-1, :] = mask[:, :1] = mask[:, -1:] = 0
-
-                final_circles = []
-                downsample_factor = 2
-                while True:
-                    dist_map = cv2.distanceTransform(mask, cv2.DIST_L2, cv2.DIST_MASK_PRECISE)
-
-                    # downsample distance map and upscale detected centers to original image size
-                    dist_map_downscaled = cv2.resize(dist_map, None, fx=1/downsample_factor, fy=1/downsample_factor)
-                    centers_downscaled = peak_local_max(dist_map_downscaled, min_distance=min_dist, exclude_border=False)
-                    centers = centers_downscaled * downsample_factor
-
-                    # centers = peak_local_max(dist_map, min_distance=min_dist, exclude_border=False)
-                    radius = dist_map[centers[:, 0], centers[:, 1]]
-
-                    eligible_centers = centers[radius > min_gap_radius, :]
-                    eligible_radius = radius[radius > min_gap_radius]
-                    eligible_circles = np.hstack([eligible_centers, eligible_radius[:, None]])
-
-                    if len(eligible_circles) == 0:
-                        break
-
-                    result = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
-                    while len(eligible_circles) > 0:
-                        if eligible_circles[1:, :].size > 0:
-                            pw_euclidean_dist = \
-                                euclidean_distances(eligible_circles[[0], :2], eligible_circles[1:, :2])[0]
-                            pw_radius_sum = eligible_circles[0, 2] + eligible_circles[1:, 2]
-                            neighbor_idx = np.nonzero(pw_euclidean_dist < pw_radius_sum)[0] + 1
-                            eligible_circles = np.delete(eligible_circles, neighbor_idx, axis=0)
-
-                        circle = eligible_circles[0, :]
-                        result = cv2.circle(result, (int(circle[1]), int(circle[0])), int(circle[2]), (0, 0, 0), -1)
-                        final_circles.append(eligible_circles[0, :])
-                        eligible_circles = np.delete(eligible_circles, 0, axis=0)
-
-                    mask = cv2.cvtColor(result, cv2.COLOR_BGR2GRAY)
+                final_circles = fit_gap_circles(
+                    img, min_gap_diameter, roi_mask_for(self.roimask_dir, os.path.splitext(img_name)[0][:-4]))
 
                 final_result = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
                 color_result = color_img.copy()
@@ -524,9 +478,8 @@ class BatchCabana:
                     Path(color_subdir).mkdir(parents=True, exist_ok=True)
                     cv2.imwrite(join_path(color_subdir, "all_gaps.png"), color_result)
                 # Written even without gaps, so intra-gap analysis sees every image
-                circles = np.array(final_circles) if final_circles else np.zeros((0, 3))
-                areas = np.pi * (circles[:, 2] ** 2) * self.ims_res**2
-                pd.DataFrame({'Area (µm²)': areas, 'X': circles[:, 1], 'Y': circles[:, 0]}).to_csv(
+                areas = np.pi * (final_circles[:, 2] ** 2) * self.ims_res**2
+                pd.DataFrame({'Area (µm²)': areas, 'X': final_circles[:, 1], 'Y': final_circles[:, 0]}).to_csv(
                     join_path(gap_result_dir, "IndividualGaps_" + stem + ".csv"), index=False)
                 if len(final_circles) == 0:
                     names.append(img_name)

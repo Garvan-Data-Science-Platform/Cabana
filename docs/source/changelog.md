@@ -22,6 +22,11 @@
 - Max Size is at least 2048 px (or *No limit*); smaller values are raised.
 - Single-image runs no longer keep a working copy of the input (`Eligible/`).
 - Single-image runs now write the same colour maps as batch runs.
+
+### GUI
+
+- The Gap Analysis page shows intra-fibre and other gaps in different
+  colours over clearer fibres, with a summary of the gaps found.
 - Fixed: a batch run could delete its inputs when the output folder
   contained them; such output folders are now refused.
 - Fixed: the GUI could close on a failed batch setup, a damaged checkpoint or

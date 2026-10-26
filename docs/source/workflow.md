@@ -46,7 +46,7 @@ To begin, select a representative image from your dataset, then work through the
 1. **Gap Analysis toggle.** Turns the gap analysis step on or off for the GUI and batch runs.
 2. **Min Gap Diameter (px).** The smallest gap to report.
 3. **Max Display HDM.** The maximum intensity value of the high-density matrix.
-4. **Analyze** runs the gap analysis on the detected fibres; **Overlay Gaps** draws the gaps over the image.
+4. **Analyze** fills the gaps between the detected fibres with circles: orange for intra-fibre gaps (inside the segmented region) and blue with a dashed outline for the others. Below the button it shows how many gaps were found, how many are intra-fibre, their median diameter and how much of the image they cover. **Overlay Gaps** shows the circles over the faded tissue image, with the fibres drawn on top.
 
 ## Exporting parameters
 

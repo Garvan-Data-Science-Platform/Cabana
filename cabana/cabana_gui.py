@@ -16,7 +16,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QSpinBox,
                              QStatusBar, QLineEdit, QDoubleSpinBox, QStackedWidget, QGridLayout,
                              QAction, QActionGroup, QDialog, QScrollArea, QFrame, QLayout)
 from PyQt5.QtGui import QIcon, QPalette, QFont, QKeySequence
-from PyQt5.QtCore import QSettings, QTimer, QUrl
+from PyQt5.QtCore import QPointF, QSettings, QTimer, QUrl
 from PyQt5.QtGui import QDesktopServices
 
 from .ui import *
@@ -24,7 +24,7 @@ from .log import Log
 from .batch import read_checkpoint
 from .themes import THEMES, DEFAULT_THEME
 from .tma import AUTO_START_DIAMETER_UM, ORIENTATIONS, EDITS_FILE
-from .io import DEFAULT_MAX_SIZE, max_image_size, migrate_max_size, save_visualisations
+from .io import DEFAULT_MAX_SIZE, max_image_size, migrate_max_size, pixel_size_um, save_visualisations
 from .segmenter import generate_rois, mask_from_score
 from .tma_editor import TMACoreEditor
 from .tma_maps import MAP_FILE_FILTER, available_arrays, load_map_file, match_map_to_slide, write_templates
@@ -267,8 +267,9 @@ class MainWindow(QMainWindow):
         self._seg_score = None      # (score map, min_size) of the last segmentation, for re-thresholding
         self.frb_img = None
         self.wdt_img = None
-        self.gap_img = None
-        self.gap_ovl = None
+        self.gap_img = None         # fibre mask view shown under the gap circles
+        self.gap_circles = None     # (row, col, radius) px of the last gap analysis
+        self._gap_intra = None      # per circle: centre inside the segmentation mask
         self.segmentation_worker = None
         self.detection_worker = None
         self.gap_analysis_worker = None
@@ -2500,6 +2501,14 @@ class MainWindow(QMainWindow):
         self.analyze_btn.setStyleSheet(self.primary_btn_style)
         layout.addWidget(self.analyze_btn)
 
+        # Summary of the last gap analysis
+        self.gap_summary_label = QLabel("")
+        self.gap_summary_label.setWordWrap(True)
+        self.gap_summary_label.setStyleSheet(self.value_label_style)
+        self.gap_summary_label.setToolTip("Gaps found by the last analysis: count, median diameter and the\n"
+                                          "share of the image the circles cover. Circles are coloured by size.")
+        layout.addWidget(self.gap_summary_label)
+
         layout.addStretch()
         self.gap_tab.setLayout(layout)
 
@@ -2772,8 +2781,7 @@ class MainWindow(QMainWindow):
             self._seg_score = None
             self.frb_img = None
             self.wdt_img = None
-            self.gap_img = None
-            self.gap_ovl = None
+            self._clear_gap_results()
             self._update_image_status()
         except Exception as e:
             self.ori_img = None
@@ -2808,8 +2816,7 @@ class MainWindow(QMainWindow):
             self._seg_score = None
             self.frb_img = None
             self.wdt_img = None
-            self.gap_img = None
-            self.gap_ovl = None
+            self._clear_gap_results()
             self.segment_btn.setEnabled(self.toggle_seg_btn.isChecked())
             self.detect_btn.setEnabled(True)
             self.reload_btn.setEnabled(True)
@@ -2871,12 +2878,9 @@ class MainWindow(QMainWindow):
             msg.exec_()
 
     def update_overlay_gaps(self):
-        """Overlay gaps on the image"""
-        show_overlay = self.overlay_gaps_cb.isChecked()
-        image = self.gap_ovl if show_overlay else self.gap_img
-
-        if image is not None:
-            self.image_panel.setImage(image, preserve_view=True)
+        """Show the gap circles over the tissue image (Overlay Gaps) or the fibre mask."""
+        if self.gap_img is not None:
+            self._show_gaps(preserve_view=True)
         else:
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Warning)
@@ -3096,20 +3100,79 @@ class MainWindow(QMainWindow):
 
         self.gap_analysis_worker.start()
 
-    def handle_gap_analysis_complete(self, result):
-        """Handle the completed gap analysis result"""
-        self.gap_img = result
-        self.image_panel.setImage(self.gap_img)
-        overlay_img = self.ori_img if (self.seg_img is None or not self.toggle_seg_btn.isChecked()) else self.seg_img
-        # Create mask: True where overlay is NOT white
-        mask = ~((self.gap_img[:, :, 0] == 255) &
-                 (self.gap_img[:, :, 1] == 255) &
-                 (self.gap_img[:, :, 2] == 255))
-        self.gap_ovl = overlay_img.copy()
-        self.gap_ovl[mask] = self.gap_img[mask]
+    # Gap circles: intra-fibre (centre inside the segmentation mask) in orange,
+    # other gaps in blue with a dashed outline; both with a light fill
+    GAP_INTRA_RGB = (230, 120, 20)
+    GAP_OTHER_RGB = (40, 110, 210)
+    GAP_FILL_ALPHA = 35
 
-        # self.gap_ovl = cv2.addWeighted(overlay_img, 0.7, self.gap_img, 0.4, 10)
+    def _clear_gap_results(self):
+        self.gap_img = None
+        self.gap_circles = None
+        self._gap_intra = None
+        self.gap_summary_label.setText("")
+
+    def _show_gaps(self, preserve_view):
+        """Base image with the circles painted live on top, so they stay smooth
+        at any zoom: the fibres in dark grey on white, or with Overlay Gaps the
+        faded tissue image with the fibres drawn over it."""
+        if self.overlay_gaps_cb.isChecked():
+            tissue = self.ori_img if (self.seg_img is None or not self.toggle_seg_btn.isChecked()) else self.seg_img
+            base = (tissue.astype(np.float32) * 0.45 + 255 * 0.55).astype(np.uint8)
+            base[self.frb_img == 0] = (25, 25, 25)
+        else:
+            base = self.gap_img
+        self.image_panel.setImage(base, preserve_view=preserve_view)
+        self.image_panel.set_overlay_painter(self._paint_gaps)    # setImage clears it
+
+    def _segmentation_mask(self):
+        """The current segmentation mask, or None when segmentation is off or not run."""
+        if self._seg_score is None or not self.toggle_seg_btn.isChecked():
+            return None
+        score, min_size = self._seg_score
+        return mask_from_score(score, min_size, self.yml_data["Segmentation"]["Color Threshold"],
+                               self.ori_img.shape)
+
+    def _paint_gaps(self, painter, zoom, to_widget):
+        if self.gap_circles is None:
+            return
+        for (row, col, radius), intra in zip(self.gap_circles, self._gap_intra):
+            colour = QColor(*(self.GAP_INTRA_RGB if intra else self.GAP_OTHER_RGB))
+            pen = QPen(colour)
+            pen.setWidthF(1.5)
+            pen.setCosmetic(True)
+            if not intra:
+                pen.setStyle(Qt.DashLine)
+            fill = QColor(colour)
+            fill.setAlpha(self.GAP_FILL_ALPHA)
+            painter.setPen(pen)
+            painter.setBrush(fill)
+            painter.drawEllipse(QPointF(col + 0.5, row + 0.5), radius, radius)
+
+    def _gap_summary(self, circles):
+        """'N gaps (M intra-fibre) · median Ø … · …% of the image' for the side panel."""
+        if len(circles) == 0:
+            return f"No gaps of at least {self.yml_data['Gap Analysis']['Minimum Gap Diameter']} px found."
+        diameter_px = 2 * float(np.median(circles[:, 2]))
+        size = pixel_size_um(self.img_path) if self.img_path else None
+        diameter = f"{diameter_px * size[0]:.1f} µm ({diameter_px:.0f} px)" if size else f"{diameter_px:.0f} px"
+        covered = np.pi * np.sum(circles[:, 2] ** 2) / self.frb_img.size * 100
+        return (f"{len(circles)} gaps ({int(np.sum(self._gap_intra))} intra-fibre) · "
+                f"median Ø {diameter} · {covered:.0f} % of the image")
+
+    def handle_gap_analysis_complete(self, circles):
+        """Show the fitted gap circles and their summary."""
+        self.gap_circles = circles
+        self.gap_img = np.where(self.frb_img[:, :, None] == 0, 70, 255).astype(np.uint8).repeat(3, axis=2)
+        # Intra-fibre: centre inside the segmentation mask; all gaps without segmentation
+        seg_mask = self._segmentation_mask()
+        rows, cols = circles[:, 0].astype(int), circles[:, 1].astype(int)
+        self._gap_intra = (seg_mask[rows, cols] > 0) if seg_mask is not None else np.ones(len(circles), bool)
+        self.gap_summary_label.setText(self._gap_summary(circles))
+        self.overlay_gaps_cb.blockSignals(True)
         self.overlay_gaps_cb.setChecked(False)
+        self.overlay_gaps_cb.blockSignals(False)
+        self._show_gaps(preserve_view=False)
 
         self.hide_progress_bar()
         self.segment_btn.setEnabled(True)
@@ -3375,6 +3438,7 @@ class MainWindow(QMainWindow):
             edit.setStyleSheet(self.path_edit_style)
         self.tma_status_label.setStyleSheet(self.value_label_style)
         self.progress_label.setStyleSheet(self.value_label_style)
+        self.gap_summary_label.setStyleSheet(self.value_label_style)
 
         # Value labels (slider readouts)
         for label in (self.color_thresh_value, self.num_labels_value, self.max_iters_value,

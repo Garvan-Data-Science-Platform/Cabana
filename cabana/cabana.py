@@ -10,10 +10,8 @@ import imageio.v3 as iio
 from pathlib import Path
 from .detector import FibreDetector
 from .analyzer import SkeletonAnalyzer
-from skimage.feature import peak_local_max
 from .orientation import OrientationAnalyzer
 from skimage.color import rgb2hed, hed2rgb, rgb2gray
-from sklearn.metrics.pairwise import euclidean_distances
 from .utils import create_folder, is_oversized, join_path, max_image_size
 from .io import save_visualisations
 from .segmenter import parse_args, segment_single_image, visualize_fibres
@@ -313,57 +311,12 @@ class Cabana:
 
         # Read images
         img_path = join_path(self.mask_dir, self.name_wo_ext + '_roi.png')
-        min_gap_radius = min_gap_diameter / 2
-        min_dist = int(np.max([1, min_gap_radius]))
-
         img = cv2.imread(img_path, 0)
         color_img = cv2.imread(join_path(self.eligible_dir, self.name_wo_ext + ".png"))
-        mask = img.copy()
 
         # Space outside the external ROI mask (e.g. TMA core corners) is not a gap
-        from .stages import roi_mask_for
-        roi = roi_mask_for(self.roimask_dir, self.name_wo_ext)
-        if roi is not None:
-            mask[roi == 0] = 0
-
-        # Set border pixels to zero to avoid partial circles
-        mask[0, :] = mask[-1, :] = mask[:, :1] = mask[:, -1:] = 0
-
-        final_circles = []
-        downsample_factor = 2
-
-        while True:
-            dist_map = cv2.distanceTransform(mask, cv2.DIST_L2, cv2.DIST_MASK_PRECISE)
-
-            # Downsample distance map and upscale detected centers to original image size
-            dist_map_downscaled = cv2.resize(dist_map, None, fx=1 / downsample_factor, fy=1 / downsample_factor)
-            centers_downscaled = peak_local_max(dist_map_downscaled, min_distance=min_dist, exclude_border=False)
-            centers = centers_downscaled * downsample_factor
-
-            radius = dist_map[centers[:, 0], centers[:, 1]]
-
-            eligible_centers = centers[radius > min_gap_radius, :]
-            eligible_radius = radius[radius > min_gap_radius]
-            eligible_circles = np.hstack([eligible_centers, eligible_radius[:, None]])
-
-            if len(eligible_circles) == 0:
-                break
-
-            result = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
-            while len(eligible_circles) > 0:
-                if eligible_circles[1:, :].size > 0:
-                    pw_euclidean_dist = \
-                        euclidean_distances(eligible_circles[[0], :2], eligible_circles[1:, :2])[0]
-                    pw_radius_sum = eligible_circles[0, 2] + eligible_circles[1:, 2]
-                    neighbor_idx = np.nonzero(pw_euclidean_dist < pw_radius_sum)[0] + 1
-                    eligible_circles = np.delete(eligible_circles, neighbor_idx, axis=0)
-
-                circle = eligible_circles[0, :]
-                result = cv2.circle(result, (int(circle[1]), int(circle[0])), int(circle[2]), (0, 0, 0), -1)
-                final_circles.append(eligible_circles[0, :])
-                eligible_circles = np.delete(eligible_circles, 0, axis=0)
-
-            mask = cv2.cvtColor(result, cv2.COLOR_BGR2GRAY)
+        from .stages import fit_gap_circles, roi_mask_for
+        final_circles = fit_gap_circles(img, min_gap_diameter, roi_mask_for(self.roimask_dir, self.name_wo_ext))
 
         # Create visualizations
         final_result = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
@@ -385,7 +338,7 @@ class Cabana:
 
         # Calculate gap metrics
         from .stages import summary_stats
-        areas = np.pi * (np.array(final_circles)[:, 2] ** 2) * self.ims_res ** 2 if len(final_circles) else np.array([])
+        areas = np.pi * (final_circles[:, 2] ** 2) * self.ims_res ** 2
         radius_values = np.sqrt(areas / np.pi) if len(areas) else np.array([])
 
         for k, v in summary_stats(areas, 'All gaps area in µm²',
@@ -396,8 +349,7 @@ class Cabana:
             self.stats.loc[0, k] = v
 
         # Save gap data to CSV, even without gaps (intra-gap analysis reads it)
-        circles = np.array(final_circles) if len(final_circles) else np.zeros((0, 3))
-        pd.DataFrame({'Area (µm²)': areas, 'X': circles[:, 1], 'Y': circles[:, 0]}).to_csv(
+        pd.DataFrame({'Area (µm²)': areas, 'X': final_circles[:, 1], 'Y': final_circles[:, 0]}).to_csv(
             join_path(gap_result_dir, f"IndividualGaps_{self.name_wo_ext}.csv"), index=False)
 
     def analyze_intra_gaps(self):

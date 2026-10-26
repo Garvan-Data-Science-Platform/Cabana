@@ -21,6 +21,8 @@ from .detector import FibreDetector
 from .analyzer import SkeletonAnalyzer
 from .orientation import OrientationAnalyzer
 from PIL import Image
+from skimage.feature import peak_local_max
+from sklearn.metrics.pairwise import euclidean_distances
 
 from .utils import join_path
 from .viz import mask_color_map, overlay_colorbar, color_survey_with_colorbar
@@ -543,3 +545,50 @@ def write_color_maps(rgb_img, export_subdir, color_subdir):
                          clabel="Curliness", cmap='plasma', dpi=200, font_size=10)
     color_survey_with_colorbar(orient_map, cohere_map, energy_map,
                                join_path(color_subdir, "orient_color_survey.png"))
+
+
+def fit_gap_circles(gap_mask, min_gap_diameter, roi_mask=None, progress=None):
+    """Fill the gaps between fibres with non-overlapping circles.
+
+    ``gap_mask`` is non-zero in the gaps (between fibres). Circles of at
+    least ``min_gap_diameter`` px are placed largest-first on the distance
+    map, repeatedly, until none fits. Space outside ``roi_mask`` (when given)
+    and the image border are not gaps. ``progress(fraction)`` is called after
+    each round with the share of the image filled. Returns an ``(N, 3)``
+    float array of ``(row, col, radius)`` in pixels.
+    """
+    min_gap_radius = min_gap_diameter / 2
+    min_dist = int(np.max([1, min_gap_radius]))
+    mask = gap_mask.copy()
+    if roi_mask is not None:
+        mask[roi_mask == 0] = 0
+    # set border pixels to zero to avoid partial circles
+    mask[0, :] = mask[-1, :] = mask[:, :1] = mask[:, -1:] = 0
+
+    circles = []
+    downsample_factor = 2
+    while True:
+        dist_map = cv2.distanceTransform(mask, cv2.DIST_L2, cv2.DIST_MASK_PRECISE)
+
+        # downsample distance map and upscale detected centers to original image size
+        dist_map_downscaled = cv2.resize(dist_map, None, fx=1 / downsample_factor, fy=1 / downsample_factor)
+        centers = peak_local_max(dist_map_downscaled, min_distance=min_dist,
+                                 exclude_border=False) * downsample_factor
+        radius = dist_map[centers[:, 0], centers[:, 1]]
+        eligible = np.hstack([centers[radius > min_gap_radius, :], radius[radius > min_gap_radius][:, None]])
+        if len(eligible) == 0:
+            break
+
+        while len(eligible) > 0:
+            if eligible[1:, :].size > 0:
+                dist = euclidean_distances(eligible[[0], :2], eligible[1:, :2])[0]
+                overlapping = np.nonzero(dist < eligible[0, 2] + eligible[1:, 2])[0] + 1
+                eligible = np.delete(eligible, overlapping, axis=0)
+            circle = eligible[0, :]
+            cv2.circle(mask, (int(circle[1]), int(circle[0])), int(circle[2]), 0, -1)
+            circles.append(circle)
+            eligible = np.delete(eligible, 0, axis=0)
+        if progress is not None:
+            progress(np.count_nonzero(mask == 0) / mask.size)
+    return np.array(circles) if circles else np.zeros((0, 3))
+

@@ -332,3 +332,19 @@ class TestColourMaps:
         assert Cabana(self._params(tmp_path, False), os.path.join(img_dir, "core1.png"), str(single)).run()
         assert os.listdir(single / "Colors" / "core1") == []
         assert not (single / "Exports" / "core1" / "GapImage.png").exists()
+
+
+def test_fit_gap_circles_fills_gaps_without_overlap():
+    from cabana.stages import fit_gap_circles
+    gaps = np.zeros((200, 200), np.uint8)
+    gaps[20:180, 20:180] = 255                       # one square gap
+    circles = fit_gap_circles(gaps, 10)
+    assert circles.shape[1] == 3 and len(circles) > 1
+    assert circles[:, 2].max() == pytest.approx(80, abs=2)   # the largest fits the square
+    for i in range(len(circles)):                   # circles do not overlap (placed circles are
+        for j in range(i + 1, len(circles)):        # masked with whole-pixel radii: < 1 px slack)
+            d = np.hypot(*(circles[i, :2] - circles[j, :2]))
+            assert d >= circles[i, 2] + circles[j, 2] - 1.0
+    roi = np.zeros_like(gaps)                       # outside the ROI is not a gap
+    assert len(fit_gap_circles(gaps, 10, roi_mask=roi)) == 0
+    assert fit_gap_circles(np.zeros_like(gaps), 10).shape == (0, 3)

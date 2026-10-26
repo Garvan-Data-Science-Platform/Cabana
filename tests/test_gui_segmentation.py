@@ -116,3 +116,25 @@ def test_max_size_box_skips_values_below_2048(app):
     box.setValue(500)
     box.editingFinished.emit()            # typed value below the minimum
     assert box.value() == 2048
+
+
+def test_gap_results_are_painted_live_with_a_summary(win):
+    from cabana.stages import fit_gap_circles
+    frb = np.full((200, 200), 255, np.uint8)        # fibres are 0, gaps 255
+    frb[100, :] = 0
+    win.frb_img = frb
+    win.ori_img = np.full((200, 200, 3), 200, np.uint8)
+    win.img_path = None
+    win._seg_score = None                           # no segmentation: every gap is intra-fibre
+    win.handle_gap_analysis_complete(fit_gap_circles(frb, 10))
+    assert win.gap_img.shape == (200, 200, 3) and win.gap_img[100, 50, 0] == 70
+    assert win.image_panel.overlay_painter == win._paint_gaps
+    assert win._gap_intra.all()
+    n = len(win.gap_circles)
+    text = win.gap_summary_label.text()
+    assert text.startswith(f"{n} gaps ({n} intra-fibre)") and "px" in text
+    win.overlay_gaps_cb.setChecked(True)            # tissue underneath, circles kept
+    assert win.image_panel.overlay_painter == win._paint_gaps
+    win.image_panel.grab()                          # paints without errors
+    win._clear_gap_results()
+    assert win.gap_summary_label.text() == "" and win.gap_circles is None

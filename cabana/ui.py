@@ -642,57 +642,11 @@ class GapAnalysisWorker(QThread):
             self.failed.emit(str(e))
 
     def _run(self):
-        min_gap_radius = self.min_gap_diameter / 2
-        min_dist = int(np.max([1, min_gap_radius]))
-        mask = self.image.copy()
-
-        # set border pixels to zero to avoid partial circles
-        mask[0, :] = mask[-1, :] = mask[:, :1] = mask[:, -1:] = 0
-
-        final_circles = []
-        downsample_factor = 2
-        while True:
-            dist_map = cv2.distanceTransform(mask, cv2.DIST_L2, cv2.DIST_MASK_PRECISE)
-
-            # downsample distance map and upscale detected centers to original image size
-            dist_map_downscaled = cv2.resize(dist_map, None, fx=1 / downsample_factor, fy=1 / downsample_factor)
-            centers_downscaled = peak_local_max(dist_map_downscaled, min_distance=min_dist, exclude_border=False)
-            centers = centers_downscaled * downsample_factor
-
-            # centers = peak_local_max(dist_map, min_distance=min_dist, exclude_border=False)
-            radius = dist_map[centers[:, 0], centers[:, 1]]
-
-            eligible_centers = centers[radius > min_gap_radius, :]
-            eligible_radius = radius[radius > min_gap_radius]
-            eligible_circles = np.hstack([eligible_centers, eligible_radius[:, None]])
-
-            if len(eligible_circles) == 0:
-                break
-
-            result = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
-            while len(eligible_circles) > 0:
-                if eligible_circles[1:, :].size > 0:
-                    pw_euclidean_dist = \
-                        euclidean_distances(eligible_circles[[0], :2], eligible_circles[1:, :2])[0]
-                    pw_radius_sum = eligible_circles[0, 2] + eligible_circles[1:, 2]
-                    neighbor_idx = np.nonzero(pw_euclidean_dist < pw_radius_sum)[0] + 1
-                    eligible_circles = np.delete(eligible_circles, neighbor_idx, axis=0)
-
-                circle = eligible_circles[0, :]
-                result = cv2.circle(result, (int(circle[1]), int(circle[0])), int(circle[2]), (0, 0, 0), -1)
-                final_circles.append(eligible_circles[0, :])
-                eligible_circles = np.delete(eligible_circles, 0, axis=0)
-
-            mask = cv2.cvtColor(result, cv2.COLOR_BGR2GRAY)
-            self.progress_updated.emit(int((np.count_nonzero(mask == 0) / float(np.prod(mask.shape[:2])))*100))
-
-        final_result = cv2.cvtColor(self.image, cv2.COLOR_GRAY2BGR)
-        for circle in final_circles:
-            final_result = cv2.circle(final_result, (int(circle[1]), int(circle[0])),
-                                      int(circle[2]), (0, 95, 95), 1)
-        final_result[self.image == 0] = (255, 255, 0)  # Set background to yellow
-        # Emit the completed result
-        self.gap_analysis_complete.emit(final_result)
+        from .stages import fit_gap_circles
+        # The GUI previews the segmentation mask only (no external ROI mask)
+        circles = fit_gap_circles(self.image, self.min_gap_diameter,
+                                  progress=lambda f: self.progress_updated.emit(int(f * 100)))
+        self.gap_analysis_complete.emit(circles)
 
 class DetectionWorker(QThread):
     progress_updated = pyqtSignal(int)

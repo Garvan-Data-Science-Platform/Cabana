@@ -41,6 +41,14 @@ def mask_color_map(img, mask, rgb_color=[0.224, 1.0, 0.0784], sigma=0.5):
     return glow
 
 
+def colorbar_font_size(image_height):
+    """Colour-bar text size (points) for an image of ``image_height`` px: about
+    4 % of the image height, at least 12 pt. The figures are saved at the
+    image's own pixel size, so a fixed size would shrink to specks on large
+    images such as whole TMA cores."""
+    return max(12.0, 0.04 * image_height * 72 / 100)
+
+
 def _save_figure(fig, image_ax, image_height, save_path):
     """Save a figure as an RGB PNG at the resolution that draws the image in
     ``image_ax`` at its own pixel size (no enlargement, no detail lost).
@@ -62,7 +70,7 @@ def _save_figure(fig, image_ax, image_height, save_path):
 
 
 def color_survey_with_colorbar(orient, coherency, energy, save_path,
-                               clabel="Color Survey", dpi=100, font_size=12):
+                               clabel="Color Survey", dpi=100, font_size=None):
     """Color survey visualization with a colorbar (thread-safe)."""
     hue = (((orient + np.pi / 2) / np.pi) * 179).astype(np.uint8)
     saturation = (coherency * 255).astype(np.uint8)
@@ -71,6 +79,7 @@ def color_survey_with_colorbar(orient, coherency, energy, save_path,
     colored_img = cv2.cvtColor(hsv_image, cv2.COLOR_HSV2RGB)
 
     height, width = orient.shape[:2]
+    font_size = font_size or colorbar_font_size(height)
     fig = Figure(figsize=(width / dpi * 1.2, height / dpi), dpi=dpi)
     canvas = FigureCanvasAgg(fig)
     gs = fig.add_gridspec(1, 2, width_ratios=[20, 1], wspace=0.02)
@@ -82,7 +91,7 @@ def color_survey_with_colorbar(orient, coherency, energy, save_path,
     sm = matplotlib.cm.ScalarMappable(cmap="hsv", norm=norm)
     sm.set_array(orient)
     cbar = fig.colorbar(sm, cax=cax)
-    cbar.ax.set_ylabel(clabel, fontsize=font_size)
+    cbar.ax.set_ylabel(clabel, fontsize=font_size, labelpad=0.6 * font_size)
     cbar.ax.tick_params(labelsize=font_size)
     cbar.set_ticks(ticks=[-np.pi / 2, -np.pi / 4, 0, np.pi / 4, np.pi / 2],
                    labels=[r'-$\pi$/2', r'-$\pi$/4', '0', r'$\pi$/4', r'$\pi$/2'])
@@ -93,9 +102,10 @@ def color_survey_with_colorbar(orient, coherency, energy, save_path,
 
 def overlay_colorbar(rgb_img, img, save_path,
                      clabel="Curvature (degrees)", cmap='plasma',
-                     mode="overwrite", dpi=100, font_size=12):
+                     mode="overwrite", dpi=100, font_size=None):
     """Overlay a colorbar on an image (thread-safe)."""
     height, width = img.shape[:2]
+    font_size = font_size or colorbar_font_size(height)
 
     if mode == "overwrite":
         colormap = matplotlib.colormaps.get_cmap(cmap)
@@ -134,7 +144,7 @@ def overlay_colorbar(rgb_img, img, save_path,
     sm = matplotlib.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array(img)
     cbar = fig.colorbar(sm, cax=cax)
-    cbar.ax.set_ylabel(clabel, fontsize=font_size)
+    cbar.ax.set_ylabel(clabel, fontsize=font_size, labelpad=0.6 * font_size)
     cbar.ax.tick_params(labelsize=font_size)
     _save_figure(fig, ax, height, save_path)
     fig.clf()
@@ -142,8 +152,9 @@ def overlay_colorbar(rgb_img, img, save_path,
 
 
 def add_colorbar(rgb_img, img, clabel="Curvature (degrees)", cmap='inferno',
-                 dpi=100, font_size=12):
+                 dpi=100, font_size=None):
     height, width = img.shape[:2]
+    font_size = font_size or colorbar_font_size(height)
     colormap = matplotlib.colormaps.get_cmap(cmap)
     colored_img = colormap(img / np.max(img))[:, :, :3]
     hsv_img = cv2.cvtColor((colored_img * 255).astype(np.uint8), cv2.COLOR_RGB2HSV)
@@ -160,7 +171,7 @@ def add_colorbar(rgb_img, img, clabel="Curvature (degrees)", cmap='inferno',
     cax = divider.append_axes("right", size="5%", pad=0.1)
     cax.tick_params(labelsize=font_size)
     cbar = fig2.colorbar(img_tmp, cax=cax)
-    cbar.ax.set_ylabel(clabel, fontsize=font_size)
+    cbar.ax.set_ylabel(clabel, fontsize=font_size, labelpad=0.6 * font_size)
     fig2.patch.set_visible(False)
     ax2.axis('off')
     canvas = FigureCanvasAgg(fig2)
@@ -183,11 +194,12 @@ def direction_rgb(theta):
 
 
 def image_with_colorbar(img_rgb, save_path, cmap, vmin, vmax, clabel, ticks=None,
-                        extend="neither", font_size=10, norm=None, ticklabels=None):
+                        extend="neither", font_size=None, norm=None, ticklabels=None):
     """Save ``img_rgb`` with a colour bar beside it, drawn at its own pixel size.
     ``norm`` replaces the vmin..vmax scale (e.g. a BoundaryNorm for classes) and
     ``ticklabels`` names the ``ticks``."""
     height, width = img_rgb.shape[:2]
+    font_size = font_size or colorbar_font_size(height)
     fig = Figure(figsize=(width / 100 * 1.25, height / 100), dpi=100)
     FigureCanvasAgg(fig)
     gs = fig.add_gridspec(1, 2, width_ratios=[20, 1], wspace=0.03)
@@ -198,7 +210,7 @@ def image_with_colorbar(img_rgb, save_path, cmap, vmin, vmax, clabel, ticks=None
     cbar = fig.colorbar(sm, cax=fig.add_subplot(gs[0, 1]), extend=extend, ticks=ticks)
     if ticklabels is not None:
         cbar.ax.set_yticklabels(ticklabels)
-    cbar.ax.set_ylabel(clabel, fontsize=font_size)
+    cbar.ax.set_ylabel(clabel, fontsize=font_size, labelpad=0.6 * font_size)
     cbar.ax.tick_params(labelsize=font_size)
     _save_figure(fig, ax, height, save_path)
     fig.clf()

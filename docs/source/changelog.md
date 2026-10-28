@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- The colour bars of the saved maps have larger text, scaled to the image
+  size, so they stay readable on large images such as whole TMA cores.
+
 ## 0.3.13
 
 - Length maps use a wider colour range (blue for short to red for long

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.14
 
 - The colour bars of the saved maps have larger text, scaled to the image
   size, so they stay readable on large images such as whole TMA cores.

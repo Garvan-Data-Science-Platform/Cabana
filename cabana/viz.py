@@ -183,8 +183,10 @@ def direction_rgb(theta):
 
 
 def image_with_colorbar(img_rgb, save_path, cmap, vmin, vmax, clabel, ticks=None,
-                        extend="neither", font_size=10):
-    """Save ``img_rgb`` with a colour bar beside it, drawn at its own pixel size."""
+                        extend="neither", font_size=10, norm=None, ticklabels=None):
+    """Save ``img_rgb`` with a colour bar beside it, drawn at its own pixel size.
+    ``norm`` replaces the vmin..vmax scale (e.g. a BoundaryNorm for classes) and
+    ``ticklabels`` names the ``ticks``."""
     height, width = img_rgb.shape[:2]
     fig = Figure(figsize=(width / 100 * 1.25, height / 100), dpi=100)
     FigureCanvasAgg(fig)
@@ -192,8 +194,10 @@ def image_with_colorbar(img_rgb, save_path, cmap, vmin, vmax, clabel, ticks=None
     ax = fig.add_subplot(gs[0, 0])
     ax.imshow(img_rgb, interpolation="nearest")
     ax.axis("off")
-    sm = matplotlib.cm.ScalarMappable(cmap=cmap, norm=matplotlib.colors.Normalize(vmin=vmin, vmax=vmax))
+    sm = matplotlib.cm.ScalarMappable(cmap=cmap, norm=norm or matplotlib.colors.Normalize(vmin=vmin, vmax=vmax))
     cbar = fig.colorbar(sm, cax=fig.add_subplot(gs[0, 1]), extend=extend, ticks=ticks)
+    if ticklabels is not None:
+        cbar.ax.set_yticklabels(ticklabels)
     cbar.ax.set_ylabel(clabel, fontsize=font_size)
     cbar.ax.tick_params(labelsize=font_size)
     _save_figure(fig, ax, height, save_path)
@@ -215,4 +219,25 @@ def skeleton_value_map(values, save_path, clabel, cmap, rgb_img, percentile=99, 
     colours = matplotlib.colormaps[cmap](np.clip(wide[shown] / vmax, 0, 1))[:, :3]
     out[shown] = (colours * 255).astype(np.uint8)
     image_with_colorbar(out, save_path, cmap, 0, vmax, clabel, extend="max")
+
+
+# Curvature classes of the curvature maps, in degrees of angle change
+CURVATURE_EDGES = (15, 45)
+CURVATURE_COLOURS = ("#2c7bb6", "#fdae61", "#d7191c")
+CURVATURE_LABELS = ("straight\n< 15°", "wavy\n15-45°", "curly\n> 45°")
+
+
+def skeleton_class_map(values, save_path, clabel, edges, colours, labels, rgb_img, fade=0.6):
+    """Like :func:`skeleton_value_map`, but each fibre pixel takes the colour
+    of its class: values below ``edges[0]`` are class 1, between ``edges[0]``
+    and ``edges[1]`` class 2, and so on (``len(colours) == len(edges) + 1``)."""
+    wide = cv2.dilate(values.astype(np.float32), np.ones((3, 3), np.uint8))   # keeps the larger value
+    out = (rgb_img[:, :, :3].astype(np.float32) * (1 - fade) + 255 * fade).astype(np.uint8)
+    shown = wide > 0
+    classes = np.digitize(wide[shown], edges)
+    out[shown] = (np.array([matplotlib.colors.to_rgb(c) for c in colours]) * 255).astype(np.uint8)[classes]
+    n = len(colours)
+    image_with_colorbar(out, save_path, matplotlib.colors.ListedColormap(colours), 0, n, clabel,
+                        ticks=np.arange(n) + 0.5, ticklabels=labels,
+                        norm=matplotlib.colors.BoundaryNorm(np.arange(n + 1), n))
 

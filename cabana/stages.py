@@ -26,7 +26,8 @@ from sklearn.metrics.pairwise import euclidean_distances
 
 from .utils import join_path
 from .viz import (mask_color_map, overlay_colorbar, color_survey_with_colorbar, skeleton_value_map,
-                  image_with_colorbar, DIRECTION_CMAP)
+                  skeleton_class_map, image_with_colorbar, DIRECTION_CMAP, CURVATURE_EDGES,
+                  CURVATURE_COLOURS, CURVATURE_LABELS)
 
 
 
@@ -548,10 +549,11 @@ def write_color_maps(rgb_img, export_subdir, color_subdir):
                                clabel="Orientation (rad)")
     overlay_colorbar(rgb_img, cohere_map, join_path(color_subdir, "color_coherency.png"),
                      clabel="Coherency", mode="overlay")
-    skeleton_value_map(length_map, join_path(color_subdir, "color_length.png"), "Length (µm)", "viridis", rgb_img)
-    for suffix, path in curves:
-        skeleton_value_map(tifffile.imread(path) / 180, join_path(color_subdir, "color_curve" + suffix + ".png"),
-                           "Curliness", "viridis", rgb_img)
+    skeleton_value_map(length_map, join_path(color_subdir, "color_length.png"), "Length (µm)", "turbo", rgb_img)
+    for suffix, path in curves:     # curve maps are in degrees of angle change
+        skeleton_class_map(tifffile.imread(path), join_path(color_subdir, "color_curve" + suffix + ".png"),
+                           f"Curvature ({suffix.lstrip('_')} px window)", CURVATURE_EDGES, CURVATURE_COLOURS,
+                           CURVATURE_LABELS, rgb_img)
     color_survey_with_colorbar(orient_map, cohere_map, energy_map,
                                join_path(color_subdir, "orient_color_survey.png"))
 

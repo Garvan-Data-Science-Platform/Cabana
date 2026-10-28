@@ -37,7 +37,7 @@ Values referring to *WIDTH*, *ROI* and *HDM* are based on the following outputs:
 | Branchpoints | Number of fibre branchpoints. | Count of branchpoints in detected ridges. |
 | Branchpoint Density (1/µm) | Branchpoint count normalized to fibre length. | Number of branchpoints / Total fibre length (µm) |
 | Box-Counting Fractal Dimension | Indicator of structural complexity. Values in [1, 2] | It is an indicator for the capability of filling space. A more complex structure has a higher tendency to fill up the whole space, thus a higher fractal dimension.<br><br>The space filling tendency is measured as the slope of a linear fit to points represented as $(\log(1/\epsilon_{i}),\ \log(N(\epsilon_{i}))$ where $\epsilon_{i}\ $is the box size, and $N(\epsilon_{i})$ represents the count of boxes containing the structure (i.e. ridges). Typically, $\epsilon_{i}$ spans from 2 to one-quarter of the image\'s largest dimension. Refer to [here](https://imagej.nih.gov/ij/plugins/fraclac/FLHelp/BoxCounting.htm) for more information. |
-| Curvature | Mean angle change across a user-defined window size. | Example: Curvature_20 refers to curvature within a 20px sliding window. |
+| Curvature | Mean angle change (degrees) across a user-defined window size. | Example: Curvature (win_sz=20) refers to curvature within a 20px sliding window. |
 | Lacunarity | Measure of gaps in the matrix. Larger values indicate larger gaps. | Calculated as $\ |
 | Normalized Lacunarity | Lacunarity normalized to total image area (value in [0, 1]). | (Lacunarity - 1) / ((1/area ratio) - 1), where area ratio is the ratio of the number of ridge pixels to the total number of pixels. Refer to [here](https://sci-hub.mksa.top/10.1016/j.jsg.2010.08.010) for more detail. |
 

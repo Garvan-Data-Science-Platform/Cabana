@@ -467,3 +467,21 @@ def test_remove_empty_dir(tmp_path):
     remove_empty_dir(str(full))
     remove_empty_dir(str(tmp_path / "missing"))          # no error
     assert not empty.exists() and (full / "a.png").exists()
+
+
+def test_curvature_class_map_colours_fibres_by_class(tmp_path, monkeypatch):
+    import matplotlib
+    from cabana import viz
+    captured = {}
+    monkeypatch.setattr(viz, "image_with_colorbar",
+                        lambda img, path, cmap, vmin, vmax, label, **kw: captured.update(img=img, label=label, **kw))
+    values = np.zeros((40, 60), np.float32)
+    values[10, 10], values[10, 30], values[10, 50] = 5, 30, 60          # straight, wavy, curly (degrees)
+    rgb = np.full((40, 60, 3), 200, np.uint8)
+    viz.skeleton_class_map(values, str(tmp_path / "c.png"), "Curvature", viz.CURVATURE_EDGES,
+                           viz.CURVATURE_COLOURS, viz.CURVATURE_LABELS, rgb)
+    img = captured["img"]
+    expected = [tuple(int(v * 255) for v in matplotlib.colors.to_rgb(c)) for c in viz.CURVATURE_COLOURS]
+    assert [tuple(img[10, x]) for x in (10, 30, 50)] == expected
+    assert tuple(img[30, 30]) == (233, 233, 233)                        # faded: 200 * 0.4 + 255 * 0.6
+    assert list(captured["ticklabels"]) == list(viz.CURVATURE_LABELS)

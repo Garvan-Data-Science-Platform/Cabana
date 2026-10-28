@@ -117,7 +117,7 @@ iii. **Colors**
    a. all_gaps: gaps in the whole tissue, over the faded image: intra-fibre gaps in orange, other gaps in blue with a dashed outline
    b. angular_hist: angular distribution of fibre orientations.
    c. color_coherency: orientation coherency/alignment in a local window =2 for OrientationJ plugin) of the original image. The rule of thumb for the filter size is to be about 3 times the standard deviation (sigma value) in each direction, i.e. window size ~6*2=12px.
-   d. colour_curve: detected fibres coloured by curliness (one image per curvature window).
+   d. colour_curve: detected fibres coloured by curvature class: straight (< 15°), wavy (15 to 45°) or curly (> 45°), one image per curvature window.
    e. colour_energy: vector field visualization of orientation, with vector lengths weighted by energy, i.e., gradient vector magnitude.
    f. colour_length: detected fibres coloured by fibre length. Note: this only applies to fibres without branches.
    g. colour_mask: detected ridges and branches

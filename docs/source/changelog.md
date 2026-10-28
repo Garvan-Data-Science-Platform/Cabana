@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Length maps use a wider colour range (blue for short to red for long
+  fibres); curvature maps show each fibre as straight (< 15°), wavy (15 to
+  45°) or curly (> 45°), the same unit as the curvature columns of the
+  results.
+
 ## 0.3.12
 
 - Fixed: batch runs stopped at the colour maps when an input image had a

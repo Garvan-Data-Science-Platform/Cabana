@@ -10,7 +10,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from cabana.scores import parse_image_name, generate_mean_std_sem, compute_scores
+from cabana.scores import (parse_image_name, generate_mean_std_sem, compute_scores,
+                           COMPACT_COLUMNS, compact_results, write_compact_results)
 
 
 # ---------------------------------------------------------------------------
@@ -391,3 +392,69 @@ class TestChannelTokenAndSampleStats:
         assert abs(agg.loc['K1', 'Length STD'] - 50 ** 0.5) < 1e-9
         assert abs(agg.loc['K1', 'Length SEM'] - (50 ** 0.5) / 2 ** 0.5) < 1e-9
         assert np.isnan(agg.loc['K2', 'Length STD']) and np.isnan(agg.loc['K2', 'Length SEM'])
+
+
+# ---------------------------------------------------------------------------
+# compact_results
+# ---------------------------------------------------------------------------
+
+FULL_COLUMNS = [
+    'Image', 'Total Image Area (µm²)', 'Fibre Area (HDM, µm²)', '% HDM Area',
+    'Avg Thickness (HDM, µm)', 'Mean Fibre Intensity (HDM)', 'Fibre Area (ROI, µm²)',
+    '% ROI Area', 'Avg Thickness (ROI, µm)', 'Mean Fibre Intensity (ROI)',
+    'Fibre Area (WIDTH, µm²)', '% WIDTH Area', 'Fibre Coverage (WIDTH/ROI)',
+    'Avg Thickness (WIDTH, µm)', 'Area of Fibre Spines (µm²)', 'Mean Fibre Intensity (WIDTH)',
+    'Lacunarity', 'Normalized Lacunarity', 'Total Length (µm)', 'Endpoints',
+    'Endpoints Density (µm⁻¹)', 'Avg Length (µm)', 'Branchpoints', 'Branchpoints Density (µm⁻¹)',
+    'Box-Counting Fractal Dimension', 'Curvature (win_sz=10)', 'Curvature (win_sz=20)',
+    'Orient. Alignment', 'Orient. Variance', 'Orient. Alignment (ROI)', 'Orient. Variance (ROI)',
+    'Orient. Alignment (HDM)', 'Orient. Variance (HDM)', 'Orient. Alignment (WIDTH)',
+    'Orient. Variance (WIDTH)', 'Mean (All gaps area in µm²)', 'Normalized Mean (All gaps area)',
+    'Mean (All gaps radius in µm)', 'Std (All gaps radius in µm)', 'Median (All gaps radius in µm)',
+    'Percentile5 (All gaps radius in µm)', 'Gap Circles Count (All)', 'Gap density (All, µm⁻²)',
+    'Mean (ROI gaps radius in µm)', 'Std (ROI gaps radius in µm)', 'Median (ROI gaps radius in µm)',
+    'Gap Circles Count (ROI)', 'Gap density (ROI, µm⁻²)', 'Image Res. (µm/pixel)',
+]
+
+
+def _full_df():
+    return pd.DataFrame([['img.png'] + list(range(len(FULL_COLUMNS) - 1))], columns=FULL_COLUMNS)
+
+
+class TestCompactResults:
+    def test_keeps_only_compact_columns_in_order(self):
+        out = compact_results(_full_df())
+        assert list(out.columns) == [
+            'Image', 'Total Image Area (µm²)', '% HDM Area', 'Avg Thickness (HDM, µm)',
+            'Mean Fibre Intensity (HDM)', '% ROI Area', 'Avg Thickness (ROI, µm)',
+            'Mean Fibre Intensity (ROI)', '% WIDTH Area', 'Fibre Coverage (WIDTH/ROI)',
+            'Avg Thickness (WIDTH, µm)', 'Mean Fibre Intensity (WIDTH)', 'Lacunarity',
+            'Total Length (µm)', 'Avg Length (µm)', 'Endpoints Density (µm⁻¹)',
+            'Branchpoints Density (µm⁻¹)', 'Box-Counting Fractal Dimension',
+            'Curvature (win_sz=10)', 'Curvature (win_sz=20)',
+            'Orient. Alignment (ROI)', 'Orient. Variance (ROI)',
+            'Orient. Alignment (WIDTH)', 'Orient. Variance (WIDTH)',
+            'Mean (All gaps radius in µm)', 'Std (All gaps radius in µm)',
+            'Median (All gaps radius in µm)', 'Gap Circles Count (All)', 'Gap density (All, µm⁻²)',
+            'Mean (ROI gaps radius in µm)', 'Std (ROI gaps radius in µm)',
+            'Median (ROI gaps radius in µm)', 'Gap Circles Count (ROI)', 'Gap density (ROI, µm⁻²)',
+            'Image Res. (µm/pixel)']
+        assert out['Image'].iloc[0] == 'img.png'
+        assert len(out) == 1
+
+    def test_missing_groups_are_skipped(self):
+        df = _full_df().drop(columns=[c for c in FULL_COLUMNS if 'gaps' in c or 'Gap' in c or 'ROI' in c])
+        out = compact_results(df)
+        assert not any('gap' in c.lower() or 'ROI' in c for c in out.columns)
+        assert 'Avg Thickness (WIDTH, µm)' in out.columns
+
+    def test_scores_inputs_are_kept(self):
+        kept = set(COMPACT_COLUMNS)
+        for c in ('Avg Thickness (WIDTH, µm)', 'Orient. Alignment (WIDTH)', 'Endpoints Density (µm⁻¹)'):
+            assert c in kept
+
+    def test_write_beside_results_csv(self, tmp_path):
+        full = tmp_path / 'QuantificationResults.csv'
+        path = write_compact_results(_full_df(), str(full))
+        assert path == str(tmp_path / 'QuantificationResults_Compact.csv')
+        assert len(pd.read_csv(path).columns) == 35

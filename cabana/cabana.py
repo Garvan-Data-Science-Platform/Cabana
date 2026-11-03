@@ -528,6 +528,8 @@ class Cabana:
         stats_csv = join_path(self.output_folder, f"{self.name_wo_ext}_QuantificationResults.csv")
         self.stats.to_csv(stats_csv, index=False, float_format='%.3f')
         Log.logger.info(f'Statistics have been saved to {stats_csv}')
+        from .scores import write_compact_results
+        write_compact_results(self.stats, stats_csv)
 
         # Export stats as formatted text
         stats_txt = join_path(self.output_folder, f"{self.name_wo_ext}_QuantificationResults.txt")

@@ -1436,10 +1436,14 @@ class BatchProcessor():
         # Eligible/ holds working copies of the inputs; it stays in the batch
         # folders, which are deleted at the end (the list of ignored images
         # is written to the output root)
+        # Never overwrite: a new run has already cleared the output folder in
+        # process(), and a resumed run may be repeating a consolidation that was
+        # interrupted after moving some results out of Batches/ (overwriting
+        # here deleted them, leaving only the merged CSVs).
         sub_folders = ['ROIs', 'Bins', 'Masks', 'HDM', 'Exports', 'Colors']
         for sub_folder in sub_folders:
-            create_folder(join_path(self.output_folder, sub_folder, ""))
-        create_folder(join_path(self.output_folder, "Masks", "GapAnalysis"))
+            create_folder(join_path(self.output_folder, sub_folder, ""), overwrite=False)
+        create_folder(join_path(self.output_folder, "Masks", "GapAnalysis"), overwrite=False)
         current_step += 1
         self.update_progress(post_span_start + (current_step / total_steps) * post_span)
 
@@ -1564,10 +1568,12 @@ class BatchProcessor():
             merged_df.to_csv(join_path(self.output_folder, 'QuantificationResults.csv'), index=False)
             Log.logger.info('Statistics have been saved to '
                             + join_path(self.output_folder, 'QuantificationResults.csv'))
+            from .scores import write_compact_results
+            write_compact_results(merged_df, join_path(self.output_folder, 'QuantificationResults.csv'))
 
         # Generate per-patient statistics and scores
         if self.generate_stats or self.generate_scores:
-            from .scores import generate_mean_std_sem, compute_scores
+            from .scores import generate_mean_std_sem, compute_scores, compact_results
 
             results_csv = join_path(self.output_folder, 'QuantificationResults.csv')
             if os.path.exists(results_csv):
@@ -1576,11 +1582,18 @@ class BatchProcessor():
                 stats_path = join_path(self.output_folder,
                     'QuantificationResults_MEAN_STD_SEM.csv') if self.generate_stats else None
                 agg_df = generate_mean_std_sem(results_data, stats_path)
+                # The compact companions: same statistics and scores (the
+                # scores use only compact columns), compact column set
+                compact_stats_path = join_path(self.output_folder,
+                    'QuantificationResults_Compact_MEAN_STD_SEM.csv') if self.generate_stats else None
+                compact_agg_df = generate_mean_std_sem(compact_results(results_data), compact_stats_path)
 
                 if self.generate_scores and agg_df is not None and len(agg_df) > 0:
                     scores_path = join_path(self.output_folder,
                         'QuantificationResults_SCORES.csv')
                     compute_scores(agg_df, scores_path)
+                    compute_scores(compact_agg_df, join_path(self.output_folder,
+                        'QuantificationResults_Compact_SCORES.csv'))
 
         # Remove checkpoint file on successful completion
         if os.path.exists(join_path(self.output_folder, '.CheckPoint.txt')):

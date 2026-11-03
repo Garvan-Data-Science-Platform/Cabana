@@ -98,6 +98,8 @@ defaults as the `cabana-tma` command line options (`core_diameter_um`,
 
 - `QuantificationResults.csv`: one row per analysed image (or block of a
   split image), columns described in [Read-outs](readouts.md).
+- `QuantificationResults_Compact.csv`: the same rows with the
+  [compact column set](readouts.md#compact-results), for quick inspection.
 - `QuantificationResults_MEAN_STD_SEM.csv`: per-patient mean, standard
   deviation and standard error over the replicate images of a patient (see
   [Image naming](workflow.md#image-naming-for-per-patient-statistics)). Patients
@@ -105,8 +107,12 @@ defaults as the `cabana-tma` command line options (`core_diameter_um`,
   both QuPath slide exports and the TMA core export name their files, for
   example `1734.vsi - TMA1_BF_A4Annotation (Tumor)_1`), otherwise the
   first token of the name.
+- `QuantificationResults_Compact_MEAN_STD_SEM.csv`: the same statistics for
+  the compact column set.
 - `QuantificationResults_SCORES.csv`: Rigidity and Bundling collagen risk
   scores computed from the per-patient means.
+- `QuantificationResults_Compact_SCORES.csv`: the same scores with the
+  compact column set.
 - `version_params.yaml`: the parameters, Cabana version, git commit and the
   folders (including the ROI mask folder) used for the run.
 

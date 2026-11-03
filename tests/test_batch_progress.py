@@ -467,6 +467,118 @@ def test_post_process_moves_results_and_merges_summaries(tmp_path):
     assert len(pd.read_csv(out / "QuantificationResults.csv")) == 2
 
 
+def test_post_process_resumed_keeps_already_consolidated_results(tmp_path):
+    """A consolidation interrupted after moving the images out of Batches/
+    (then resumed) must not delete what it already moved."""
+    import pandas as pd
+    out = tmp_path / "out"
+    for sub in ("ROIs", "Bins", "Masks", "HDM"):
+        (out / sub).mkdir(parents=True)
+        (out / sub / "img0.png").write_bytes(b"png")
+    (out / "Exports" / "img0_roi").mkdir(parents=True)
+    (out / "Exports" / "img0_roi" / "Length_Map.tif").write_bytes(b"tif")
+    (out / "Colors" / "img0_roi").mkdir(parents=True)
+    (out / "Colors" / "img0_roi" / "all_gaps.png").write_bytes(b"png")
+    (out / "Masks" / "GapAnalysis").mkdir()
+    (out / "Masks" / "GapAnalysis" / "IndividualGaps_img0_roi.csv").write_text("a\n1\n")
+    bf = out / "Batches" / "batch_0"          # only the CSVs are left behind
+    (bf / "Bins").mkdir(parents=True)
+    (bf / "Eligible").mkdir()
+    (bf / "Eligible" / "IgnoredImages.txt").write_text("")
+    pd.DataFrame({"Image": ["img0"], "Mean": [1]}).to_csv(bf / "Bins" / "ResultsROI.csv", index=False)
+    pd.DataFrame({"Image": ["img0"], "Value": [1]}).to_csv(bf / "QuantificationResults.csv", index=False)
+    bp = _make_processor(None)
+    bp.output_folder = str(out)
+    bp.batch_num = 0
+    bp.generate_stats = bp.generate_scores = False
+    bp.status_callback = None
+    bp.post_process()
+    assert not (out / "Batches").exists()
+    for sub in ("ROIs", "Bins", "Masks", "HDM"):
+        assert (out / sub / "img0.png").exists(), sub
+    assert (out / "Exports" / "img0_roi" / "Length_Map.tif").exists()
+    assert (out / "Colors" / "img0_roi" / "all_gaps.png").exists()
+    assert (out / "Masks" / "GapAnalysis" / "IndividualGaps_img0_roi.csv").exists()
+    assert len(pd.read_csv(out / "Bins" / "ResultsROI.csv")) == 1
+    assert len(pd.read_csv(out / "QuantificationResults.csv")) == 1
+
+
+def test_post_process_writes_compact_results_and_stats(tmp_path):
+    """The compact per-image file and, with Stats on, its per-patient
+    companion are written beside the full files; SCORES is unchanged."""
+    import pandas as pd
+    out = tmp_path / "out"
+    bf = out / "Batches" / "batch_0"
+    (bf / "Eligible").mkdir(parents=True)
+    (bf / "Eligible" / "IgnoredImages.txt").write_text("")
+    pd.DataFrame({
+        "Image": ["1734.vsi - TMA1_BF_A4Annotation (Tumor)_1_roi.png",
+                  "1734.vsi - TMA1_BF_A5Annotation (Tumor)_2_roi.png"],
+        "Fibre Area (HDM, µm²)": [1.0, 2.0],
+        "% HDM Area": [10.0, 20.0],
+        "Endpoints": [3, 5],
+        "Endpoints Density (µm⁻¹)": [0.1, 0.2],
+    }).to_csv(bf / "QuantificationResults.csv", index=False)
+    bp = _make_processor(None)
+    bp.output_folder = str(out)
+    bp.batch_num = 0
+    bp.generate_stats = True
+    bp.generate_scores = False
+    bp.status_callback = None
+    bp.post_process()
+    compact = pd.read_csv(out / "QuantificationResults_Compact.csv")
+    assert list(compact.columns) == ["Image", "% HDM Area", "Endpoints Density (µm⁻¹)"]
+    full_stats = pd.read_csv(out / "QuantificationResults_MEAN_STD_SEM.csv")
+    assert "Fibre Area (HDM, µm²) MEAN" in full_stats.columns
+    stats = pd.read_csv(out / "QuantificationResults_Compact_MEAN_STD_SEM.csv")
+    assert "Fibre Area (HDM, µm²) MEAN" not in stats.columns
+    assert "Endpoints MEAN" not in stats.columns
+    assert len(stats) == 1
+    assert stats["% HDM Area MEAN"].iloc[0] == full_stats["% HDM Area MEAN"].iloc[0] == 15.0
+    assert not (out / "QuantificationResults_SCORES.csv").exists()
+
+
+def test_post_process_compact_scores_equal_full_scores(tmp_path):
+    """The compact scores file carries the same Rigidity/Bundling scores as
+    the full one (the scores use compact columns only), fewer MEAN columns."""
+    import numpy as np
+    import pandas as pd
+    out = tmp_path / "out"
+    bf = out / "Batches" / "batch_0"
+    (bf / "Eligible").mkdir(parents=True)
+    (bf / "Eligible" / "IgnoredImages.txt").write_text("")
+    rng = np.random.default_rng(0)
+    rows = []
+    for patient in range(4):
+        for rep in range(2):
+            rows.append({
+                "Image": f"{1000 + patient}.vsi - TMA1_BF_A{rep}Annotation (Tumor)_{rep}_roi.png",
+                "Fibre Area (HDM, µm²)": rng.uniform(1, 2),
+                "Avg Thickness (WIDTH, µm)": rng.uniform(1, 2),
+                "Orient. Alignment (WIDTH)": rng.uniform(0, 1),
+                "Fibre Coverage (WIDTH/ROI)": rng.uniform(0, 1),
+                "Endpoints Density (µm⁻¹)": rng.uniform(0, 1),
+                "Curvature (win_sz=10)": rng.uniform(0, 30),
+            })
+    pd.DataFrame(rows).to_csv(bf / "QuantificationResults.csv", index=False)
+    bp = _make_processor(None)
+    bp.output_folder = str(out)
+    bp.batch_num = 0
+    bp.generate_stats = False
+    bp.generate_scores = True
+    bp.status_callback = None
+    bp.post_process()
+    assert not (out / "QuantificationResults_MEAN_STD_SEM.csv").exists()
+    assert not (out / "QuantificationResults_Compact_MEAN_STD_SEM.csv").exists()
+    full = pd.read_csv(out / "QuantificationResults_SCORES.csv")
+    compact = pd.read_csv(out / "QuantificationResults_Compact_SCORES.csv")
+    assert "Fibre Area (HDM, µm²) MEAN" in full.columns
+    assert "Fibre Area (HDM, µm²) MEAN" not in compact.columns
+    assert list(full["Patient"]) == list(compact["Patient"])
+    for col in ("Rigidity Score", "Bundling Score"):
+        assert np.allclose(full[col], compact[col])
+
+
 def test_bad_paths_raise_instead_of_exiting(tmp_path):
     """A missing folder must raise so the GUI worker can report it; os._exit killed the GUI."""
     param_file = tmp_path / "p.yml"

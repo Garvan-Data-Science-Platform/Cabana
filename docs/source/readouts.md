@@ -6,6 +6,12 @@ Values referring to *WIDTH*, *ROI* and *HDM* are based on the following outputs:
 - ROI: Values based on segmented images (located in the `ROI` folder).
 - HDM: Values derived from the High-Density Matrix (HDM), represented as non-black areas/pixels in images from the `HDM` folder.
 
+## Compact results
+
+`QuantificationResults_Compact.csv` (and `<image>_QuantificationResults_Compact.csv` for a single-image run) holds the same rows as the full file with the following columns, in this order: Image, Total Image Area, % HDM Area, Avg Thickness (HDM), Mean Fibre Intensity (HDM), % ROI Area, Avg Thickness (ROI), Mean Fibre Intensity (ROI), % WIDTH Area, Fibre Coverage (WIDTH/ROI), Avg Thickness (WIDTH), Mean Fibre Intensity (WIDTH), Lacunarity, Total Length, Avg Length, Endpoints Density, Branchpoints Density, Box-Counting Fractal Dimension, Curvature (every window), Orient. Alignment and Variance (ROI and WIDTH), the Mean, Std, Median, Count and density of the gap radii (All and ROI), and Image Res.
+
+Every column left out restates one that is kept: absolute fibre areas follow from the percentages and the total image area, raw endpoint and branchpoint counts from their densities, gap areas from gap radii, the percentile and normalized gap statistics from the mean, standard deviation and median, and the whole-image and HDM orientation pairs rarely differ from the ROI and WIDTH ones. With **Stats** ticked, `QuantificationResults_Compact_MEAN_STD_SEM.csv` gives the per-patient mean, STD and SEM of these columns; with **Scores** ticked, `QuantificationResults_Compact_SCORES.csv` gives the per-patient means of these columns with the Rigidity and Bundling scores, which are identical to those in the full scores file (the scores use only compact columns). The full `QuantificationResults_MEAN_STD_SEM.csv` and `QuantificationResults_SCORES.csv` are unchanged and remain the input for any modelling: columns left out of the compact files (for example normalized lacunarity, gap areas or the absolute HDM area) are still legitimate features, the compact files are for reading, not a reduced feature set. Columns a run did not produce (segmentation, HDM or gap analysis off) are left out.
+
 ## Statistics Interpretations
 
 ### Image and fibre area

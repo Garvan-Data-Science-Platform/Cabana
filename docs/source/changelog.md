@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- `QuantificationResults_Compact.csv` (and `<image>_QuantificationResults_Compact.csv`
+  for single-image runs) holds the same rows as the full results with the
+  core columns, dropping those that restate others (absolute areas, raw counts,
+  gap areas, gap percentiles and normalized gap statistics, whole-image and
+  HDM orientation). With Stats or Scores on, `QuantificationResults_Compact_MEAN_STD_SEM.csv`
+  and `QuantificationResults_Compact_SCORES.csv` give the per-patient statistics
+  and the (identical) risk scores over the same columns. The full files are
+  unchanged.
+- Fixed: resuming a batch run whose final "Putting together everything" step
+  had been interrupted deleted the images already gathered into the `ROIs`,
+  `Bins`, `Masks`, `HDM`, `Exports` and `Colors` folders, leaving only the
+  CSV results.
+
 ## 0.3.14
 
 - The colour bars of the saved maps have larger text, scaled to the image

@@ -5,6 +5,7 @@ Provides:
 - parse_image_name(): extract patient ID, image type, tissue type, ROI number
 - generate_mean_std_sem(): aggregate ROI-level results to per-patient stats
 - compute_scores(): compute Rigidity and Bundling collagen risk scores
+- compact_results(): the short column set of QuantificationResults_Compact.csv
 """
 
 import re
@@ -14,6 +15,75 @@ import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+# Columns of QuantificationResults_Compact.csv, in this order. Each dropped
+# column of the full file restates one kept here: absolute areas follow from
+# the percentages and the total image area, raw endpoint/branchpoint counts
+# from their densities, gap areas from gap radii (area = pi r^2), the
+# percentile and "normalized" gap statistics from the mean/std/median, and
+# the whole-image/HDM orientation pairs rarely differ from the ROI/WIDTH ones.
+# The scores (compute_scores) use only columns kept here.
+COMPACT_COLUMNS = (
+    'Image',
+    'Total Image Area (µm²)',
+    '% HDM Area',
+    'Avg Thickness (HDM, µm)',
+    'Mean Fibre Intensity (HDM)',
+    '% ROI Area',
+    'Avg Thickness (ROI, µm)',
+    'Mean Fibre Intensity (ROI)',
+    '% WIDTH Area',
+    'Fibre Coverage (WIDTH/ROI)',
+    'Avg Thickness (WIDTH, µm)',
+    'Mean Fibre Intensity (WIDTH)',
+    'Lacunarity',
+    'Total Length (µm)',
+    'Avg Length (µm)',
+    'Endpoints Density (µm⁻¹)',
+    'Branchpoints Density (µm⁻¹)',
+    'Box-Counting Fractal Dimension',
+    'Curvature (win_sz=*)',          # every curvature window, in file order
+    'Orient. Alignment (ROI)',
+    'Orient. Variance (ROI)',
+    'Orient. Alignment (WIDTH)',
+    'Orient. Variance (WIDTH)',
+    'Mean (All gaps radius in µm)',
+    'Std (All gaps radius in µm)',
+    'Median (All gaps radius in µm)',
+    'Gap Circles Count (All)',
+    'Gap density (All, µm⁻²)',
+    'Mean (ROI gaps radius in µm)',
+    'Std (ROI gaps radius in µm)',
+    'Median (ROI gaps radius in µm)',
+    'Gap Circles Count (ROI)',
+    'Gap density (ROI, µm⁻²)',
+    'Image Res. (µm/pixel)',
+)
+COMPACT_SUFFIX = '_Compact'
+
+
+def compact_results(df):
+    """Return the columns of ``COMPACT_COLUMNS`` present in ``df``, in that
+    order. ``Curvature (win_sz=*)`` expands to every curvature window column.
+    Columns a run did not produce (segmentation, HDM or gap analysis off)
+    are left out rather than filled."""
+    cols = []
+    for name in COMPACT_COLUMNS:
+        if name == 'Curvature (win_sz=*)':
+            cols.extend(c for c in df.columns if c.startswith('Curvature (win_sz='))
+        elif name in df.columns:
+            cols.append(name)
+    return df[cols]
+
+
+def write_compact_results(df, results_csv):
+    """Write ``compact_results(df)`` beside ``results_csv`` (``...Results.csv``
+    → ``...Results_Compact.csv``) and return the path."""
+    stem, ext = results_csv.rsplit('.', 1)
+    path = f"{stem}{COMPACT_SUFFIX}.{ext}"
+    compact_results(df).to_csv(path, index=False, float_format='%.3f')
+    return path
+
 
 CHANNEL_NAMES = ('original', 'red', 'yellow', 'green')     # fixed order: matching must be deterministic
 SHAPE_TYPES = {'ellipse', 'rectangle', 'polygon', 'line', 'polyline', 'points'}

@@ -485,3 +485,16 @@ def test_curvature_class_map_colours_fibres_by_class(tmp_path, monkeypatch):
     assert [tuple(img[10, x]) for x in (10, 30, 50)] == expected
     assert tuple(img[30, 30]) == (233, 233, 233)                        # faded: 200 * 0.4 + 255 * 0.6
     assert list(captured["ticklabels"]) == list(viz.CURVATURE_LABELS)
+
+
+def test_list_files_and_get_img_paths_take_bracketed_folders_literally(tmp_path):
+    """[ ] * ? in a user-chosen folder name are not glob pattern characters."""
+    from cabana.io import list_files, get_img_paths
+    folder = tmp_path / "Run [2] *?"
+    folder.mkdir()
+    (folder / "a.png").write_bytes(b"png")
+    (folder / "b.TIF").write_bytes(b"tif")
+    (folder / "c.txt").write_text("")
+    assert sorted(os.path.basename(p) for p in get_img_paths(str(folder))) == ["a.png", "b.TIF"]
+    assert [os.path.basename(p) for p in list_files(str(folder), "*.png")] == ["a.png"]
+    assert list_files(str(folder), "*.png", "*.txt") == [str(folder / "a.png"), str(folder / "c.txt")]

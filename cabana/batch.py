@@ -6,7 +6,6 @@ import yaml
 import shutil
 import getpass
 import datetime
-from glob import glob
 from pathlib import Path
 
 # Third-party imports
@@ -31,7 +30,7 @@ from .utils import (
     contains_oversized, is_oversized, largest_image, max_image_size, sanitize_filename,
     save_visualisations, read_bar_format, array_divide,
 )
-from .io import remove_empty_dir
+from .io import remove_empty_dir, list_files
 
 
 # Progress cost of the CNN training run of one image relative to an ordinary
@@ -316,7 +315,7 @@ class BatchCabana:
     def detect_fibres(self):
         from .stages import build_fibre_detector, detect_one_image, roi_mask_for
         d = self.args["Detection"]
-        img_paths = glob(join_path(self.roi_dir, '*.png'))
+        img_paths = list_files(self.roi_dir, '*.png')
         Log.logger.debug(f"Detecting fibres with line widths in "
                          f"[{d['Min Line Width']}, {d['Max Line Width']}] pixels "
                          f"for {len(img_paths)} images.")
@@ -336,7 +335,7 @@ class BatchCabana:
     def analyze_orientations(self):
         from .stages import analyze_one_orientation
         orient_analyzer = OrientationAnalyzer(2.0)
-        img_paths = glob(join_path(self.roi_dir, '*.png'))
+        img_paths = list_files(self.roi_dir, '*.png')
         Log.logger.debug(f"Analyzing orientations for {len(img_paths)} images.")
         rows = []
         for img_path in tqdm(img_paths, bar_format=read_bar_format):
@@ -367,7 +366,7 @@ class BatchCabana:
         Log.logger.debug(f"Min branch length = {skel_analyzer.branch_thresh} px, "
                          f"Min hole area = {skel_analyzer.hole_thresh} px²")
 
-        img_paths = glob(join_path(self.mask_dir, '*.png'))
+        img_paths = list_files(self.mask_dir, '*.png')
         Log.logger.debug(f"Quantifying skeletons for {len(img_paths)} images.")
         rows = []
         for img_path in tqdm(img_paths, bar_format=read_bar_format):
@@ -389,7 +388,7 @@ class BatchCabana:
 
     def quantify_hdm(self):
         from .stages import run_hdm
-        n_elig = len(glob(join_path(self.eligible_dir, '*.png')))
+        n_elig = len(list_files(self.eligible_dir, '*.png'))
         Log.logger.debug(f"Quantifying High Density Matrix (HDM) areas for "
                          f"{n_elig} images.")
         self._status(f"Quantifying HDM areas ({n_elig} images)")
@@ -399,7 +398,7 @@ class BatchCabana:
         self._tick(n_elig)
 
     def quantify_images(self):
-        if len(glob(join_path(self.roi_dir, '*.png'))) > 0:
+        if len(list_files(self.roi_dir, '*.png')) > 0:
             self.quantify_hdm()  # HDM
             self.detect_fibres()  # Ridge detection
             self.quantify_skeletons()  # Skeleton analysis
@@ -416,7 +415,7 @@ class BatchCabana:
 
     def calc_fibre_areas(self):
         from .stages import compute_fibre_areas, FIBRE_AREA_METRICS
-        img_paths = sorted(glob(join_path(self.bin_dir, '*.png')))
+        img_paths = sorted(list_files(self.bin_dir, '*.png'))
         with open(join_path(self.bin_dir, 'ResultsROI.csv'), 'w', encoding='UTF8') as f:
             writer = csv.writer(f)
             writer.writerow(['Image', *FIBRE_AREA_METRICS])
@@ -456,7 +455,7 @@ class BatchCabana:
 
             gap_result_dir = join_path(self.mask_dir, 'GapAnalysis')
             Path(gap_result_dir).mkdir(parents=True, exist_ok=True)
-            img_paths = glob(join_path(self.mask_dir, '*.png'))
+            img_paths = list_files(self.mask_dir, '*.png')
             names, means, stds, percentile5, median, percentile95, counts = [], [], [], [], [], [], []
             means_radius, stds_radius, pct5_radius, medians_radius, pct95_radius = [], [], [], [], []
             for img_path in img_paths:
@@ -522,7 +521,7 @@ class BatchCabana:
 
     def analyze_intra_gaps(self):
         gap_result_dir = join_path(self.mask_dir, 'GapAnalysis')
-        img_paths = glob(join_path(self.bin_dir, '*.png'))
+        img_paths = list_files(self.bin_dir, '*.png')
         img_paths.sort()
 
         names, means, stds, means_radius, stds_radius, counts = [], [], [], [], [], []
@@ -1453,9 +1452,7 @@ class BatchProcessor():
             for sub_folder in sub_folders:
                 src_folder = join_path(batch_folder, sub_folder)
                 dst_folder = join_path(self.output_folder, sub_folder)
-                img_paths = glob(join_path(src_folder, '*.tif')) \
-                            + glob(join_path(src_folder, '*.png')) \
-                            + glob(join_path(src_folder, '*.jpg'))
+                img_paths = list_files(src_folder, '*.tif', '*.png', '*.jpg')
                 img_paths.sort()
                 for img_path in img_paths:
                     self._move_into(img_path, join_path(dst_folder, os.path.basename(img_path)))
@@ -1468,8 +1465,8 @@ class BatchProcessor():
             batch_folder = join_path(self.output_folder, 'Batches', "batch_" + str(batch_idx))
             src_folder = join_path(batch_folder, 'Masks', 'GapAnalysis')
             dst_folder = join_path(self.output_folder, 'Masks', 'GapAnalysis')
-            img_paths = glob(join_path(src_folder, '*.png')) + [
-                p for p in glob(join_path(src_folder, '*.csv')) if not p.endswith('Summary.csv')]
+            img_paths = list_files(src_folder, '*.png') + [
+                p for p in list_files(src_folder, '*.csv') if not p.endswith('Summary.csv')]
             img_paths.sort()
             for img_path in img_paths:
                 self._move_into(img_path, join_path(dst_folder, os.path.basename(img_path)))

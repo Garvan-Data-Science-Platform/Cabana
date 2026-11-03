@@ -579,6 +579,28 @@ def test_post_process_compact_scores_equal_full_scores(tmp_path):
         assert np.allclose(full[col], compact[col])
 
 
+def test_post_process_in_a_bracketed_output_folder(tmp_path):
+    """Consolidation globs the batch folders literally, so an output folder
+    named with [ ] still gets its images."""
+    import pandas as pd
+    out = tmp_path / "out [1]"
+    bf = out / "Batches" / "batch_0"
+    for sub in ("ROIs", "Bins", "Eligible"):
+        (bf / sub).mkdir(parents=True)
+    (bf / "ROIs" / "img_roi.png").write_bytes(b"png")
+    (bf / "Bins" / "img_mask.png").write_bytes(b"png")
+    (bf / "Eligible" / "IgnoredImages.txt").write_text("")
+    pd.DataFrame({"Image": ["img_roi.png"], "Value": [1]}).to_csv(bf / "QuantificationResults.csv", index=False)
+    bp = _make_processor(None)
+    bp.output_folder = str(out)
+    bp.batch_num = 0
+    bp.generate_stats = bp.generate_scores = False
+    bp.status_callback = None
+    bp.post_process()
+    assert (out / "ROIs" / "img_roi.png").exists()
+    assert (out / "Bins" / "img_mask.png").exists()
+
+
 def test_bad_paths_raise_instead_of_exiting(tmp_path):
     """A missing folder must raise so the GUI worker can report it; os._exit killed the GUI."""
     param_file = tmp_path / "p.yml"

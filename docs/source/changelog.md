@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: an input or output folder whose name contains `[`, `]`, `*` or `?`
+  (for example `Run [2]`) was refused as having no supported images, or
+  produced empty results, because those characters were read as file
+  patterns.
+
 ## 0.3.15
 
 - `QuantificationResults_Compact.csv` (and `<image>_QuantificationResults_Compact.csv`

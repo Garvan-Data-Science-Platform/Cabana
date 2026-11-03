@@ -17,7 +17,7 @@ import os
 import re
 import struct
 from collections import OrderedDict, defaultdict
-from glob import glob
+import glob
 
 import cv2
 import numpy as np
@@ -186,7 +186,7 @@ class VsiReader(SlideReader):
         if not os.path.isdir(folder):
             raise FileNotFoundError(f"Companion folder not found: {folder}")
         stacks = []
-        for ets in sorted(glob(os.path.join(folder, "stack*", "frame_t.ets"))):
+        for ets in sorted(glob.glob(os.path.join(glob.escape(folder), "stack*", "frame_t.ets"))):
             try:
                 stacks.append(EtsStack(ets))
             except (ValueError, struct.error):

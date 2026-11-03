@@ -7,7 +7,7 @@ readability. ``cabana.utils`` re-exports the public names below so existing
 import os
 import re
 import shutil
-from glob import glob
+import glob as _glob
 from PIL import Image, ExifTags
 
 from .log import Log
@@ -39,13 +39,21 @@ def remove_empty_dir(folder):
         pass
 
 
+def list_files(folder, *patterns):
+    """Paths in ``folder`` matching any of the glob ``patterns``, in pattern
+    order. ``folder`` is taken literally: ``[``, ``]``, ``*`` and ``?`` in a
+    user-chosen folder name are not pattern characters (plain ``glob`` would
+    match nothing in a folder named ``Run [2]``)."""
+    paths = []
+    for pattern in patterns:
+        paths.extend(_glob.glob(join_path(_glob.escape(folder), pattern)))
+    return paths
+
+
 def get_img_paths(folder,
                   image_types=('*.[Tt][Ii][Ff]*', '*.[Pp][Nn][Gg]',
                                '*.[Jj][Pp][Gg]', '*.[Jj][Pp][Ee][Gg]')):
-    img_paths = []
-    for image_type in image_types:
-        img_paths.extend(glob(join_path(folder, image_type)))
-    return img_paths
+    return list_files(folder, *image_types)
 
 
 def sanitize_filename(filename):

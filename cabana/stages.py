@@ -6,7 +6,6 @@ prevents the two pipelines from drifting apart.
 """
 
 import os
-from glob import glob
 from pathlib import Path
 
 import cv2
@@ -25,6 +24,7 @@ from skimage.feature import peak_local_max
 from sklearn.metrics.pairwise import euclidean_distances
 
 from .utils import join_path
+from .io import list_files
 from .viz import (mask_color_map, overlay_colorbar, color_survey_with_colorbar, skeleton_value_map,
                   skeleton_class_map, image_with_colorbar, DIRECTION_CMAP, CURVATURE_EDGES,
                   CURVATURE_COLOURS, CURVATURE_LABELS)
@@ -516,7 +516,7 @@ def write_color_maps(rgb_img, export_subdir, color_subdir):
     """
     Path(color_subdir).mkdir(parents=True, exist_ok=True)
     curves = [(os.path.basename(p)[len("Curve_Map"):-4], p)
-              for p in glob(join_path(export_subdir, "Curve_Map_*"))]
+              for p in list_files(export_subdir, "Curve_Map_*")]
 
     mask_img = 255 - iio.imread(join_path(export_subdir, "Mask.png"))
     if np.sum(mask_img) == 0:

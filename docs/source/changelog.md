@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.15
 
 - `QuantificationResults_Compact.csv` (and `<image>_QuantificationResults_Compact.csv`
   for single-image runs) holds the same rows as the full results with the

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The empty image panel now points to File > Open Image… (there is no
+  Load Image button since the menu bar replaced it).
 - Fixed: an input or output folder whose name contains `[`, `]`, `*` or `?`
   (for example `Run [2]`) was refused as having no supported images, or
   produced empty results, because those characters were read as file

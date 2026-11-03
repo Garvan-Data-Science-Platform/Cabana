@@ -1977,7 +1977,7 @@ class ImagePanel(QWidget):
             font = QFont("Arial", 20)  # Family and size
             font.setBold(True)  # Optional: make it bold
             painter.setFont(font)
-            text = "Drag & Drop Image Here or Use 'Load Image' Button"
+            text = "Drag & Drop an Image Here or Use File > Open Image…"
             painter.drawText(self.rect(), Qt.AlignCenter, text)
 
         # Draw drag and drop highlight overlay when active

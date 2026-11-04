@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.16
 
 - Max Size is set on the Segmentation page, next to Patch Size, and saved
   with the other parameters by Parameters > Export. The Batch Run page shows

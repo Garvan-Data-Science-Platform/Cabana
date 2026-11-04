@@ -9,7 +9,7 @@ All parameters live in the YAML parameter file (`Parameters.yml`, exported from 
 | Configs | Segmentation | true | on/off | Segmentation page toggle |
 | Configs | Quantification | true | on/off | file only |
 | Configs | Gap Analysis | true | on/off | Gap Analysis page toggle |
-| Configs | Max Size | 5000 (0 = no limit) | px (side) | Batch Run page (per run) |
+| Configs | Max Size | 5000 (0 = no limit) | px (side) | Segmentation page |
 | Configs | Save Visualisations | true | on/off | Batch Run page (per run) |
 | Segmentation | Number of Labels | 32 | count | slider |
 | Segmentation | Max Iterations | 30 | count | slider |
@@ -38,7 +38,7 @@ The user can set the parameters in this section to enable (setting to `true`) or
 
 For instance, if the background is clean, segmentation may not be needed and therefore can be disabled.
 
-`Max Size` (also in `Configs`) sets the largest image analysed as one piece: images with more pixels than its *square* are split into blocks of at most this size, and each block is analysed as a separate image, which keeps memory use down but cuts fibres and gaps at the block edges. The smallest value is 2048. 0 means no limit: every image is analysed whole, and very large images may run out of memory; a batch run warns when an image is larger than 5000 px. The default value, 5000, analyses TMA cores scanned at 20x whole. The Batch Run page shows the parameter file's value and can override it for a run. Parameter files written before version 0.3.9 kept it under `Segmentation`; that location is still read.
+`Max Size` (also in `Configs`) sets the largest image analysed as one piece: images with more pixels than its *square* are split into blocks of at most this size, and each block is analysed as a separate image, which keeps memory use down but cuts fibres and gaps at the block edges. The smallest value is 2048. 0 means no limit: every image is analysed whole, and very large images may run out of memory; a batch run warns when an image is larger than 5000 px. The default value, 5000, analyses TMA cores scanned at 20x whole. Set it on the Segmentation page, next to Patch Size, and export the parameters; the Batch Run page shows the parameter file's value but cannot change it. Because each block is segmented as a separate image, Max Size can change the segmentation. Parameter files written before version 0.3.9 kept it under `Segmentation`; that location is still read.
 
 `Save Visualisations` (also in `Configs`, default `true`) decides whether batch runs write the visualisations: the colour maps and the gap overlay images (`Colors/`). The measurements (CSV files, the TIFF maps in `Exports/`, masks) are always written. Turning it off saves about four fifths of the storage for TMA cores; the Batch Run page shows the file's value and can change it for a run.
 

@@ -75,8 +75,8 @@ APGI_TMA_4_PicRed_cores/
    that the segmentation network sees the tissue at a useful resolution rather
    than the whole core shrunk to 512 px.
 3. Export the parameters with **Parameters > Export Parameters**. The default
-   Max Size (5000 px, shown on the Batch Run page) analyses a 4000 to 5000 px
-   core as one image; lower it on a machine with little memory.
+   Max Size (5000 px, on the Segmentation page next to Patch Size) analyses a
+   4000 to 5000 px core as one image; lower it on a machine with little memory.
 
 ## 3. Run the batch
 

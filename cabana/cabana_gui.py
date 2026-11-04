@@ -22,10 +22,11 @@ from PyQt5.QtGui import QDesktopServices
 
 from .ui import *
 from .log import Log
-from .batch import read_checkpoint
+from .batch import read_checkpoint, run_settings_changes, saved_run_parameters
 from .themes import THEMES, DEFAULT_THEME
 from .tma import AUTO_START_DIAMETER_UM, ORIENTATIONS, EDITS_FILE
-from .io import DEFAULT_MAX_SIZE, max_image_size, migrate_max_size, pixel_size_um, save_visualisations
+from .io import (DEFAULT_MAX_SIZE, block_grid, max_image_size, migrate_max_size, pixel_size_um,
+                 save_visualisations)
 from .segmenter import generate_rois, mask_from_score
 from .stages import GAP_FILL_ALPHA, GAP_INTRA_RGB, GAP_OTHER_RGB, gap_base_image, gap_intra
 from .tma_editor import TMACoreEditor
@@ -201,6 +202,9 @@ class MainWindow(QMainWindow):
         self.pages_scroll.setWidget(self.pages)
         self.dock_inner_layout.addWidget(self.pages_scroll, 1)
         self._share_hints_with_labels()
+        # scrolling the side panel never changes a setting the user has not clicked
+        self._wheel_guard = WheelGuard(self)
+        self._wheel_guard.guard(self.pages)
         self.show_page(0)
 
         # Progress status (which batch / stage / image), shown during Batch Run
@@ -665,6 +669,7 @@ class MainWindow(QMainWindow):
         else:
             self.status_file_label.setText("  No image loaded")
             self.status_dims_label.setText("")
+        self._refresh_size_note()
 
     def toggle_panel(self):
         if self.panel_visible:
@@ -863,22 +868,16 @@ class MainWindow(QMainWindow):
         batch_size_layout.addWidget(self.batch_size_spinner)
         batch_size_layout.addStretch()
 
-        # Max Size (0 = no limit): larger images are split into blocks. Filled
-        # from the parameter file; a changed value overrides it for the run.
-        batch_size_layout.addWidget(QLabel("Max Size:"))
-        self.batch_max_size_spinner = MaxSizeSpinBox()
-        self.batch_max_size_spinner.setSingleStep(256)
-        self.batch_max_size_spinner.setSuffix(" px")
-        self.batch_max_size_spinner.setValue(DEFAULT_MAX_SIZE)
-        self.batch_max_size_spinner.setFixedWidth(95)
-        self.batch_max_size_spinner.setStyleSheet(self.spinner_style)
-        self.batch_max_size_spinner.setToolTip(
-            "Images with more pixels than this squared are split into blocks of at most this size,\n"
-            "and each block is analysed as a separate image; this keeps memory use down.\n"
-            "The smallest value is 2048 px.\n"
-            "No limit = every image is analysed whole; very large images may run out of memory.\n"
-            "Filled from the parameter file (Configs: Max Size); a value set here overrides it for the run.")
-        batch_size_layout.addWidget(self.batch_max_size_spinner)
+        # Max Size of the run, shown read-only: it comes from the parameter file
+        # (set it on the Segmentation page and export), or from the interrupted
+        # run on a resume, so the file kept with the results describes the run
+        self.batch_max_size_label = QLabel("Max Size: –")
+        self.batch_max_size_label.setStyleSheet(self.value_label_style)
+        self.batch_max_size_label.setToolTip(
+            "Images with more pixels than this squared are split into blocks of at most this size.\n"
+            "Taken from the parameter file (Configs: Max Size): set it on the Segmentation page\n"
+            "and export the parameters, or edit the file. A resumed run keeps the value it started with.")
+        batch_size_layout.addWidget(self.batch_max_size_label)
 
         layout.addLayout(batch_size_layout)
 
@@ -1911,8 +1910,12 @@ class MainWindow(QMainWindow):
         except (OSError, yaml.YAMLError):
             return
         if isinstance(params, dict):
-            self.batch_max_size_spinner.setValue(max_image_size(params))
+            self._show_batch_max_size(max_image_size(params))
             self.visuals_cb.setChecked(save_visualisations(params))
+
+    def _show_batch_max_size(self, max_size, source=""):
+        text = f"{int(max_size)} px" if max_size else "No limit"
+        self.batch_max_size_label.setText(f"Max Size: {text}{source}")
 
     def select_input_folder(self):
         """Open a file dialog to select an input folder"""
@@ -2008,7 +2011,15 @@ class MainWindow(QMainWindow):
         if resume:
             msg_box = QMessageBox(self)
             msg_box.setWindowTitle("Checkpoint Detected")
-            msg_box.setText("A checkpoint file was found. Do you want to resume from the last checkpoint?")
+            text = "A checkpoint file was found. Do you want to resume from the last checkpoint?"
+            changes = run_settings_changes(self.output_folder, self.param_file, self.mask_folder,
+                                           save_visuals=self.visuals_cb.isChecked())
+            if changes:
+                text += ("\n\nThe selected settings differ from those the run started with:\n"
+                         + "\n".join("• " + c for c in changes)
+                         + "\n\nResuming uses the original settings. Choose No to start a new run "
+                           "with the selected ones.")
+            msg_box.setText(text)
             msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
             msg_box.setDefaultButton(QMessageBox.Yes)
             msg_box.setStyleSheet(self.msgbox_style)
@@ -2040,7 +2051,6 @@ class MainWindow(QMainWindow):
         self.stats_cb.setEnabled(False)
         self.scores_cb.setEnabled(False)
         self.visuals_cb.setEnabled(False)
-        self.batch_max_size_spinner.setEnabled(False)
         self.show_progress_bar()
 
         resume, batch_size, batch_num, ignore_large, kept = self._check_batch_running_status()
@@ -2048,9 +2058,16 @@ class MainWindow(QMainWindow):
         if not resume:
             batch_size = self.batch_size_spinner.value()
             batch_num = 0
-        # a resumed run keeps the Max Size and visualisation setting it started with
-        max_size = kept.get("max_size", self.batch_max_size_spinner.value())
+        # a new run takes Max Size from the parameter file; a resumed run keeps the
+        # settings it started with (all its parameters, when it saved them)
+        max_size = kept.get("max_size")
         save_visuals = kept.get("save_visuals", self.visuals_cb.isChecked())
+        if resume:
+            saved = saved_run_parameters(self.output_folder)
+            if saved is not None:
+                self._show_batch_max_size(max_image_size(saved), " (from the interrupted run)")
+            elif max_size is not None:
+                self._show_batch_max_size(max_size, " (from the interrupted run)")
 
         self.batch_worker = BatchProcessingWorker(
             self.param_file, self.input_folder, self.output_folder,
@@ -2086,7 +2103,14 @@ class MainWindow(QMainWindow):
         self.stats_cb.setEnabled(True)
         self.scores_cb.setEnabled(True)
         self.visuals_cb.setEnabled(True)
-        self.batch_max_size_spinner.setEnabled(True)
+        # back to the selected file's Max Size after a resumed run showed its own
+        try:
+            with open(self.param_file) as f:
+                params = yaml.safe_load(f)
+            if isinstance(params, dict):
+                self._show_batch_max_size(max_image_size(params))
+        except (AttributeError, OSError, yaml.YAMLError):
+            pass
 
     def _cancel_batch_processing(self):
         self.cancel_batch_btn.setEnabled(False)
@@ -2288,6 +2312,37 @@ class MainWindow(QMainWindow):
             "Off = the whole image is shrunk to 512 px.")
         patch_layout.addWidget(self.patch_size_spinner)
         layout.addLayout(patch_layout)
+
+        # Max Size (Configs: Max Size, 0 = no limit): batch runs split larger
+        # images into blocks, each segmented as a separate image. Saved by
+        # Parameters > Export; the Batch Run page only shows it.
+        max_size_layout = QHBoxLayout()
+        max_size_label = QLabel("Max Size:")
+        max_size_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        max_size_layout.addWidget(max_size_label)
+        max_size_layout.addStretch()
+        self.seg_max_size_spinner = MaxSizeSpinBox()
+        self.seg_max_size_spinner.setSingleStep(1000)
+        self.seg_max_size_spinner.setSuffix(" px")
+        self.seg_max_size_spinner.setValue(DEFAULT_MAX_SIZE)
+        self.seg_max_size_spinner.setFixedWidth(90)
+        self.seg_max_size_spinner.setStyleSheet(self.spinner_style)
+        self.seg_max_size_spinner.valueChanged.connect(self.update_max_size)
+        self.seg_max_size_spinner.setToolTip(
+            "Batch runs split images with more pixels than this squared into blocks of at most\n"
+            "this size, and analyse each block as a separate image; this keeps memory use down.\n"
+            "Each block is segmented on its own, so the value can change the segmentation.\n"
+            "The smallest value is 2048 px. No limit = every image is analysed whole;\n"
+            "very large images may run out of memory. Saved by Parameters > Export.")
+        max_size_layout.addWidget(self.seg_max_size_spinner)
+        layout.addLayout(max_size_layout)
+
+        # How Max Size and Patch Size apply (the open image, patches of blocks)
+        self.seg_size_note = QLabel("")
+        self.seg_size_note.setWordWrap(True)
+        self.seg_size_note.setStyleSheet(self.value_label_style)
+        self.seg_size_note.setVisible(False)
+        layout.addWidget(self.seg_size_note)
 
 
         # White background checkbox
@@ -2605,6 +2660,34 @@ class MainWindow(QMainWindow):
         """Update segmentation patch size (0 disables patch-wise segmentation)"""
         self.yml_data["Segmentation"]["Patch Size"] = int(self.patch_size_spinner.value())
         self._seg_score = None
+        self._refresh_size_note()
+
+    def update_max_size(self):
+        """Update Configs: Max Size (0 = no limit), saved by Parameters > Export"""
+        self.yml_data.setdefault("Configs", {})["Max Size"] = int(self.seg_max_size_spinner.value())
+        self._refresh_size_note()
+
+    def _size_note_text(self):
+        """What Max Size and Patch Size mean for batch runs: the open image is
+        split (its preview segments it whole), and Patch Size cannot apply to
+        blocks no larger than the patch. Empty when neither applies."""
+        max_size = int(self.seg_max_size_spinner.value())
+        patch = int(self.patch_size_spinner.value())
+        notes = []
+        if self.ori_img is not None:
+            h, w = self.ori_img.shape[:2]
+            rows, cols, bh, bw = block_grid(h, w, max_size)
+            if rows * cols > 1:
+                notes.append(f"Batch runs split this image ({w} × {h} px) into {rows * cols} blocks of "
+                             f"{bw} × {bh} px; the preview here segments it whole.")
+        if max_size and patch and patch >= max_size:
+            notes.append(f"Patch Size has no effect on split images: their blocks are at most {max_size} px.")
+        return "\n".join(notes)
+
+    def _refresh_size_note(self):
+        text = self._size_note_text()
+        self.seg_size_note.setText(text)
+        self.seg_size_note.setVisible(bool(text))
 
     def update_white_bg(self):
         """Update white background setting"""
@@ -2736,6 +2819,7 @@ class MainWindow(QMainWindow):
             self.max_iters_slider.setValue(seg["Max Iterations"])
         if "Patch Size" in seg:
             self.patch_size_spinner.setValue(int(seg["Patch Size"] or 0))
+        self.seg_max_size_spinner.setValue(max_image_size(self.yml_data))
         if "Dark Line" in seg:
             self.white_bg_cb.setChecked(seg["Dark Line"])
         if "Normalized Hue Value" in seg:
@@ -3539,7 +3623,7 @@ class MainWindow(QMainWindow):
         self.progress_bar.setStyleSheet(self.progressbar_style)
 
         # Spinboxes
-        for spin in (self.batch_size_spinner, self.patch_size_spinner, self.batch_max_size_spinner, self.tma_pixel_size_spin,
+        for spin in (self.batch_size_spinner, self.patch_size_spinner, self.seg_max_size_spinner, self.tma_pixel_size_spin,
                      self.tma_core_diameter_spin, self.tma_margin_spin, self.tma_erode_spin,
                      self.tma_sat_spin, self.tma_offset_spin, self.tma_dmin_spin, self.tma_dmax_spin,
                      self.tma_stain_spin):
@@ -3563,6 +3647,8 @@ class MainWindow(QMainWindow):
         self.tma_status_label.setStyleSheet(self.value_label_style)
         self.progress_label.setStyleSheet(self.value_label_style)
         self.gap_summary_label.setStyleSheet(self.value_label_style)
+        self.seg_size_note.setStyleSheet(self.value_label_style)
+        self.batch_max_size_label.setStyleSheet(self.value_label_style)
 
         # Value labels (slider readouts)
         for label in (self.color_thresh_value, self.num_labels_value, self.max_iters_value,

@@ -60,7 +60,11 @@ When `param_file`, `input_folder` or `output_folder` is omitted the class asks
 for them with file dialogs, and it offers to resume when the output folder
 holds a checkpoint from an interrupted run. `cabana.batch.BatchProcessor` is
 the same class without the dialogs; it takes `resume=True` to continue from a
-checkpoint programmatically.
+checkpoint programmatically. A resumed run uses the parameters (including the
+Max Size and Save Visualisations overrides) and the ROI mask folder it started
+with, saved in the output folder as `.RunParameters.yml` and in the
+checkpoint; `cabana.batch.run_settings_changes(output_folder, param_file,
+mask_dir)` lists how a selection differs from them.
 
 ## TMA slides
 

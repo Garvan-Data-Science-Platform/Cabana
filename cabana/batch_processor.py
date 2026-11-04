@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 from tkinter import Tk, filedialog
 
-from .batch import BatchProcessor as _BatchProcessor, read_checkpoint
+from .batch import BatchProcessor as _BatchProcessor, read_checkpoint, run_settings_changes
 from .log import Log
 from .utils import join_path
 
@@ -93,6 +93,15 @@ class BatchProcessor(_BatchProcessor):
                                    'A new run will start.')
                 self.resume = False
                 break
+
+        if self.resume:
+            changes = run_settings_changes(self.output_folder, self.param_file, self.mask_dir,
+                                           self.max_size, self.save_visuals)
+            if changes:
+                Log.logger.warning("The selected settings differ from those the run started with:\n  "
+                                   + "\n  ".join(changes)
+                                   + "\nResuming uses the original settings; answer n to start "
+                                     "a new run with the selected ones.")
 
         while self.resume:
             user_input = input("Do you want to resume from last checkpoint? ([y]/n): ")

@@ -4,7 +4,7 @@
 Yes, but it's not recommended. While Cabana can process images of varying resolutions, ridge detection results may vary significantly. For consistent and comparable analysis, use images with the same pixel resolution.
 
 **2. What is the maximum supported image size?**  
-Images larger than `Configs: Max Size` squared (5000×5000 pixels by default; 2048×2048 before version 0.3.9, when it was under `Segmentation`) are split into blocks of at most that size, each analysed as a separate image. Raise Max Size on the Batch Run page (or set it to *No limit*) to analyse each image whole; very large images may run out of memory. From version 0.3.1 to 0.3.8 the GUI's batch run skipped oversized images instead of splitting them; 0.3.9 splits them again.
+Images larger than `Configs: Max Size` squared (5000×5000 pixels by default; 2048×2048 before version 0.3.9, when it was under `Segmentation`) are split into blocks of at most that size, each analysed as a separate image. Raise Max Size on the Segmentation page (or set it to *No limit*) and export the parameters to analyse each image whole; very large images may run out of memory. From version 0.3.1 to 0.3.8 the GUI's batch run skipped oversized images instead of splitting them; 0.3.9 splits them again.
 
 **3. Why was my image rejected due to a dark background?**  
 Images with more than 99% of pixels having intensity values below 5 are automatically rejected. Such images are considered to lack sufficient regions of interest for analysis.
@@ -13,7 +13,7 @@ Images with more than 99% of pixels having intensity values below 5 are automati
 Images are processed in batches (5 by default, adjustable on the Batch Run page). This setup allows efficient processing and easier error recovery. A status line above the progress bar shows the current batch, stage and image.
 
 **5. What happens if Cabana crashes during processing?**  
-If the program crashes before finishing, it can be restarted and will resume from the last successfully processed batch. Cabana automatically creates a checkpoint file to support this recovery.
+If the program crashes before finishing, it can be restarted and will resume from the last successfully processed batch. Cabana automatically creates a checkpoint file to support this recovery, and saves the run's parameters and ROI mask folder beside it: a resumed run always uses those, even if another parameter file is selected.
 
 **6. How should I name my images for the Stats and Scores outputs?**  
 Follow the QuPath export pattern `<patient>.vsi - <anything>_<BF|POL>_<anything>Annotation (<sample type>)_<ROI number>`, for example `K324.vsi - 20x_BF_01Annotation (Tumor)_1.tif`. The patient ID is read from before `.vsi`, the image type from `BF`/`POL`, the sample type from the last bracket and the ROI number from the end. Cores exported by the TMA Dearrayer page are already named this way. See [Image naming for per-patient statistics](workflow.md#image-naming-for-per-patient-statistics).

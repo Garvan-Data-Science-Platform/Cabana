@@ -52,7 +52,8 @@ def _segment(win, monkeypatch):
 
 def test_defaults(win):
     assert win.patch_size_spinner.value() == 1024 and win.color_thresh_slider.value() == 20
-    assert win.batch_max_size_spinner.value() == 5000 and win.yml_data["Configs"]["Max Size"] == 5000
+    assert win.seg_max_size_spinner.value() == 5000 and win.yml_data["Configs"]["Max Size"] == 5000
+    assert win.batch_max_size_label.text() == "Max Size: –"           # until a parameter file is chosen
     assert "Max Size" not in win.yml_data["Segmentation"]
 
 
@@ -73,15 +74,15 @@ def test_threshold_slider_rethresholds_without_segmenting(win, app, monkeypatch)
     assert win._seg_score is None
 
 
-def test_batch_max_size_box_follows_the_parameter_file(win, tmp_path):
+def test_batch_max_size_line_follows_the_parameter_file(win, tmp_path):
     import yaml
     new, old = tmp_path / "new.yml", tmp_path / "old.yml"
     yaml.safe_dump({"Configs": {"Max Size": 0}, "Segmentation": {}}, open(new, "w"))
     yaml.safe_dump({"Configs": {}, "Segmentation": {"Max Size": 3000}}, open(old, "w"))
     win._show_param_file_max_size(str(new))
-    assert win.batch_max_size_spinner.value() == 0 and win.batch_max_size_spinner.text() == "No limit"
+    assert win.batch_max_size_label.text() == "Max Size: No limit"
     win._show_param_file_max_size(str(old))
-    assert win.batch_max_size_spinner.value() == 3000
+    assert win.batch_max_size_label.text() == "Max Size: 3000 px"
     assert win.visuals_cb.isChecked()                       # default when the file does not say
     yaml.safe_dump({"Configs": {"Save Visualisations": False}}, open(new, "w"))
     win._show_param_file_max_size(str(new))
@@ -99,6 +100,52 @@ def test_imported_old_file_moves_max_size_to_configs(win, tmp_path, monkeypatch)
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(old), ""))
     win.import_parameters()
     assert win.yml_data["Configs"]["Max Size"] == 2048 and "Max Size" not in win.yml_data["Segmentation"]
+    assert win.seg_max_size_spinner.value() == 2048
+
+
+def test_segmentation_max_size_is_exported(win, tmp_path, monkeypatch):
+    import yaml
+    from PyQt5.QtWidgets import QFileDialog
+    win.seg_max_size_spinner.setValue(8000)
+    assert win.yml_data["Configs"]["Max Size"] == 8000
+    out = tmp_path / "exported.yml"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), ""))
+    win.export_parameters()
+    assert yaml.safe_load(open(out))["Configs"]["Max Size"] == 8000
+    win.restore_default_parameters()
+    assert win.seg_max_size_spinner.value() == 5000
+
+
+def test_size_note_explains_splitting_and_patch_size(win):
+    win.seg_max_size_spinner.setValue(5000)
+    win.patch_size_spinner.setValue(1024)
+    win.ori_img = np.zeros((10000, 7000, 3), np.uint8)
+    win._update_image_status()
+    assert win.seg_size_note.text() == ("Batch runs split this image (7000 × 10000 px) into 4 blocks of "
+                                        "3500 × 5000 px; the preview here segments it whole.")
+    win.patch_size_spinner.setValue(8192)
+    assert "Patch Size has no effect on split images: their blocks are at most 5000 px." in win.seg_size_note.text()
+    win.ori_img = None
+    win.patch_size_spinner.setValue(1024)
+    win._update_image_status()
+    assert win.seg_size_note.text() == "" and win.seg_size_note.isHidden()
+
+
+def test_wheel_over_an_unclicked_box_does_not_change_it(win, app):
+    from PyQt5.QtCore import QPoint, QPointF, Qt
+    from PyQt5.QtGui import QWheelEvent
+    from PyQt5.QtWidgets import QApplication
+    box = win.seg_max_size_spinner
+    box.setValue(5000)
+    assert box.focusPolicy() == Qt.StrongFocus
+    centre = QPointF(box.rect().center())
+    event = QWheelEvent(centre, QPointF(box.mapToGlobal(QPoint(5, 5))), QPoint(0, 0), QPoint(0, 120),
+                        Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False)
+    QApplication.sendEvent(box, event)
+    assert box.value() == 5000
+    box.removeEventFilter(win._wheel_guard)          # the same wheel without the guard changes it
+    QApplication.sendEvent(box, event)
+    assert box.value() == 6000
 
 
 def test_max_size_box_skips_values_below_2048(app):
@@ -115,6 +162,17 @@ def test_max_size_box_skips_values_below_2048(app):
     assert box.value() == 0               # 2048 -> No limit
     box.setValue(500)
     box.editingFinished.emit()            # typed value below the minimum
+    assert box.value() == 2048
+    box.setSingleStep(1000)               # steps land on round thousands
+    box.stepBy(1)
+    assert box.value() == 3000
+    box.setValue(9096)
+    box.stepBy(-1)
+    assert box.value() == 9000
+    box.stepBy(1)
+    assert box.value() == 10000
+    box.setValue(2500)
+    box.stepBy(-1)
     assert box.value() == 2048
 
 

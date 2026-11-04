@@ -108,6 +108,19 @@ def is_oversized(height, width, max_size):
     return bool(max_size) and height * width > int(max_size) ** 2
 
 
+def block_grid(height, width, max_size):
+    """``(rows, cols, block height, block width)`` of the blocks a batch run
+    cuts an image into: ``(1, 1, height, width)`` when the image is not
+    oversized, else equal blocks of at most ``max_size`` px a side (the last
+    row and column are shifted inwards to end at the image edge)."""
+    if not is_oversized(height, width, max_size):
+        return 1, 1, height, width
+    max_size = int(max_size)
+    blk_h = -(-height // -(-height // max_size))         # ceil(h / ceil(h / max))
+    blk_w = -(-width // -(-width // max_size))
+    return -(-height // blk_h), -(-width // blk_w), blk_h, blk_w
+
+
 def contains_oversized(img_paths, max_res=2048):
     for img_path in img_paths:
         with Image.open(img_path) as image:

@@ -481,6 +481,8 @@ def test_post_process_resumed_keeps_already_consolidated_results(tmp_path):
     (out / "Colors" / "img0_roi" / "all_gaps.png").write_bytes(b"png")
     (out / "Masks" / "GapAnalysis").mkdir()
     (out / "Masks" / "GapAnalysis" / "IndividualGaps_img0_roi.csv").write_text("a\n1\n")
+    (out / ".CheckPoint.txt").write_text("Batch Number,0\n")
+    (out / ".RunParameters.yml").write_text("Configs: {}\n")
     bf = out / "Batches" / "batch_0"          # only the CSVs are left behind
     (bf / "Bins").mkdir(parents=True)
     (bf / "Eligible").mkdir()
@@ -501,6 +503,7 @@ def test_post_process_resumed_keeps_already_consolidated_results(tmp_path):
     assert (out / "Masks" / "GapAnalysis" / "IndividualGaps_img0_roi.csv").exists()
     assert len(pd.read_csv(out / "Bins" / "ResultsROI.csv")) == 1
     assert len(pd.read_csv(out / "QuantificationResults.csv")) == 1
+    assert not (out / ".CheckPoint.txt").exists() and not (out / ".RunParameters.yml").exists()
 
 
 def test_post_process_writes_compact_results_and_stats(tmp_path):
@@ -686,6 +689,60 @@ def test_max_size_override_and_checkpoint(tmp_path, monkeypatch):
     assert "Max Size,3000" in lines
 
 
+def test_resume_uses_the_parameters_the_run_started_with(tmp_path, monkeypatch):
+    """A new run saves its effective parameters and ROI mask folder; a resume
+    uses them whatever is selected, and the differences are reported."""
+    import numpy as np, cv2, yaml
+    import cabana.batch as batch_mod
+    from cabana.batch import RUN_PARAMS_FILE, run_settings_changes
+    input_dir = tmp_path / "in"
+    input_dir.mkdir()
+    for name in ("a.png", "b.png"):
+        cv2.imwrite(str(input_dir / name), np.full((40, 40, 3), 200, np.uint8))
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    proj_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    first, second = tmp_path / "first.yml", tmp_path / "second.yml"
+    shutil.copy(os.path.join(proj_root, "cabana", "default_params.yml"), str(first))
+    params = yaml.safe_load(open(first))
+    params["Segmentation"]["Patch Size"] = 4096
+    params["Configs"]["Max Size"] = 2048
+    yaml.safe_dump(params, open(second, "w"))
+    masks1, masks2 = str(tmp_path / "masks1"), str(tmp_path / "masks2")
+    seen = []
+
+    class _Recorder(_FakeBatchCabana):
+        def __init__(self, param_file, *a, max_size=None, mask_dir=None, **k):
+            seen.append((a[3], param_file, max_size, mask_dir))      # a[3]: batch index
+            super().__init__(param_file, *a, max_size=max_size, mask_dir=mask_dir, **k)
+
+    monkeypatch.setattr(batch_mod, "BatchCabana", _Recorder)
+    BatchProcessor(str(first), str(input_dir), str(out_dir), batch_size=1, batch_num=0, resume=False,
+                   ignore_large=False, mask_dir=masks1, max_size=3000).process()
+    saved = yaml.safe_load(open(out_dir / RUN_PARAMS_FILE))
+    assert saved["Configs"]["Max Size"] == 3000 and saved["Segmentation"]["Patch Size"] == 1024
+    assert f"ROI Mask Folder,{masks1}" in open(out_dir / ".CheckPoint.txt").read().splitlines()
+
+    changes = run_settings_changes(str(out_dir), str(second), masks2)
+    assert "Patch Size (Segmentation): 1024 → 4096" in changes
+    assert "Max Size (Configs): 3000 → 2048" in changes
+    assert f"ROI mask folder: {masks1} → {masks2}" in changes
+    reformatted = tmp_path / "same.yml"              # same values, other layout and key order
+    yaml.safe_dump(saved, open(reformatted, "w"), sort_keys=True, default_flow_style=True)
+    assert run_settings_changes(str(out_dir), str(reformatted), masks1) == []
+
+    seen.clear()
+    resumed = BatchProcessor(str(second), str(input_dir), str(out_dir), batch_size=1, batch_num=0,
+                             resume=True, ignore_large=False, mask_dir=masks2)
+    resumed.process()
+    assert seen == [(1, str(out_dir / RUN_PARAMS_FILE).replace("\\", "/"), 3000, masks1)]
+    recorded = open(out_dir / "version_params.yaml").read()
+    assert "Patch Size: 1024" in recorded and "Patch Size: 4096" not in recorded
+
+    os.remove(out_dir / RUN_PARAMS_FILE)            # checkpoint from before 0.3.16
+    assert run_settings_changes(str(out_dir), str(second), masks2) == []
+
+
 def test_estimate_progress_total_without_visualisations():
     bc = _make_batch_cabana(None)
     bc.args = {"Configs": {"Quantification": True, "Gap Analysis": True, "Save Visualisations": False}}
@@ -750,11 +807,14 @@ def test_read_checkpoint_tolerates_commas_and_truncation(tmp_path):
                     "Ignore Large,False\nMax Size,5000\nSave Visualisations,True\nJunk line\n")
     assert read_checkpoint(str(ckpt)) == {
         "input_folder": "D:/Data/TMA 3, 4/Images", "batch_size": 5, "batch_num": 2,
-        "ignore_large": False, "max_size": 5000, "save_visuals": True}
+        "ignore_large": False, "max_size": 5000, "save_visuals": True, "mask_dir": None}
+    with open(ckpt, "a") as f:
+        f.write("ROI Mask Folder,D:/Masks, set 2\n")
+    assert read_checkpoint(str(ckpt))["mask_dir"] == "D:/Masks, set 2"
     ckpt.write_text("")
     assert read_checkpoint(str(ckpt)) == {
         "input_folder": "", "batch_size": 5, "batch_num": 0, "ignore_large": False,
-        "max_size": None, "save_visuals": None}
+        "max_size": None, "save_visuals": None, "mask_dir": None}
 
 
 def test_blank_16bit_image_is_listed_as_ignored(tmp_path):

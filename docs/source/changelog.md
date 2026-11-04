@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Max Size is set on the Segmentation page, next to Patch Size, and saved
+  with the other parameters by Parameters > Export. The Batch Run page shows
+  the parameter file's value but no longer changes it, so the file kept with
+  the results describes the run. A note on the Segmentation page says when
+  the open image would be split in a batch run, and when Patch Size is too
+  large to apply to the blocks. The Max Size arrows step in round thousands.
+- A resumed batch run always uses the parameters and ROI mask folder it
+  started with, which are now saved in the output folder; the resume prompt
+  lists any differences from the selected ones. Before, a resume used
+  whatever parameter file was selected, mixing two sets of parameters in one
+  run.
+- Scrolling the side panel with the mouse wheel no longer changes a spin
+  box, slider or drop-down list under the pointer unless it was clicked
+  first.
 - Fixed: gap analysis ran out of memory on images with tens of thousands of
   small gaps (a small Minimum Gap Diameter on large blocks). It is also about
   three times faster on such images. The circles found are unchanged.

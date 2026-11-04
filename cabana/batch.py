@@ -30,7 +30,7 @@ from .utils import (
     contains_oversized, is_oversized, largest_image, max_image_size, sanitize_filename,
     save_visualisations, read_bar_format, array_divide,
 )
-from .io import remove_empty_dir, list_files
+from .io import remove_empty_dir, list_files, block_grid, migrate_max_size
 
 
 # Progress cost of the CNN training run of one image relative to an ordinary
@@ -218,8 +218,7 @@ class BatchCabana:
                         f.write(img_path+"\n")
                     else:
                         n_eligible += 1
-                        row_blk_sz = int(np.ceil(height / int(np.ceil(height / max_size))))
-                        col_blk_sz = int(np.ceil(width / int(np.ceil(width / max_size))))
+                        _, _, row_blk_sz, col_blk_sz = block_grid(height, width, max_size)
                         count_oversized += 1
                         for i in range(0, height, row_blk_sz):
                             for j in range(0, width, col_blk_sz):
@@ -1025,16 +1024,91 @@ _CHECKPOINT_FIELDS = {
     "Ignore Large": ("ignore_large", lambda v: v.lower() == 'true'),
     "Max Size": ("max_size", int),
     "Save Visualisations": ("save_visuals", lambda v: v.lower() == 'true'),
+    "ROI Mask Folder": ("mask_dir", str),       # empty: no ROI masks
 }
 # Values for keys a checkpoint lacks (None: not recorded, keep the current setting)
 _CHECKPOINT_DEFAULTS = {"input_folder": "", "batch_size": 5, "batch_num": 0, "ignore_large": False,
-                        "max_size": None, "save_visuals": None}
+                        "max_size": None, "save_visuals": None, "mask_dir": None}
+
+# The parameters a batch run started with (after its Max Size and Save
+# Visualisations overrides), saved beside the checkpoint. A resumed run always
+# uses them, whatever parameter file is selected, so one run never mixes two
+# sets of parameters. Removed with the checkpoint when the run completes.
+RUN_PARAMS_FILE = '.RunParameters.yml'
+
+
+def saved_run_parameters(output_folder):
+    """Parameters an interrupted run in ``output_folder`` started with, or None
+    when it recorded none (no run, or a checkpoint written before 0.3.16)."""
+    path = join_path(output_folder, RUN_PARAMS_FILE)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path) as f:
+            params = yaml.safe_load(f)
+    except (OSError, yaml.YAMLError):
+        return None
+    return params if isinstance(params, dict) else None
+
+
+def _flat_settings(params):
+    """``{label: value}`` of a parameter dict, e.g. ``'Patch Size
+    (Segmentation)': 1024``; values outside a section keep their own name."""
+    flat = {}
+    for section, values in (migrate_max_size(dict(params or {}))).items():
+        if isinstance(values, dict):
+            for key, value in values.items():
+                flat[f"{key} ({section})"] = value
+        else:
+            flat[section] = values
+    return flat
+
+
+def _same_folder(a, b):
+    if not a or not b:
+        return not a and not b
+    return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+
+
+def run_settings_changes(output_folder, param_file, mask_dir=None, max_size=None, save_visuals=None):
+    """How the settings selected for a run differ from those the interrupted
+    run in ``output_folder`` started with, as ``'name: old → new'`` lines.
+
+    ``param_file``, ``max_size`` and ``save_visuals`` are what a new run would
+    use (the overrides as in :class:`BatchProcessor`). Parameters are compared
+    by value, so layout and comments in the files do not matter. Empty when
+    nothing differs or the run recorded no settings (before 0.3.16)."""
+    saved = saved_run_parameters(output_folder)
+    if saved is None:
+        return []
+    try:
+        with open(param_file) as f:
+            selected = yaml.safe_load(f) or {}
+    except (OSError, yaml.YAMLError):
+        return [f"Parameter file: cannot be read ({param_file})"]
+    selected = dict(selected)
+    if max_size is not None:
+        selected["Configs"] = dict(selected.get("Configs") or {}, **{"Max Size": int(max_size)})
+    if save_visuals is not None:
+        selected["Configs"] = dict(selected.get("Configs") or {}, **{"Save Visualisations": bool(save_visuals)})
+    old, new = _flat_settings(saved), _flat_settings(selected)
+    missing = object()
+    changes = [f"{name}: {old.get(name, '(not set)')} → {new.get(name, '(not set)')}"
+               for name in sorted(set(old) | set(new), key=lambda n: (n.split(' (')[-1], n))
+               if old.get(name, missing) != new.get(name, missing)]
+    ckpt_path = join_path(output_folder, '.CheckPoint.txt')
+    if os.path.exists(ckpt_path):
+        recorded = read_checkpoint(ckpt_path)["mask_dir"]
+        if recorded is not None and not _same_folder(recorded, mask_dir):
+            changes.append(f"ROI mask folder: {recorded or '(none)'} → {mask_dir or '(none)'}")
+    return changes
 
 
 def read_checkpoint(path):
     """Settings recorded in a ``.CheckPoint.txt`` as a dict keyed by
     ``input_folder``, ``batch_size``, ``batch_num``, ``ignore_large``,
-    ``max_size`` and ``save_visuals``. Values are split at the first comma (a
+    ``max_size``, ``save_visuals`` and ``mask_dir`` (empty: no ROI masks;
+    None: not recorded). Values are split at the first comma (a
     path may contain commas); unknown keys and unreadable values are left out,
     and take their defaults, so a truncated file never raises."""
     settings = dict(_CHECKPOINT_DEFAULTS)
@@ -1200,6 +1274,23 @@ class BatchProcessor():
         if self.progress_callback:
             self.progress_callback(ivalue)
 
+    def _restore_run_settings(self):
+        """On a resume, use the parameters and ROI mask folder the interrupted
+        run started with instead of the ones selected now (see
+        RUN_PARAMS_FILE). A no-op for checkpoints that recorded none."""
+        saved = saved_run_parameters(self.output_folder)
+        if saved is None:
+            return
+        self.param_file = join_path(self.output_folder, RUN_PARAMS_FILE)
+        self.args = saved
+        self.max_size = self.save_visuals = None        # already part of the saved parameters
+        ckpt_path = join_path(self.output_folder, '.CheckPoint.txt')
+        if os.path.exists(ckpt_path):
+            recorded = read_checkpoint(ckpt_path)["mask_dir"]
+            if recorded is not None:
+                self.mask_dir = recorded or None
+        Log.logger.debug('Resuming with the parameters and ROI mask folder the run started with.')
+
     def process(self):
         """
         Process images in batches.
@@ -1215,6 +1306,9 @@ class BatchProcessor():
         -------
         None
         """
+        if self.resume:
+            self._restore_run_settings()
+
         # Get all image paths from the input folder
         img_paths = get_img_paths(self.input_folder)
         if len(img_paths) == 0:
@@ -1262,6 +1356,9 @@ class BatchProcessor():
                 ckpt.write('Ignore Large,{}\n'.format(str(self.ignore_large)))
                 ckpt.write('Max Size,{}\n'.format(max_image_size(self.args)))
                 ckpt.write('Save Visualisations,{}\n'.format(save_visualisations(self.args)))
+                ckpt.write('ROI Mask Folder,{}\n'.format(self.mask_dir or ""))
+            with open(join_path(self.output_folder, RUN_PARAMS_FILE), 'w') as f:
+                yaml.safe_dump(self.args, f, sort_keys=False)
 
         # Initial progress update
         self.update_progress(2)
@@ -1593,8 +1690,9 @@ class BatchProcessor():
                         'QuantificationResults_Compact_SCORES.csv'))
 
         # Remove checkpoint file on successful completion
-        if os.path.exists(join_path(self.output_folder, '.CheckPoint.txt')):
-            os.remove(join_path(self.output_folder, '.CheckPoint.txt'))
+        for name in ('.CheckPoint.txt', RUN_PARAMS_FILE):
+            if os.path.exists(join_path(self.output_folder, name)):
+                os.remove(join_path(self.output_folder, name))
 
         # Remove intermediate batch folders after successful merge
         batches_path = join_path(self.output_folder, 'Batches')
@@ -1620,6 +1718,8 @@ class BatchProcessor():
         None
         """
         start_time = time.time()
+        if self.resume:
+            self._restore_run_settings()
 
         with Log.run_log(join_path(self.output_folder, LOGS_DIR), self.param_file):
             if self.max_size is not None:

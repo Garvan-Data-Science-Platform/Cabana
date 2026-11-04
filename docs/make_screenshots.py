@@ -149,7 +149,7 @@ def main(argv):
             (1, rect_of(win, win.toggle_seg_btn), "left"),
             (2, rect_of(win, win.color_btn), "right"),
             (3, union(win, (win.color_thresh_slider, win.num_labels_slider, win.max_iters_slider))),
-            (4, rect_of(win, win.patch_size_spinner), "left"),
+            (4, union(win, (win.patch_size_spinner, win.seg_max_size_spinner)), "left"),
             (5, rect_of(win, win.white_bg_cb), "right"),
             (6, rect_of(win, win.segment_btn)),
         ])
@@ -187,6 +187,7 @@ def main(argv):
         settle(app)
         win.param_file = "/data/TMA4/Parameters.yml"
         win.param_file_path.setText(win.param_file)
+        win._show_batch_max_size(5000)                # as read from that (absent) parameter file
         win.input_folder = "/data/TMA4_cores/BF/Patients/Images"
         win.input_folder_path.setText(win.input_folder)
         win.output_folder = "/data/TMA4_cores/BF/Patients/Output"
@@ -206,7 +207,7 @@ def main(argv):
             (2, rect_of(win, win.input_btn), "right"),
             (3, rect_of(win, win.output_btn), "right"),
             (4, rect_of(win, win.mask_btn), "right"),
-            (5, union(win, (win.batch_size_spinner, win.batch_max_size_spinner)), "right"),
+            (5, union(win, (win.batch_size_spinner, win.batch_max_size_label)), "right"),
             (6, union(win, (win.stats_cb, win.scores_cb, win.visuals_cb)), "right"),
             (7, rect_of(win, win.process_batch_btn), "below"),
             (8, union(win, (win.progress_label, win.progress_bar)), "above"),

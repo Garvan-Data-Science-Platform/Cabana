@@ -507,3 +507,14 @@ def test_cabana_imports_without_seaborn_image():
     code = ("import sys; sys.modules['seaborn_image'] = None\n"      # makes `import seaborn_image` raise
             "import cabana.utils, cabana.viz, cabana.stages, cabana.batch\n")
     subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_block_grid_matches_how_batch_runs_split():
+    from cabana.io import block_grid
+    assert block_grid(4737, 3521, 5000) == (1, 1, 4737, 3521)        # not oversized
+    assert block_grid(6000, 3000, 5000) == (1, 1, 6000, 3000)        # by area, not by side
+    assert block_grid(10000, 7000, 5000) == (2, 2, 5000, 3500)
+    assert block_grid(14211, 10563, 5000) == (3, 3, 4737, 3521)
+    assert block_grid(14211, 10563, 0) == (1, 1, 14211, 10563)       # no limit
+    rows, cols, bh, bw = block_grid(12001, 9999, 4096)
+    assert bh <= 4096 and bw <= 4096 and rows * bh >= 12001 and cols * bw >= 9999

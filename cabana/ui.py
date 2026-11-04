@@ -13,10 +13,12 @@ from sklearn.metrics.pairwise import euclidean_distances
 
 from PyQt5.QtWidgets import (QSlider, QWidget, QSplitter, QSplitterHandle,
                              QMenu, QAction, QFileDialog, QMessageBox,
-                             QProgressBar, QSizePolicy, QPushButton, QSpinBox)
+                             QProgressBar, QSizePolicy, QPushButton, QSpinBox,
+                             QAbstractSpinBox, QAbstractSlider, QComboBox, QScrollBar,
+                             QAbstractScrollArea, QApplication)
 from PyQt5.QtCore import Qt, QSize, QEvent, QPoint, QRect, QRectF, QPropertyAnimation, QEasingCurve, pyqtProperty
 from PyQt5.QtGui import QPixmap, QPainter, QPen, QColor, QDragEnterEvent, QDropEvent, QImage, QBrush, QFont
-from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtCore import QThread, pyqtSignal, QObject
 
 
 SEED = 0
@@ -2245,8 +2247,10 @@ class ToggleButton(QWidget):
 class MaxSizeSpinBox(QSpinBox):
     """Max Size box: 0 (shown as *No limit*) or MIN_MAX_SIZE px and above.
 
-    The arrows step between *No limit* and MIN_MAX_SIZE directly, and a typed
-    value below MIN_MAX_SIZE is raised to it when editing finishes.
+    The arrows step to the next multiple of the single step (2048 -> 3000 ->
+    4000 with a step of 1000) and between *No limit* and MIN_MAX_SIZE
+    directly; a typed value below MIN_MAX_SIZE is raised to it when editing
+    finishes.
     """
 
     def __init__(self, parent=None):
@@ -2256,14 +2260,45 @@ class MaxSizeSpinBox(QSpinBox):
         self.editingFinished.connect(self._raise_to_minimum)
 
     def stepBy(self, steps):
-        value = self.value()
-        if value == 0 and steps > 0:
-            self.setValue(MIN_MAX_SIZE)
-        elif value + steps * self.singleStep() < MIN_MAX_SIZE and steps < 0:
-            self.setValue(0)
-        else:
-            super().stepBy(steps)
+        value, step = self.value(), max(1, self.singleStep())
+        for _ in range(abs(steps)):
+            if steps > 0:
+                value = MIN_MAX_SIZE if value == 0 else (value // step + 1) * step
+            elif value > MIN_MAX_SIZE:
+                value = max(MIN_MAX_SIZE, (value - 1) // step * step)
+            else:
+                value = 0
+        self.setValue(min(value, self.maximum()))
 
     def _raise_to_minimum(self):
         if 0 < self.value() < MIN_MAX_SIZE:
             self.setValue(MIN_MAX_SIZE)
+
+
+class WheelGuard(QObject):
+    """Event filter that keeps the mouse wheel from changing a spin box, slider
+    or combo box the user has not clicked: over such a widget the wheel
+    scrolls the enclosing scroll area instead, so scrolling the side panel
+    never alters a setting by accident.
+
+    ``guard(root)`` installs it on every such widget under ``root``.
+    """
+
+    TYPES = (QAbstractSpinBox, QAbstractSlider, QComboBox)
+
+    def guard(self, root):
+        for widget in root.findChildren(self.TYPES):
+            if isinstance(widget, QScrollBar):
+                continue
+            widget.setFocusPolicy(Qt.StrongFocus)       # the wheel does not give focus
+            widget.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Wheel and isinstance(obj, self.TYPES) and not obj.hasFocus():
+            area = obj.parentWidget()
+            while area is not None and not isinstance(area, QAbstractScrollArea):
+                area = area.parentWidget()
+            if area is not None:
+                QApplication.sendEvent(area.verticalScrollBar(), event)
+            return True
+        return super().eventFilter(obj, event)

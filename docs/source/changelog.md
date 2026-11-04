@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fixed: Cabana failed to start with `cannot import name 'get_cmap' from
+  'matplotlib.cm'` on a fresh install with matplotlib 3.11. The `seaborn-image`
+  package that caused it is no longer required.
 - The empty image panel now points to File > Open Image… (there is no
   Load Image button since the menu bar replaced it).
 - Fixed: an input or output folder whose name contains `[`, `]`, `*` or `?`

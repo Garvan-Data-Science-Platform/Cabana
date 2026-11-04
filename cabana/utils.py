@@ -12,7 +12,6 @@ from enum import Enum
 from numba import jit
 from .constants import *
 import scipy.ndimage as ndi
-import seaborn_image as isns
 from .correct import Correct
 # matplotlib.use('Agg', force=True)
 from PIL import Image, ExifTags
@@ -90,6 +89,7 @@ def info_color_map(img, info_map, cbar_label="Length", cmap="PiYG", radius=1):
     else:
         cbar_ticks = np.linspace(0, 1, 5)
 
+    import seaborn_image as isns      # not a dependency: this helper is unused by the pipeline
     # info_map_normalized = (normalize(info_map) * 255).astype(np.uint8)
     fig, ax = plt.subplots(figsize=(width / 100.0, height / 100.0))
     ax = isns.imgplot(info_map, ax=ax, cmap=sns.color_palette(cmap, as_cmap=True),
@@ -211,6 +211,7 @@ def width_color_map(img, width_img, mask_img, width_color=[0, 255, 255], mask_co
 
 
 def sbs_color_map(img, info_map, save_name, cbar_label="Length", cmap="coolwarm"):
+    import seaborn_image as isns      # not a dependency: this helper is unused by the pipeline
     fig, axes = plt.subplots(1, 2, figsize=(12, 9))
 
     axes[0].imshow(img)

@@ -54,7 +54,7 @@ def _save_figure(fig, image_ax, image_height, save_path):
     ``image_ax`` at its own pixel size (no enlargement, no detail lost).
 
     The resolution and bounding box are passed explicitly so the output does
-    not depend on global matplotlib settings (importing seaborn_image sets
+    not depend on global matplotlib settings (a formerly imported package set
     300 dpi, which enlarged these figures 2 to 3 times). The layout scales as
     a whole, so the colour bar keeps its position and size relative to the
     image."""

@@ -498,3 +498,12 @@ def test_list_files_and_get_img_paths_take_bracketed_folders_literally(tmp_path)
     assert sorted(os.path.basename(p) for p in get_img_paths(str(folder))) == ["a.png", "b.TIF"]
     assert [os.path.basename(p) for p in list_files(str(folder), "*.png")] == ["a.png"]
     assert list_files(str(folder), "*.png", "*.txt") == [str(folder / "a.png"), str(folder / "c.txt")]
+
+
+def test_cabana_imports_without_seaborn_image():
+    """seaborn-image is not a dependency: its 0.10 release fails to import on
+    matplotlib 3.11 and took Cabana down with it."""
+    import subprocess
+    code = ("import sys; sys.modules['seaborn_image'] = None\n"      # makes `import seaborn_image` raise
+            "import cabana.utils, cabana.viz, cabana.stages, cabana.batch\n")
+    subprocess.run([sys.executable, "-c", code], check=True)

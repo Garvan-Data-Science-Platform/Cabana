@@ -10,7 +10,6 @@ pyyaml
 scikit-image>=0.26.0
 scikit-learn
 seaborn
-seaborn-image
 send2trash
 tomli
 torch

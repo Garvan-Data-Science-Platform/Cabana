@@ -364,3 +364,53 @@ def test_fit_gap_circles_memory_does_not_grow_with_circle_count():
     tracemalloc.stop()
     assert len(circles) > 9000
     assert peak < 200e6, f"peak {peak / 1e6:.0f} MB"      # was ~1.9 GB
+
+
+def _fit_gap_circles_reference(gap_mask, min_gap_diameter, roi_mask=None):
+    """fit_gap_circles before the peak threshold and KD-tree speed-ups (0.3.15
+    algorithm), kept to prove the circles are unchanged."""
+    from skimage.feature import peak_local_max
+    min_gap_radius = min_gap_diameter / 2
+    min_dist = int(np.max([1, min_gap_radius]))
+    mask = gap_mask.copy()
+    if roi_mask is not None:
+        mask[roi_mask == 0] = 0
+    mask[0, :] = mask[-1, :] = mask[:, :1] = mask[:, -1:] = 0
+    circles = []
+    while True:
+        dist_map = cv2.distanceTransform(mask, cv2.DIST_L2, cv2.DIST_MASK_PRECISE)
+        small = cv2.resize(dist_map, None, fx=0.5, fy=0.5)
+        centers = peak_local_max(small, min_distance=min_dist, exclude_border=False) * 2
+        radius = dist_map[centers[:, 0], centers[:, 1]]
+        eligible = np.hstack([centers[radius > min_gap_radius, :], radius[radius > min_gap_radius][:, None]])
+        if len(eligible) == 0:
+            break
+        while len(eligible) > 0:
+            circle = eligible[0, :].copy()
+            rest = eligible[1:, :]
+            if len(rest) > 0:
+                dist = np.hypot(rest[:, 0] - circle[0], rest[:, 1] - circle[1])
+                rest = rest[dist >= circle[2] + rest[:, 2]]
+            cv2.circle(mask, (int(circle[1]), int(circle[0])), int(circle[2]), 0, -1)
+            circles.append(circle)
+            eligible = rest
+    return np.array(circles) if circles else np.zeros((0, 3))
+
+
+@pytest.mark.parametrize("seed, diameter", [(0, 3), (1, 5), (2, 8), (3, 15), (4, 30)])
+def test_fit_gap_circles_matches_reference(seed, diameter):
+    """The peak threshold and the KD-tree overlap test leave the circles,
+    and their order, exactly as before."""
+    from cabana.stages import fit_gap_circles
+    rng = np.random.default_rng(seed)
+    mask = np.full((500, 600), 255, np.uint8)
+    for _ in range(60):                                  # random straight "fibres"
+        p0, p1 = rng.integers(0, 600, 2), rng.integers(0, 600, 2)
+        cv2.line(mask, tuple(map(int, p0)), tuple(map(int, p1)), 0, int(rng.integers(1, 4)))
+    roi = np.zeros_like(mask)
+    cv2.circle(roi, (300, 250), 230, 255, -1)
+    for r in (None, roi):
+        expected = _fit_gap_circles_reference(mask, diameter, r)
+        got = fit_gap_circles(mask, diameter, r)
+        assert len(expected) > 0 or diameter == 30
+        np.testing.assert_array_equal(got, expected)

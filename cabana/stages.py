@@ -21,7 +21,7 @@ from .analyzer import SkeletonAnalyzer
 from .orientation import OrientationAnalyzer
 from PIL import Image
 from skimage.feature import peak_local_max
-from sklearn.metrics.pairwise import euclidean_distances
+from scipy.spatial import cKDTree
 
 from .utils import join_path
 from .io import list_files
@@ -583,25 +583,36 @@ def fit_gap_circles(gap_mask, min_gap_diameter, roi_mask=None, progress=None):
 
         # downsample distance map and upscale detected centers to original image size
         dist_map_downscaled = cv2.resize(dist_map, None, fx=1 / downsample_factor, fy=1 / downsample_factor)
-        centers = peak_local_max(dist_map_downscaled, min_distance=min_dist,
-                                 exclude_border=False) * downsample_factor
+        # Peaks too small to hold a circle are skipped during the search (most
+        # peaks of the later rounds are). The downscaled map averages 2x2
+        # pixels including the full-size centre, so a peak is at most
+        # (1 + 1 + sqrt 2) / 4 < 1 lower there; the exact test follows. Dropping
+        # low peaks never changes which higher peaks are kept: min_distance
+        # only lets a higher peak suppress a lower one.
+        centers = peak_local_max(dist_map_downscaled, min_distance=min_dist, exclude_border=False,
+                                 threshold_abs=min_gap_radius - 1) * downsample_factor
         radius = dist_map[centers[:, 0], centers[:, 1]]
         eligible = np.hstack([centers[radius > min_gap_radius, :], radius[radius > min_gap_radius][:, None]])
         if len(eligible) == 0:
             break
 
-        # Largest first: accept the first candidate, drop the ones it overlaps.
-        # The accepted row is copied: a view would keep the whole candidate
-        # table alive for every circle (tens of GB with 50k small gaps).
-        while len(eligible) > 0:
-            circle = eligible[0, :].copy()
-            rest = eligible[1:, :]
-            if len(rest) > 0:
-                dist = euclidean_distances(circle[None, :2], rest[:, :2])[0]
-                rest = rest[dist >= circle[2] + rest[:, 2]]
+        # Largest first: accept the next live candidate and kill the ones it
+        # overlaps. A KD-tree finds them among the candidates within reach
+        # (its radius plus the largest radius) instead of testing all of them.
+        alive = np.ones(len(eligible), dtype=bool)
+        tree = cKDTree(eligible[:, :2])
+        reach = eligible[:, 2].max()
+        for i in range(len(eligible)):
+            if not alive[i]:
+                continue
+            circle = eligible[i].copy()      # a copy: a view would keep the whole table alive
+            alive[i] = False
+            near = np.asarray(tree.query_ball_point(circle[:2], circle[2] + reach), dtype=int)
+            near = near[alive[near]]
+            dist = np.hypot(eligible[near, 0] - circle[0], eligible[near, 1] - circle[1])
+            alive[near[dist < circle[2] + eligible[near, 2]]] = False
             cv2.circle(mask, (int(circle[1]), int(circle[0])), int(circle[2]), 0, -1)
             circles.append(circle)
-            eligible = rest
         if progress is not None:
             progress(np.count_nonzero(mask == 0) / mask.size)
     return np.array(circles) if circles else np.zeros((0, 3))

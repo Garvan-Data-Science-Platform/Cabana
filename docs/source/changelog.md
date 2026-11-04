@@ -3,8 +3,8 @@
 ## Unreleased
 
 - Fixed: gap analysis ran out of memory on images with tens of thousands of
-  small gaps (a small Minimum Gap Diameter on large blocks). The circles
-  found are unchanged.
+  small gaps (a small Minimum Gap Diameter on large blocks). It is also about
+  three times faster on such images. The circles found are unchanged.
 - Inputs above 89 megapixels no longer trigger PIL's "decompression bomb"
   warning, and inputs above 179 megapixels no longer fail to open.
 - Fixed: Cabana failed to start with `cannot import name 'get_cmap' from

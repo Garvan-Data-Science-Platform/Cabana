@@ -2307,9 +2307,9 @@ class MainWindow(QMainWindow):
         self.patch_size_spinner.setStyleSheet(self.spinner_style)
         self.patch_size_spinner.valueChanged.connect(self.update_patch_size)
         self.patch_size_spinner.setToolTip(
-            "Segment images larger than this in overlapping square patches: the network is trained\n"
-            "once on the whole image, then labels each patch at higher resolution.\n"
-            "Off = the whole image is shrunk to 512 px.")
+            "Segment large images in patches of this size to keep fine fibres.\n"
+            "Smaller = finer detail but slower. Off = whole image shrunk to 512 px.\n"
+            "Default 1024 px. No effect on split images when at or above Max Size.")
         patch_layout.addWidget(self.patch_size_spinner)
         layout.addLayout(patch_layout)
 
@@ -2329,11 +2329,9 @@ class MainWindow(QMainWindow):
         self.seg_max_size_spinner.setStyleSheet(self.spinner_style)
         self.seg_max_size_spinner.valueChanged.connect(self.update_max_size)
         self.seg_max_size_spinner.setToolTip(
-            "Batch runs split images with more pixels than this squared into blocks of at most\n"
-            "this size, and analyse each block as a separate image; this keeps memory use down.\n"
-            "Each block is segmented on its own, so the value can change the segmentation.\n"
-            "The smallest value is 2048 px. No limit = every image is analysed whole;\n"
-            "very large images may run out of memory. Saved by Parameters > Export.")
+            "Batch runs cut larger images into blocks of at most this size.\n"
+            "Lower it if a run runs out of memory or is slow; raise it to cut fewer fibres.\n"
+            "Default 5000 px. No limit = never cut.")
         max_size_layout.addWidget(self.seg_max_size_spinner)
         layout.addLayout(max_size_layout)
 

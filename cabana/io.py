@@ -10,6 +10,11 @@ import shutil
 import glob as _glob
 from PIL import Image, ExifTags
 
+# Microscopy images and whole-slide exports routinely exceed PIL's
+# decompression-bomb limit (89 Mpx warns, 179 Mpx raises); they are the
+# user's own files, and the oversize split (Max Size) keeps memory in check
+Image.MAX_IMAGE_PIXELS = None
+
 from .log import Log
 
 

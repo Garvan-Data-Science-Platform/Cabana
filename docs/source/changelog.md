@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Inputs above 89 megapixels no longer trigger PIL's "decompression bomb"
+  warning, and inputs above 179 megapixels no longer fail to open.
 - Fixed: Cabana failed to start with `cannot import name 'get_cmap' from
   'matplotlib.cm'` on a fresh install with matplotlib 3.11. The `seaborn-image`
   package that caused it is no longer required.

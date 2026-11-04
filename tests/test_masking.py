@@ -348,3 +348,19 @@ def test_fit_gap_circles_fills_gaps_without_overlap():
     roi = np.zeros_like(gaps)                       # outside the ROI is not a gap
     assert len(fit_gap_circles(gaps, 10, roi_mask=roi)) == 0
     assert fit_gap_circles(np.zeros_like(gaps), 10).shape == (0, 3)
+
+
+def test_fit_gap_circles_memory_does_not_grow_with_circle_count():
+    """Accepted circles used to be views into the candidate table, keeping a
+    copy of it alive per circle (tens of GB with 50k small gaps)."""
+    import tracemalloc
+    from cabana.stages import fit_gap_circles
+    mask = np.full((1200, 1200), 255, np.uint8)
+    mask[::12, :] = 0
+    mask[:, ::12] = 0                 # ~10k gaps of 11 px
+    tracemalloc.start()
+    circles = fit_gap_circles(mask, 5)
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    assert len(circles) > 9000
+    assert peak < 200e6, f"peak {peak / 1e6:.0f} MB"      # was ~1.9 GB

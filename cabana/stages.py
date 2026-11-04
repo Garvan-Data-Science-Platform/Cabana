@@ -590,15 +590,18 @@ def fit_gap_circles(gap_mask, min_gap_diameter, roi_mask=None, progress=None):
         if len(eligible) == 0:
             break
 
+        # Largest first: accept the first candidate, drop the ones it overlaps.
+        # The accepted row is copied: a view would keep the whole candidate
+        # table alive for every circle (tens of GB with 50k small gaps).
         while len(eligible) > 0:
-            if eligible[1:, :].size > 0:
-                dist = euclidean_distances(eligible[[0], :2], eligible[1:, :2])[0]
-                overlapping = np.nonzero(dist < eligible[0, 2] + eligible[1:, 2])[0] + 1
-                eligible = np.delete(eligible, overlapping, axis=0)
-            circle = eligible[0, :]
+            circle = eligible[0, :].copy()
+            rest = eligible[1:, :]
+            if len(rest) > 0:
+                dist = euclidean_distances(circle[None, :2], rest[:, :2])[0]
+                rest = rest[dist >= circle[2] + rest[:, 2]]
             cv2.circle(mask, (int(circle[1]), int(circle[0])), int(circle[2]), 0, -1)
             circles.append(circle)
-            eligible = np.delete(eligible, 0, axis=0)
+            eligible = rest
         if progress is not None:
             progress(np.count_nonzero(mask == 0) / mask.size)
     return np.array(circles) if circles else np.zeros((0, 3))

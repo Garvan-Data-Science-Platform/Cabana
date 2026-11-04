@@ -5,9 +5,11 @@ rem It doesn't require:
 rem - conda to be in the PATH
 rem - cmd.exe to be initialized with conda init
 
-rem Define here the path to your conda installation
-set CONDAPATH=C:\ProgramData\miniconda3\
-rem Define here the name of the environment
+rem Define here the path to your conda installation (the folder holding Scripts\activate.bat;
+rem `conda env list` shows it as the `base` row)
+set CONDAPATH=C:\ProgramData\miniconda3
+rem Define here the name of the environment and its folder (the `cabana` row of
+rem `conda env list`; it is not always under the conda installation)
 set ENVNAME=cabana
 set ENVPATH=%CONDAPATH%\envs\%ENVNAME%
 

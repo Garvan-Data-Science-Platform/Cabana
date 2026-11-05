@@ -8,14 +8,14 @@ Once the Cabana GUI is launched, you will see a window split horizontally: the c
 
 ![Start page](media/start.png)
 
-1. **Menu bar.** All commands live here: **File** (open or reload an image, open a TMA slide, generate a TMA map template, quit; quitting asks for confirmation only when a job is running or TMA hand edits are unsaved), **Parameters** (import, export, restore defaults), **Analysis** (choose which page the control panel shows: **TMA**, **Segmentation**, **Fibre Detection**, **Gap Analysis** or **Batch Run**, shortcuts Ctrl/Cmd+1 to 5) and **Help** (about, documentation, issue tracker, **Check for Updates** (see [Updating Cabana](installation.md#updating-cabana); on macOS it is in the **Cabana** menu), version, licence).
+1. **Menu bar.** All commands live here: **File** (open or reload an image, open a TMA slide, generate a TMA map template, quit; quitting asks for confirmation only when a job is running or TMA hand edits are unsaved), **Parameters** (import, export, restore defaults), **Analysis** (choose which page the control panel shows: **TMA**, **Segmentation**, **Birefringence**, **Fibre Detection**, **Gap Analysis** or **Batch Run**, shortcuts Ctrl/Cmd+1 to 6) and **Help** (about, documentation, issue tracker, **Check for Updates** (see [Updating Cabana](installation.md#updating-cabana); on macOS it is in the **Cabana** menu), version, licence).
 2. **Open TMA Slide** opens a whole-slide scan on the TMA Dearrayer page.
 3. **Open Image** loads a single image to tune parameters on; the panel switches to Segmentation automatically. You can also drag an image onto the viewer.
 4. **Import Parameters** loads a saved `Parameters.yml` into the controls.
 
 The control panel shows one page at a time. Hover any label or control for a short description; the same hint appears in the status bar at the bottom, which also shows the loaded file, its size and the zoom. The theme selector sits at the bottom right.
 
-To begin, select a representative image from your dataset, then work through the Segmentation, Fibre Detection and Gap Analysis pages in that order to determine the settings for your analysis.
+To begin, select a representative image from your dataset, then work through the Segmentation, Fibre Detection and Gap Analysis pages in that order to determine the settings for your analysis. For polarised-light (birefringence) images, turn segmentation off and use the Birefringence page instead, then Fibre Detection with **Dark Line** off. Bright-field and polarised-light images need separate parameter files: tune and export one for each, and use each in its own batch run.
 
 ## Segmentation
 
@@ -27,6 +27,19 @@ To begin, select a representative image from your dataset, then work through the
 4. **Patch Size** (1024 px by default): larger images are segmented in overlapping square patches. The network is trained once on the whole image and then labels each patch at a higher resolution, so fine detail survives on images of several thousand pixels such as TMA cores. Off shrinks the whole image to 512 px. **Max Size** (5000 px by default) is the largest image a batch run analyses as one piece: images with more pixels than its square are split into blocks of at most this size, each analysed (and segmented) as a separate image. *No limit* analyses every image whole, and very large images may run out of memory; the smallest value is 2048 px. It is saved with the other parameters by **Parameters > Export**. A note below the two boxes says when the open image would be split in a batch run (the segmentation preview always uses the whole image), and when Patch Size is so large that it cannot apply to the blocks.
 5. **White Background.** Fills the non-ROI area with white (default). Disable it when detecting bright fibres on a dark background. **Overlay Original** blends the segmentation with the original image in the viewer.
 6. **Segment** runs the step; the result replaces the image in the viewer.
+
+## Birefringence
+
+![Birefringence page](media/birefringence.png)
+
+Under polarised light, Picrosirius Red stained collagen shines red-orange, yellow or green, roughly from thick, densely packed fibres to thin, loosely packed ones. This page classifies the pixels of a polarised-light image into these colour bands as the CMM Lab PR-BRF Analyser ImageJ macro does; with the default settings the band pixel counts equal the macro's. A note appears when the open image looks bright-field, where the bands are meaningless.
+
+1. **Birefringence toggle.** Turns the birefringence step on or off for batch runs (off by default). It runs whether segmentation is on or off, inside the ROI mask when one is given.
+2. **Brightness Threshold** (default 10): darker pixels are background. **Saturation Min** (default 0): less saturated pixels belong to no band; at 0, grey pixels count as red-orange, as in the macro.
+3. **Red-Orange, Yellow and Green Hue.** The hue range of each band on ImageJ's 0 to 255 scale (defaults 0-27, 28-47 and 48-140). The bands stay joined: moving one edge moves the neighbouring band. Drag the red-orange band below 0 to include the deep red hues just below the wrap point (shown as, for example, 230-27); the default band leaves them out and reports them as unclassified.
+4. **View.** *Class map* paints each band in its colour and bright pixels in no band in grey; *Total* and each band show those pixels in their original colour on black, as saved by a batch run. **Overlay Original** shows the original image.
+5. **Sort Into Folders** (default on) sorts the band images of a batch run into `BRF/Total`, `Red`, `Yellow` and `Green` and the tables into `BRF/Stats`.
+6. **Separate** computes the bands; afterwards every setting updates the view at once. Below the button: each band's share of the birefringent signal, the share of the image in any band and in none (unclassified), and the area in the bands (when the image records its pixel size).
 
 ## Fibre Detection
 
@@ -67,6 +80,10 @@ Once the settings on the three pages are chosen, use **Parameters > Export Param
 8. While a run is in progress a status line above the progress bar names the current batch, stage and image. The bar weights segmentation by its cost (one CNN training run per image, plus one labelling pass per patch), so it keeps moving through that slow stage.
 
 If a run is cancelled or stops with an error, the completed batches and a checkpoint are kept. Start Batch Run again with the same output folder and accept the resume prompt to continue from the last finished batch. A resumed run always uses the parameters and ROI mask folder it started with, which are saved in the output folder, whatever is selected on the page, so one run never mixes two sets of parameters. When the selection differs, the resume prompt lists the differences; choose **No** to start a new run with the selected settings instead.
+
+## Combining bright-field and polarised-light results
+
+Bright-field (BF) and polarised-light (POL) images of the same samples are analysed in two batch runs, each with its own parameter file. **File > Combine BF and POL Results…** then asks for the `QuantificationResults.csv` of each run and writes one table with one row per sample (`QuantificationResults_BF_POL.csv` by default). Rows are matched on the image name without its `BF` or `POL` token, so `A1420.vsi_BF_S01` and `A1420.vsi_POL_S01` (QuPath exports) or `1734.vsi - TMA1_BF_A4Annotation (Tumor)_1` and its `POL` partner (TMA cores) form one sample. The table starts with the sample and patient, followed by every column of the BF run prefixed `BF: ` and of the POL run prefixed `POL: `. Images without a partner keep a row with the other run's columns empty; the message after combining says how many.
 
 ## Image naming for per-patient statistics
 
@@ -178,3 +195,13 @@ x. **QuantificationResults.csv**
    With **Stats** ticked, `QuantificationResults_MEAN_STD_SEM.csv` adds the mean, sample standard deviation and standard error per patient over that patient's images (a patient with a single image has a mean but no STD or SEM), and `QuantificationResults_Compact_MEAN_STD_SEM.csv` the same for the compact column set. Patients are identified from the image name: the prefix before `.vsi`, which is how both QuPath slide exports (`K324.vsi - 20x_BF_01Annotation (Tumor)_1`) and the TMA core export (`1734.vsi - TMA1_BF_A4Annotation (Tumor)_1`) name their files; otherwise the first token of the name is used. With **Scores** ticked, `QuantificationResults_SCORES.csv` adds the Rigidity and Bundling collagen risk scores computed from those per-patient means (`QuantificationResults_Compact_SCORES.csv` carries the same scores with the compact column set).
 
    The output folder also contains `version_params.yaml` with all parameters used for the run, the Cabana version and git commit, the user and time, and the folders used (including the ROI mask folder), for tracking and reproducibility.
+
+xi. **BRF**
+
+   Present when birefringence is on (`Configs: Birefringence`). With **Sort Into Folders** on (the default):
+
+   a. Total: `<image>_total.tif`, every pixel in a band in its original colour on black, and `<image>_original.tif`, the analysed image
+   b. Red, Yellow and Green: `<image>_red_orange.tif`, `<image>_yellow.tif` and `<image>_green.tif`, the pixels of one band each
+   c. Stats: `<image>_statistics.csv` for each image and `ResultsBRF.csv` for the run (see [Read-outs](readouts.md#birefringence-brf-results))
+
+   The images are written only when **Visualisations** is ticked; they are TIFFs carrying the pixel size, which Fiji/ImageJ shows under Image > Properties. With **Sort Into Folders** off, all files are in `BRF` itself.

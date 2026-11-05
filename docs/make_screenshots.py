@@ -1,8 +1,9 @@
 """Regenerate the annotated GUI screenshots used in the documentation.
 
 Drives the real Cabana GUI on Qt's offscreen platform, runs the analysis
-steps on the bundled Picrosirius sample image and (when the slide is present)
-fits the APGI TMA 4 slide, then grabs every page and draws the numbered red
+steps on the bundled Picrosirius sample image, (when the slide is present)
+fits the APGI TMA 4 slide and (when present) separates the birefringence bands
+of a polarised-light section, then grabs every page and draws the numbered red
 markers referenced by the text in ``source/workflow.md`` and ``source/tma.md``.
 
     conda activate cabana
@@ -32,6 +33,7 @@ MEDIA = os.path.join(REPO, "docs", "source", "media")
 IMG = os.path.join(REPO, "data", "Picrocirius",
                    "540.vsi - 20x_BF multi-band_01Annotation (Ellipse) (Tumor)_0.tif")
 SLIDE = os.path.join(REPO, "large", "APGI TMA", "APGI TMA 4 PicRed.vsi")
+POL = os.path.join(REPO, "large", "BRF", "rois", "A1420.vsi_POL_S01.tif")
 RED = QColor(220, 30, 30)
 
 
@@ -245,6 +247,26 @@ def main(argv):
                 (7, union(win, (win.tma_margin_spin, win.tma_erode_spin, *win.tma_channel_cbs.values()))),
                 (8, rect_of(win, win.tma_output_btn), "right"),
                 (9, rect_of(win, win.tma_export_btn)),
+            ])
+
+    if want("birefringence"):
+        if not os.path.exists(POL):
+            print("Polarised-light image not found, skipping birefringence.png:", POL)
+        else:
+            win.show_page(win.pages.indexOf(win.brf_tab))
+            win.toggle_brf_btn.setChecked(True)
+            win.load_original_image(POL)
+            win.image_panel.setImage(win.ori_img)
+            settle(app, 500)
+            win.run_birefringence()
+            wait_until(app, lambda: win._brf_masks is not None, label="birefringence")
+            grab(win, "birefringence.png", [
+                (1, rect_of(win, win.toggle_brf_btn), "above"),
+                (2, union(win, (win.brf_brightness_slider, win.brf_saturation_slider))),
+                (3, union(win, win.brf_band_sliders)),
+                (4, rect_of(win, win.brf_view_combo), "left"),
+                (5, union(win, (win.brf_sort_cb, win.brf_original_cb)), "right"),
+                (6, union(win, (win.brf_btn, win.brf_summary_label)), "below"),
             ])
 
 

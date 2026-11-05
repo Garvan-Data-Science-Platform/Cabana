@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- New Birefringence page and analysis step for polarised-light images:
+  each pixel is classified into the red-orange, yellow and green bands of
+  the PR-BRF Analyser ImageJ macro, with the same pixel counts as the macro
+  at its default settings. Batch runs measure the bands inside the ROI mask,
+  add them to `QuantificationResults.csv` and write the band images and
+  tables to a `BRF` folder (sorted into `Total`, `Red`, `Yellow`, `Green`
+  and `Stats` by default). Off by default (`Configs: Birefringence`).
+- File > Combine BF and POL Results joins a bright-field and a
+  polarised-light batch run into one table with one row per sample.
+- Min Branch Length and the curvature windows are now set on the Fibre
+  Detection page, and HDM Saturation (Contrast Enhancement) on the Gap
+  Analysis page; before, they could only be edited in the parameter file.
+
 ## 0.3.16
 
 - Max Size is set on the Segmentation page, next to Patch Size, and saved

@@ -748,6 +748,25 @@ class SegmentationWorker(QThread):
         self.segmentation_complete.emit((roi_img, score))
 
 
+class BRFWorker(QThread):
+    """Computes ImageJ's HSB stack of the open image for the Birefringence page;
+    the band masks are then re-thresholded from it without this worker."""
+    hsb_complete = pyqtSignal(object)       # (hue, saturation, brightness) uint8 arrays
+    failed = pyqtSignal(str)
+
+    def __init__(self, image):
+        super().__init__()
+        self.image = image                  # RGB array as loaded by the GUI
+
+    def run(self):
+        try:
+            from .brf import hsb
+            self.hsb_complete.emit(hsb(self.image))
+        except Exception as e:
+            Log.logger.exception("Birefringence failed")
+            self.failed.emit(str(e))
+
+
 class TMAWorker(QThread):
     """Background worker for the TMA page.
 

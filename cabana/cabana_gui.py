@@ -29,6 +29,8 @@ from .io import (DEFAULT_MAX_SIZE, block_grid, max_image_size, migrate_max_size,
                  save_visualisations)
 from .segmenter import generate_rois, mask_from_score
 from .stages import GAP_FILL_ALPHA, GAP_INTRA_RGB, GAP_OTHER_RGB, gap_base_image, gap_intra
+from . import brf
+from .brf import DEFAULTS as BRF_DEFAULTS
 from .tma_editor import TMACoreEditor
 from .tma_maps import MAP_FILE_FILTER, available_arrays, load_map_file, match_map_to_slide, write_templates
 from .tma_editor import MapPreviewDialog
@@ -178,12 +180,14 @@ class MainWindow(QMainWindow):
         self.start_tab = QWidget()
         self.tma_tab = QWidget()
         self.seg_tab = QWidget()
+        self.brf_tab = QWidget()
         self.det_tab = QWidget()
         self.gap_tab = QWidget()
         self.bat_tab = QWidget()
 
         # Set up each page (TMA last: it refers to batch widgets)
         self.setup_segmentation_tab()
+        self.setup_birefringence_tab()
         self.setup_detection_tab()
         self.setup_gap_analysis_tab()
         self.setup_batch_processing_tab()
@@ -194,7 +198,7 @@ class MainWindow(QMainWindow):
         self._page_titles = ["Start"]
         self.pages.addWidget(self.start_tab)
         for (title, action), page in zip(self._page_actions,
-                                         (self.tma_tab, self.seg_tab, self.det_tab,
+                                         (self.tma_tab, self.seg_tab, self.brf_tab, self.det_tab,
                                           self.gap_tab, self.bat_tab)):
             index = self.pages.addWidget(page)
             self._page_titles.append(title)
@@ -283,6 +287,10 @@ class MainWindow(QMainWindow):
         self.gap_img = None         # fibre mask view shown under the gap circles
         self.gap_circles = None     # (row, col, radius) px of the last gap analysis
         self._gap_intra = None      # per circle: centre inside the segmentation mask
+        self._brf_hsb = None        # (hue, saturation, brightness) of the open image, for re-thresholding
+        self._brf_masks = None      # (band masks, gate) at the current Birefringence settings
+        self._brf_pixel_size = None  # µm/pixel of the open image, when its metadata has it
+        self.brf_worker = None
         self.segmentation_worker = None
         self.detection_worker = None
         self.gap_analysis_worker = None
@@ -357,6 +365,13 @@ class MainWindow(QMainWindow):
         file_menu.addAction(self.save_map_templates_action)
 
         file_menu.addSeparator()
+        self.combine_results_action = QAction("&Combine BF and POL Results…", self)
+        self.combine_results_action.setStatusTip(
+            "Join the results of a bright-field and a polarised-light batch run into one row per sample")
+        self.combine_results_action.triggered.connect(self.combine_bf_pol_results)
+        file_menu.addAction(self.combine_results_action)
+
+        file_menu.addSeparator()
         quit_action = QAction("&Quit", self)
         quit_action.setShortcut(QKeySequence.Quit)
         quit_action.setMenuRole(QAction.QuitRole)
@@ -389,7 +404,7 @@ class MainWindow(QMainWindow):
         # ExclusiveOptional lets the Start page leave every Analysis entry unchecked
         self._page_group.setExclusionPolicy(QActionGroup.ExclusionPolicy.ExclusiveOptional)
         self._page_actions = []
-        for i, title in enumerate(("TMA Dearrayer", "Segmentation", "Fibre Detection",
+        for i, title in enumerate(("TMA Dearrayer", "Segmentation", "Birefringence", "Fibre Detection",
                                    "Gap Analysis", "Batch Run")):
             action = QAction(title, self)
             action.setCheckable(True)
@@ -462,7 +477,7 @@ class MainWindow(QMainWindow):
 
         intro = QLabel("Open a TMA slide to cut it into cores, open an image to tune parameters "
                        "on it, or import a saved parameter file. Analysis pages are also under the "
-                       "Analysis menu (Ctrl/Cmd+1 to 5).")
+                       "Analysis menu (Ctrl/Cmd+1 to 6).")
         intro.setWordWrap(True)
         intro.setStyleSheet(self.value_label_style)
         layout.addWidget(intro)
@@ -599,6 +614,54 @@ class MainWindow(QMainWindow):
     def _open_tma_slide_from_menu(self):
         self.show_page(self.pages.indexOf(self.tma_tab))
         self.select_tma_slide()
+
+    def _ask_combine_paths(self):
+        """``(BF csv, POL csv, output csv)`` chosen in file dialogs, or None.
+        Monkeypatched in tests."""
+        filt = "CSV Files (*.csv)"
+        bf_csv, _ = QFileDialog.getOpenFileName(self, "Bright-field results (QuantificationResults.csv)", "", filt)
+        if not bf_csv:
+            return None
+        pol_csv, _ = QFileDialog.getOpenFileName(self, "Polarised-light results (QuantificationResults.csv)",
+                                                 os.path.dirname(bf_csv), filt)
+        if not pol_csv:
+            return None
+        out_csv, _ = QFileDialog.getSaveFileName(
+            self, "Save combined results",
+            join_path(os.path.dirname(os.path.dirname(bf_csv)), "QuantificationResults_BF_POL.csv"), filt)
+        return (bf_csv, pol_csv, out_csv) if out_csv else None
+
+    def _notify(self, title, text, info="", warning=False):
+        """One-button message box. Monkeypatched in tests."""
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning if warning else QMessageBox.Information)
+        msg.setWindowTitle(title)
+        msg.setText(text)
+        msg.setInformativeText(info)
+        msg.setStyleSheet(self.msgbox_style)
+        self._fit_dialog_buttons(msg)
+        msg.exec_()
+
+    def combine_bf_pol_results(self):
+        """File > Combine BF and POL Results: one row per sample, matched on the
+        image names without their BF/POL token."""
+        from .scores import combine_modalities
+        paths = self._ask_combine_paths()
+        if not paths:
+            return
+        bf_csv, pol_csv, out_csv = paths
+        title = "Combine BF and POL Results"
+        try:
+            _, counts = combine_modalities(bf_csv, pol_csv, out_csv)
+        except Exception as e:
+            self._notify(title, "The results could not be combined.", str(e), warning=True)
+            return
+        info = out_csv
+        if counts["bf_only"] or counts["pol_only"]:
+            info += (f"\n\n{counts['bf_only']} BF and {counts['pol_only']} POL images have no partner; "
+                     f"their rows keep the other run's columns empty.")
+        n = counts['matched']
+        self._notify(title, f"{n} sample{'s have' if n != 1 else ' has'} both a BF and a POL row.", info)
 
     def restore_default_parameters(self):
         """Reload the bundled default parameters into the widgets."""
@@ -2374,6 +2437,329 @@ class MainWindow(QMainWindow):
         layout.addStretch()
         self.seg_tab.setLayout(layout)
 
+    # Hue axis of the band sliders: ImageJ's 0-255 hue scale shifted so that the
+    # red-orange band can extend below 0 into the deep red hues 192-255
+    # (stored in the parameter file as Min > Max, a wrapping range)
+    BRF_HUE_AXIS = (-64, 191)
+
+    def setup_birefringence_tab(self):
+        """Set up the Birefringence page: colour bands of polarised-light images
+        (PR-BRF Analyser classification, see cabana.brf)."""
+        layout = QVBoxLayout()
+        layout.setContentsMargins(6, 10, 6, 6)
+        layout.setSpacing(12)
+
+        # Enable toggle (Configs: Birefringence; off by default)
+        self.toggle_brf_label = QLabel()
+        toggle_layout = QHBoxLayout()
+        self.toggle_brf_btn = ToggleButton()
+        self.toggle_brf_btn.setChecked(False)
+        self.toggle_brf_btn.toggled.connect(self.toggle_birefringence)
+        self.toggle_brf_btn.setToolTip("Enable/Disable the birefringence colour bands and update accordingly "
+                                       "in the parameter file.\nUse it on polarised-light images only.")
+        toggle_layout.addStretch()
+        toggle_layout.addWidget(self.toggle_brf_label)
+        toggle_layout.addWidget(self.toggle_brf_btn)
+        layout.addLayout(toggle_layout)
+
+        def value_label(text, width=30):
+            label = QLabel(text)
+            label.setFixedWidth(width)
+            label.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
+            label.setStyleSheet(self.value_label_style)
+            return label
+
+        # Brightness threshold
+        bright_layout = QHBoxLayout()
+        bright_layout.addWidget(QLabel("Brightness Threshold:"))
+        self.brf_brightness_slider = CustomSlider(Qt.Horizontal)
+        self.brf_brightness_slider.setRange(0, 255)
+        self.brf_brightness_slider.setValue(10)  # Default (as in the macro)
+        self.brf_brightness_slider.valueChanged.connect(self.update_brf_brightness)
+        self.brf_brightness_slider.setToolTip(
+            "Pixels darker than this (the brightest of R, G and B) are background and belong to\n"
+            "no band. Default 10, as in the PR-BRF Analyser macro.")
+        bright_layout.addWidget(self.brf_brightness_slider)
+        self.brf_brightness_value = value_label("10")
+        bright_layout.addWidget(self.brf_brightness_value)
+        layout.addLayout(bright_layout)
+
+        # Saturation minimum
+        sat_layout = QHBoxLayout()
+        sat_layout.addWidget(QLabel("Saturation Min:"))
+        self.brf_saturation_slider = CustomSlider(Qt.Horizontal)
+        self.brf_saturation_slider.setRange(0, 255)
+        self.brf_saturation_slider.setValue(0)  # Default (as in the macro)
+        self.brf_saturation_slider.valueChanged.connect(self.update_brf_saturation)
+        self.brf_saturation_slider.setToolTip(
+            "Pixels less saturated than this belong to no band. Default 0, as in the macro;\n"
+            "grey pixels then count as red-orange (their hue is 0). Set 1 or more to leave them out.")
+        sat_layout.addWidget(self.brf_saturation_slider)
+        self.brf_saturation_value = value_label("0")
+        sat_layout.addWidget(self.brf_saturation_value)
+        layout.addLayout(sat_layout)
+
+        # Hue bands: joined range sliders on one hue axis
+        self._brf_syncing = False
+        self.brf_band_sliders, self.brf_band_values = [], []
+        tips = {
+            "Red-Orange": "Hue range of the red-orange band (thick, densely packed fibres). Default 0-27.\n"
+                          "Drag the lower handle below 0 to include the deep red hues 192-255.",
+            "Yellow": "Hue range of the yellow band. Default 28-47.",
+            "Green": "Hue range of the green band (thin, loosely packed fibres). Default 48-140.",
+        }
+        band_labels = [QLabel(f"{band} Hue:") for band in brf.BANDS]
+        label_width = max(label.sizeHint().width() for label in band_labels)
+        for index, band in enumerate(brf.BANDS):
+            band_layout = QHBoxLayout()
+            label = band_labels[index]
+            label.setFixedWidth(label_width)        # the three sliders share one hue axis: align them
+            band_layout.addWidget(label)
+            slider = RangeSlider(Qt.Horizontal)
+            slider.setRange(*self.BRF_HUE_AXIS)
+            lo, hi = brf.band_ranges(BRF_DEFAULTS)[index]
+            slider.setValues(lo, hi)
+            slider.valueChanged.connect(lambda lo, hi, i=index: self.update_brf_band(i, lo, hi))
+            slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            slider.setToolTip(tips[band] + "\nThe bands stay joined: moving one edge moves the neighbouring band.")
+            band_layout.addWidget(slider, 3)
+            value = value_label(f"({lo}, {hi})", 70)
+            band_layout.addWidget(value)
+            layout.addLayout(band_layout)
+            self.brf_band_sliders.append(slider)
+            self.brf_band_values.append(value)
+
+        # View
+        view_layout = QHBoxLayout()
+        view_layout.addWidget(QLabel("View:"))
+        view_layout.addStretch()
+        self.brf_view_combo = QComboBox()
+        self.brf_view_combo.addItems(["Class map", "Total", *brf.BANDS])
+        self.brf_view_combo.setStyleSheet(self.combo_style)
+        self.brf_view_combo.currentIndexChanged.connect(self._show_brf_view)
+        self.brf_view_combo.setToolTip(
+            "Class map: each band in its colour, bright pixels in no band in grey.\n"
+            "Total or one band: those pixels in their original colour on black, as saved by Batch Run.")
+        view_layout.addWidget(self.brf_view_combo)
+        layout.addLayout(view_layout)
+
+        # Note shown for bright-field images
+        self.brf_note = QLabel("This looks like a bright-field image; birefringence bands need a "
+                               "polarised-light image.")
+        self.brf_note.setWordWrap(True)
+        self.brf_note.setStyleSheet(self.value_label_style)
+        self.brf_note.setVisible(False)
+        layout.addWidget(self.brf_note)
+
+        # Checkboxes
+        layout.addWidget(create_separator())
+        cb_layout = QHBoxLayout()
+        self.brf_sort_cb = QCheckBox("Sort Into Folders")
+        self.brf_sort_cb.setChecked(True)
+        self.brf_sort_cb.setStyleSheet(self.checkbox_style)
+        self.brf_sort_cb.stateChanged.connect(self.update_brf_sort)
+        self.brf_sort_cb.setToolTip("Batch Run writes the band images to BRF/Total, Red, Yellow and Green and\n"
+                                    "the tables to BRF/Stats; unticked, all files go in BRF.")
+        cb_layout.addWidget(self.brf_sort_cb)
+        self.brf_original_cb = QCheckBox("Overlay Original")
+        self.brf_original_cb.setChecked(False)
+        self.brf_original_cb.setStyleSheet(self.checkbox_style)
+        self.brf_original_cb.clicked.connect(self._show_brf_view)
+        self.brf_original_cb.setToolTip("Toggle to show the original image.")
+        cb_layout.addStretch()
+        cb_layout.addWidget(self.brf_original_cb)
+        layout.addLayout(cb_layout)
+
+        # Separate button
+        self.brf_btn = QPushButton("Separate")
+        self.brf_btn.clicked.connect(self.run_birefringence)
+        self.brf_btn.setEnabled(False)
+        self.brf_btn.setStyleSheet(self.primary_btn_style)
+        layout.addWidget(self.brf_btn)
+
+        # Summary of the current separation
+        self.brf_summary_label = QLabel("")
+        self.brf_summary_label.setWordWrap(True)
+        self.brf_summary_label.setStyleSheet(self.value_label_style)
+        self.brf_summary_label.setToolTip("Share of the birefringent signal in each band, share of the image in\n"
+                                          "any band and in none (unclassified), and the area in the bands.")
+        layout.addWidget(self.brf_summary_label)
+
+        layout.addStretch()
+        self.brf_tab.setLayout(layout)
+        self._set_brf_enabled(False)
+
+    def _set_brf_enabled(self, on):
+        """Show the toggle state and enable the page's controls accordingly."""
+        colour, state = (COLORS['highlight'], "Enabled") if on else (COLORS['warning'], "Disabled")
+        self.toggle_brf_label.setText(
+            f"Birefringence <b><span style='color: {colour.name()};'>{state}</span></b>")
+        for w in (self.brf_brightness_slider, self.brf_saturation_slider, *self.brf_band_sliders,
+                  self.brf_view_combo, self.brf_sort_cb, self.brf_original_cb):
+            w.setEnabled(on)
+        self.brf_btn.setEnabled(on and getattr(self, 'ori_img', None) is not None)
+
+    def toggle_birefringence(self):
+        """Enable/disable the birefringence step (Configs: Birefringence)."""
+        on = self.toggle_brf_btn.isChecked()
+        self.yml_data.setdefault("Configs", {})["Birefringence"] = on
+        self._set_brf_enabled(on)
+
+    def _brf_params(self):
+        """The Birefringence section of the parameters (created on first use)."""
+        return self.yml_data.setdefault("Birefringence", dict(BRF_DEFAULTS))
+
+    def update_brf_brightness(self):
+        value = self.brf_brightness_slider.value()
+        self.brf_brightness_value.setText(str(value))
+        self._brf_params()["Brightness Threshold"] = value
+        self._schedule_brf_refresh()
+
+    def update_brf_saturation(self):
+        value = self.brf_saturation_slider.value()
+        self.brf_saturation_value.setText(str(value))
+        self._brf_params()["Saturation Min"] = value
+        self._schedule_brf_refresh()
+
+    def update_brf_sort(self):
+        self._brf_params()["Sort Into Folders"] = self.brf_sort_cb.isChecked()
+
+    def update_brf_band(self, index, lo, hi):
+        """A band slider moved: keep the bands joined (each starts one hue after
+        the previous ends), then store all three ranges."""
+        if self._brf_syncing:
+            return
+        self._brf_syncing = True
+        try:
+            axis_lo, axis_hi = self.BRF_HUE_AXIS
+            ranges = [[s.lower_value, s.upper_value] for s in self.brf_band_sliders]
+            ranges[index] = [lo, hi]
+            for j in range(index + 1, len(ranges)):           # push the later bands up
+                ranges[j][0] = min(ranges[j - 1][1] + 1, axis_hi)
+                ranges[j][1] = max(ranges[j][1], ranges[j][0])
+            for j in range(index - 1, -1, -1):                 # and the earlier ones down
+                ranges[j][1] = max(ranges[j + 1][0] - 1, axis_lo)
+                ranges[j][0] = min(ranges[j][0], ranges[j][1])
+            for slider, (a, b) in zip(self.brf_band_sliders, ranges):
+                if (slider.lower_value, slider.upper_value) != (a, b):
+                    slider.setValues(a, b)
+        finally:
+            self._brf_syncing = False
+        params = self._brf_params()
+        for band, slider, value in zip(brf.BANDS, self.brf_band_sliders, self.brf_band_values):
+            a, b = slider.lower_value, slider.upper_value
+            a = a + 256 if a < 0 else a                        # below 0: wraps past 255
+            params[f"{band} Min"], params[f"{band} Max"] = a, b
+            value.setText(f"({a}, {b})")
+        self._schedule_brf_refresh()
+
+    def _apply_brf_params_to_widgets(self):
+        """Set the page from the Birefringence section of the parameters."""
+        params = brf.settings(self.yml_data)
+        self.brf_brightness_slider.setValue(int(params["Brightness Threshold"]))
+        self.brf_saturation_slider.setValue(int(params["Saturation Min"]))
+        self.brf_sort_cb.setChecked(bool(params["Sort Into Folders"]))
+        self._brf_syncing = True                               # set all bands before joining
+        try:
+            for slider, (lo, hi) in zip(self.brf_band_sliders, brf.band_ranges(params)):
+                slider.setValues(lo - 256 if lo > hi else lo, hi)
+        finally:
+            self._brf_syncing = False
+        self.update_brf_band(0, self.brf_band_sliders[0].lower_value, self.brf_band_sliders[0].upper_value)
+        self.toggle_brf_btn.setChecked(bool(self.yml_data.get("Configs", {}).get("Birefringence", False)))
+        self._set_brf_enabled(self.toggle_brf_btn.isChecked())
+
+    def run_birefringence(self):
+        """Compute the HSB stack of the open image once (worker thread); the
+        sliders then re-threshold it."""
+        if self.ori_img is None:
+            return
+        if self._brf_hsb is not None:
+            self._refresh_brf()
+            return
+        self.brf_btn.setEnabled(False)
+        self.brf_btn.setText("Separating...")
+        self.brf_worker = BRFWorker(self.ori_img)
+        self.brf_worker.hsb_complete.connect(self.handle_brf_complete)
+        self.brf_worker.failed.connect(self.handle_brf_failed)
+        self.brf_worker.start()
+
+    def handle_brf_complete(self, hsb):
+        self._brf_hsb = hsb
+        self.brf_btn.setText("Separate")
+        self.brf_btn.setEnabled(self.toggle_brf_btn.isChecked())
+        self._refresh_brf()
+
+    def handle_brf_failed(self, message):
+        self.brf_btn.setText("Separate")
+        self.brf_btn.setEnabled(self.ori_img is not None and self.toggle_brf_btn.isChecked())
+        QMessageBox.warning(self, "Birefringence failed", f"Birefringence did not complete:\n{message}")
+
+    def _schedule_brf_refresh(self):
+        """Re-threshold (debounced) after a setting changed, once separated."""
+        if self._brf_hsb is None:
+            return
+        if not hasattr(self, "_brf_timer"):
+            self._brf_timer = QTimer(self)
+            self._brf_timer.setSingleShot(True)
+            self._brf_timer.timeout.connect(self._refresh_brf)
+        self._brf_timer.start(150)
+
+    def _refresh_brf(self):
+        """Band masks, summary and view at the current settings."""
+        if self._brf_hsb is None or self.ori_img is None:
+            return
+        params = brf.settings(self.yml_data)
+        hue, sat, bright = self._brf_hsb
+        masks, gate = brf.band_masks(hue, sat, bright, brf.band_ranges(params),
+                                     int(params["Brightness Threshold"]), int(params["Saturation Min"]))
+        self._brf_masks = (masks, gate)
+        stats = brf.band_stats(masks, gate, self.ori_img, pixel_size_um=self._brf_pixel_size or 1.0)
+        self.brf_summary_label.setText(self._brf_summary(stats))
+        self._show_brf_view()
+
+    def _brf_summary(self, stats):
+        signal = " · ".join(f"{b} {stats[f'BRF {b} (% Signal)']:.1f} %" for b in brf.BANDS)
+        text = (f"{signal} of the signal\n{stats['BRF Total (% Region)']:.2f} % of the image in the bands"
+                f" · {stats['BRF Unclassified (% Region)']:.2f} % unclassified")
+        if self._brf_pixel_size:
+            text += f" · {stats['BRF Total Area (µm²)']:,.0f} µm²"
+        return text
+
+    def _show_brf_view(self):
+        """Show the chosen view of the separation (or the original image)."""
+        if self.ori_img is None:
+            return
+        if self.brf_original_cb.isChecked():
+            self.image_panel.setImage(self.ori_img, preserve_view=True)
+            return
+        if self._brf_masks is None:
+            return
+        masks, gate = self._brf_masks
+        view = self.brf_view_combo.currentText()
+        if view == "Class map":
+            image = brf.class_map(masks, gate)
+        elif view == "Total":
+            image = brf.channel_image(self.ori_img, np.logical_or.reduce(masks))
+        else:
+            image = brf.channel_image(self.ori_img, masks[brf.BANDS.index(view)])
+        self.image_panel.setImage(image, preserve_view=True)
+
+    def _clear_brf_results(self):
+        """A new image was opened: drop the separation of the previous one."""
+        self._brf_hsb = None
+        self._brf_masks = None
+        self.brf_summary_label.setText("")
+        self.brf_note.setVisible(self.ori_img is not None and brf.looks_brightfield(self.ori_img))
+        self._brf_pixel_size = None
+        if self.img_path:
+            try:
+                size = pixel_size_um(self.img_path)
+                self._brf_pixel_size = float(size[0]) if size else None
+            except Exception:
+                self._brf_pixel_size = None
+        self.brf_btn.setEnabled(self.ori_img is not None and self.toggle_brf_btn.isChecked())
+
     def setup_detection_tab(self):
         """Set up the detection tab UI with range sliders"""
         layout = QVBoxLayout()
@@ -2851,6 +3237,7 @@ class MainWindow(QMainWindow):
                     "Gap Analysis": True,
                     "Max Size": DEFAULT_MAX_SIZE,
                     "Save Visualisations": True,
+                    "Birefringence": False,
                 },
                 "Segmentation": {
                     "Number of Labels": 32,
@@ -2881,7 +3268,8 @@ class MainWindow(QMainWindow):
                     "Minimum Curvature Window": 10,
                     "Maximum Curvature Window": 30,
                     "Curvature Window Step": 10,
-                }
+                },
+                "Birefringence": dict(BRF_DEFAULTS),
             }
 
     def export_parameters(self):
@@ -2966,6 +3354,9 @@ class MainWindow(QMainWindow):
         if "Gap Analysis" in configs:
             self.toggle_gap_btn.setChecked(configs["Gap Analysis"])
 
+        # Birefringence widgets
+        self._apply_brf_params_to_widgets()
+
         # Quantification widgets
         if "Maximum Display HDM" in quant:
             self.max_hdm_slider.setValue(quant["Maximum Display HDM"])
@@ -3006,6 +3397,7 @@ class MainWindow(QMainWindow):
             self.frb_img = None
             self.wdt_img = None
             self._clear_gap_results()
+            self._clear_brf_results()
             self._update_image_status()
         except Exception as e:
             self.ori_img = None
@@ -3041,6 +3433,7 @@ class MainWindow(QMainWindow):
             self.frb_img = None
             self.wdt_img = None
             self._clear_gap_results()
+            self._clear_brf_results()
             self.segment_btn.setEnabled(self.toggle_seg_btn.isChecked())
             self.detect_btn.setEnabled(True)
             self.reload_btn.setEnabled(True)
@@ -3732,7 +4125,7 @@ class MainWindow(QMainWindow):
 
         # Primary buttons
         for btn in (self.segment_btn, self.detect_btn, self.analyze_btn, self.process_batch_btn,
-                    self.tma_fit_btn, self.tma_export_btn, self.start_slide_btn):
+                    self.tma_fit_btn, self.tma_export_btn, self.start_slide_btn, self.brf_btn):
             btn.setStyleSheet(self.primary_btn_style)
 
         # Page stack and its scroll area
@@ -3750,14 +4143,15 @@ class MainWindow(QMainWindow):
             spin.setStyleSheet(self.spinner_style)
 
         # Combo boxes
-        for combo in (self.tma_array_combo, self.tma_orientation_combo):
+        for combo in (self.tma_array_combo, self.tma_orientation_combo, self.brf_view_combo):
             combo.setStyleSheet(self.combo_style)
 
         # Checkboxes
         for cb in (self.white_bg_cb, self.toggle_img_cb, self.dark_line_cb,
                    self.extend_line_cb, self.overlay_fibres_cb, self.overlay_gaps_cb,
                    self.stats_cb, self.scores_cb, self.visuals_cb, self.tma_recover_cb, self.tma_core_auto_cb,
-                   self.tma_edit_cb, self.tma_links_cb, *self.tma_channel_cbs.values()):
+                   self.tma_edit_cb, self.tma_links_cb, *self.tma_channel_cbs.values(),
+                   self.brf_sort_cb, self.brf_original_cb):
             cb.setStyleSheet(self.checkbox_style)
 
         # Path edits
@@ -3769,13 +4163,16 @@ class MainWindow(QMainWindow):
         self.gap_summary_label.setStyleSheet(self.value_label_style)
         self.seg_size_note.setStyleSheet(self.value_label_style)
         self.batch_max_size_label.setStyleSheet(self.value_label_style)
+        self.brf_note.setStyleSheet(self.value_label_style)
+        self.brf_summary_label.setStyleSheet(self.value_label_style)
 
         # Value labels (slider readouts)
         for label in (self.color_thresh_value, self.num_labels_value, self.max_iters_value,
                       self.line_width_value, self.line_step_value, self.contrast_value,
                       self.min_length_value, self.min_gap_value, self.max_hdm_value,
                       self.min_branch_value, self.curve_window_value, self.curve_step_value,
-                      self.hdm_saturation_value):
+                      self.hdm_saturation_value, self.brf_brightness_value, self.brf_saturation_value,
+                      *self.brf_band_values):
             label.setStyleSheet(self.value_label_style)
 
         # Status bar
@@ -3798,6 +4195,8 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'toggle_seg_btn') and self.toggle_seg_btn.isChecked():
             self.toggle_seg_label.setText(
                 f"Segmentation <b><span style='color: {COLORS['highlight'].name()};'>Enabled</span></b>")
+        if hasattr(self, 'toggle_brf_btn'):
+            self._set_brf_enabled(self.toggle_brf_btn.isChecked())
         if hasattr(self, 'toggle_gap_btn') and self.toggle_gap_btn.isChecked():
             self.toggle_gap_label.setText(
                 f"Gap Analysis <b><span style='color: {COLORS['highlight'].name()};'>Enabled</span></b>")

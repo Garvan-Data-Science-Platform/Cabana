@@ -38,6 +38,7 @@ To begin, select a representative image from your dataset, then work through the
 4. **Minimum Line Length (px).** Shorter fibres are ignored.
 5. **Dark Line** detects dark fibres on a light background (Picrosirius Red); disable it for bright fibres on a dark background (fluorescence, SHG). **Extend Line** enables detection near junctions and may produce artefacts, so use it with caution. **Overlay Fibres** draws the detected fibres over the image in the viewer.
 6. **Detect** runs the step on the segmented image when segmentation is enabled, otherwise on the original.
+7. **Fibre measurements.** Settings used when the analysis runs (Batch Run), not by **Detect**: **Min Branch Length (px)** prunes shorter side branches of the fibre skeleton before length, branching and curvature are measured; **Curvature Window (px)** and **Window Step (px)** set the window sizes over which curvature is measured, one Curvature column per window.
 
 ## Gap Analysis
 
@@ -45,7 +46,7 @@ To begin, select a representative image from your dataset, then work through the
 
 1. **Gap Analysis toggle.** Turns the gap analysis step on or off for the GUI and batch runs.
 2. **Min Gap Diameter (px).** The smallest gap to report.
-3. **Max Display HDM.** The maximum intensity value of the high-density matrix.
+3. **Max Display HDM.** The maximum intensity value of the high-density matrix. **HDM Saturation (%)** is the share of pixels saturated when the HDM contrast is stretched. Both are used when the analysis runs (Batch Run), not by **Analyze**.
 4. **Analyze** fills the gaps between the detected fibres with circles: orange for intra-fibre gaps (inside the segmented region) and blue with a dashed outline for the others. Below the button it shows how many gaps were found, how many are intra-fibre, their median diameter and how much of the image they cover. **Overlay Gaps** shows the circles over the faded tissue image, with the fibres drawn on top.
 
 ## Exporting parameters

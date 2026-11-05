@@ -2494,6 +2494,71 @@ class MainWindow(QMainWindow):
         self.detect_btn.setStyleSheet(self.primary_btn_style)
         layout.addWidget(self.detect_btn)
 
+        # Fibre measurements: used by the skeleton analysis of a full run
+        # (Batch Run), not by the Detect preview above
+        layout.addWidget(create_separator())
+        measure_label = QLabel("Fibre measurements (used when the analysis runs):")
+        measure_label.setToolTip("These settings shape the fibre metrics of a full analysis (Batch Run);\n"
+                                 "they do not change the Detect preview.")
+        layout.addWidget(measure_label)
+
+        min_branch_layout = QHBoxLayout()
+        min_branch_label = QLabel("Min Branch Length (px):")
+        min_branch_layout.addWidget(min_branch_label)
+        self.min_branch_slider = CustomSlider(Qt.Horizontal)
+        self.min_branch_slider.setRange(1, 100)
+        self.min_branch_slider.setValue(5)  # Default
+        self.min_branch_slider.valueChanged.connect(self.update_min_branch)
+        self.min_branch_slider.setToolTip(
+            "Side branches of the fibre skeleton shorter than this are pruned before length,\n"
+            "branching and curvature are measured. (Minimum Line Length drops whole lines.)")
+        min_branch_layout.addWidget(self.min_branch_slider)
+        self.min_branch_value = QLabel("5")
+        self.min_branch_value.setFixedWidth(30)
+        self.min_branch_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
+        self.min_branch_value.setStyleSheet(
+            self.value_label_style)
+        min_branch_layout.addWidget(self.min_branch_value)
+        layout.addLayout(min_branch_layout)
+
+        curve_window_layout = QHBoxLayout()
+        curve_window_label = QLabel("Curvature Window (px):")
+        curve_window_layout.addWidget(curve_window_label)
+        self.curve_window_range = RangeSlider(Qt.Horizontal)
+        self.curve_window_range.setRange(2, 100)
+        self.curve_window_range.setValues(10, 30)  # Default values
+        self.curve_window_range.valueChanged.connect(self.update_curve_window_range)
+        self.curve_window_range.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.curve_window_range.setToolTip(
+            "Curvature is measured along the fibres over windows from the smaller to the larger\n"
+            "size, in steps of Window Step; each window gives one Curvature column.\n"
+            "Larger windows measure broader bends.")
+        curve_window_layout.addWidget(self.curve_window_range, 3)
+        self.curve_window_value = QLabel("(10, 30)")
+        self.curve_window_value.setFixedWidth(70)
+        self.curve_window_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
+        self.curve_window_value.setStyleSheet(
+            self.value_label_style)
+        curve_window_layout.addWidget(self.curve_window_value)
+        layout.addLayout(curve_window_layout)
+
+        curve_step_layout = QHBoxLayout()
+        curve_step_label = QLabel("Window Step (px):")
+        curve_step_layout.addWidget(curve_step_label)
+        self.curve_step_slider = CustomSlider(Qt.Horizontal)
+        self.curve_step_slider.setRange(1, 100)
+        self.curve_step_slider.setValue(10)  # Default
+        self.curve_step_slider.valueChanged.connect(self.update_curve_step)
+        self.curve_step_slider.setToolTip("Spacing between the curvature window sizes.")
+        curve_step_layout.addWidget(self.curve_step_slider)
+        self.curve_step_value = QLabel("10")
+        self.curve_step_value.setFixedWidth(30)
+        self.curve_step_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
+        self.curve_step_value.setStyleSheet(
+            self.value_label_style)
+        curve_step_layout.addWidget(self.curve_step_value)
+        layout.addLayout(curve_step_layout)
+
         layout.addStretch()
         self.det_tab.setLayout(layout)
 
@@ -2554,6 +2619,26 @@ class MainWindow(QMainWindow):
             self.value_label_style)
         max_hdm_layout.addWidget(self.max_hdm_value)
         layout.addLayout(max_hdm_layout)
+
+        # HDM saturation (Quantification: Contrast Enhancement, a fraction)
+        hdm_sat_layout = QHBoxLayout()
+        hdm_sat_label = QLabel("HDM Saturation (%):")
+        hdm_sat_layout.addWidget(hdm_sat_label)
+        self.hdm_saturation_slider = CustomSlider(Qt.Horizontal)
+        self.hdm_saturation_slider.setRange(0, 50)
+        self.hdm_saturation_slider.setValue(10)  # Default 0.1
+        self.hdm_saturation_slider.valueChanged.connect(self.update_hdm_saturation)
+        self.hdm_saturation_slider.setToolTip(
+            "Share of pixels saturated when the HDM contrast is stretched (split between the\n"
+            "darkest and brightest ends). Used when the analysis runs, not by Analyze.")
+        hdm_sat_layout.addWidget(self.hdm_saturation_slider)
+        self.hdm_saturation_value = QLabel("10")
+        self.hdm_saturation_value.setFixedWidth(30)
+        self.hdm_saturation_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
+        self.hdm_saturation_value.setStyleSheet(
+            self.value_label_style)
+        hdm_sat_layout.addWidget(self.hdm_saturation_value)
+        layout.addLayout(hdm_sat_layout)
 
         # Overlay checkbox
         layout.addWidget(create_separator())
@@ -2724,6 +2809,34 @@ class MainWindow(QMainWindow):
         self.max_hdm_value.setText(str(value))
         self.yml_data["Quantification"]["Maximum Display HDM"] = value
 
+    def update_min_branch(self):
+        """Update Quantification: Minimum Branch Length"""
+        value = self.min_branch_slider.value()
+        self.min_branch_value.setText(str(value))
+        self.yml_data.setdefault("Quantification", {})["Minimum Branch Length"] = value
+
+    def update_curve_window_range(self, min_val, max_val):
+        """Update Quantification: Minimum/Maximum Curvature Window"""
+        self.curve_window_value.setText(f"({min_val}, {max_val})")
+        quant = self.yml_data.setdefault("Quantification", {})
+        quant["Minimum Curvature Window"] = min_val
+        quant["Maximum Curvature Window"] = max_val
+
+    def update_curve_step(self):
+        """Update Quantification: Curvature Window Step"""
+        value = self.curve_step_slider.value()
+        self.curve_step_value.setText(str(value))
+        self.yml_data.setdefault("Quantification", {})["Curvature Window Step"] = value
+
+    def update_hdm_saturation(self):
+        """Update Quantification: Contrast Enhancement (slider in percent)"""
+        value = self.hdm_saturation_slider.value()
+        self.hdm_saturation_value.setText(str(value))
+        quant = self.yml_data.setdefault("Quantification", {})
+        # keep a finer value from a parameter file that rounds to this percent
+        if round(float(quant.get("Contrast Enhancement", -1)) * 100) != value:
+            quant["Contrast Enhancement"] = value / 100
+
     def load_default_params(self):
         """Load default parameters from YAML file"""
         default_params_path = Path(os.path.join(os.path.dirname(__file__), "default_params.yml"))
@@ -2856,6 +2969,15 @@ class MainWindow(QMainWindow):
         # Quantification widgets
         if "Maximum Display HDM" in quant:
             self.max_hdm_slider.setValue(quant["Maximum Display HDM"])
+        if "Contrast Enhancement" in quant:
+            self.hdm_saturation_slider.setValue(int(round(float(quant["Contrast Enhancement"]) * 100)))
+        if "Minimum Branch Length" in quant:
+            self.min_branch_slider.setValue(int(quant["Minimum Branch Length"]))
+        if "Minimum Curvature Window" in quant and "Maximum Curvature Window" in quant:
+            self.curve_window_range.setValues(int(quant["Minimum Curvature Window"]),
+                                              int(quant["Maximum Curvature Window"]))
+        if "Curvature Window Step" in quant:
+            self.curve_step_slider.setValue(int(quant["Curvature Window Step"]))
 
     def load_original_image(self, path):
         """Load the original image from a file path"""
@@ -3651,7 +3773,9 @@ class MainWindow(QMainWindow):
         # Value labels (slider readouts)
         for label in (self.color_thresh_value, self.num_labels_value, self.max_iters_value,
                       self.line_width_value, self.line_step_value, self.contrast_value,
-                      self.min_length_value, self.min_gap_value, self.max_hdm_value):
+                      self.min_length_value, self.min_gap_value, self.max_hdm_value,
+                      self.min_branch_value, self.curve_window_value, self.curve_step_value,
+                      self.hdm_saturation_value):
             label.setStyleSheet(self.value_label_style)
 
         # Status bar

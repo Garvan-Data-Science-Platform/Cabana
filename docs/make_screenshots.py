@@ -167,6 +167,7 @@ def main(argv):
             (4, rect_of(win, win.min_length_slider)),
             (5, union(win, (win.dark_line_cb, win.extend_line_cb, win.overlay_fibres_cb)), "right"),
             (6, rect_of(win, win.detect_btn)),
+            (7, union(win, (win.min_branch_slider, win.curve_window_range, win.curve_step_slider))),
         ])
 
     if analysis:
@@ -178,7 +179,7 @@ def main(argv):
         grab(win, "gap_analysis.png", [
             (1, rect_of(win, win.toggle_gap_btn), "above"),
             (2, rect_of(win, win.min_gap_slider)),
-            (3, rect_of(win, win.max_hdm_slider)),
+            (3, union(win, (win.max_hdm_slider, win.hdm_saturation_slider))),
             (4, rect_of(win, win.analyze_btn)),
         ])
 

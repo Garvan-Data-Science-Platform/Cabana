@@ -25,9 +25,9 @@ All parameters live in the YAML parameter file (`Parameters.yml`, exported from 
 | Detection | Minimum Line Length | 5 | px | slider |
 | Detection | Maximum Line Length | 0 (no limit) | px | file only |
 | Quantification | Maximum Display HDM | 230 | grey level | slider |
-| Quantification | Contrast Enhancement | 0.1 | fraction | file only |
-| Quantification | Minimum Branch Length | 5 | px | file only |
-| Quantification | Minimum / Maximum Curvature Window, Curvature Window Step | 10 / 30 / 10 | px | file only |
+| Quantification | Contrast Enhancement | 0.1 | fraction | Gap Analysis page (HDM Saturation, %) |
+| Quantification | Minimum Branch Length | 5 | px | Fibre Detection page slider |
+| Quantification | Minimum / Maximum Curvature Window, Curvature Window Step | 10 / 30 / 10 | px | Fibre Detection page range slider and slider |
 | Gap Analysis | Minimum Gap Diameter | 20 | px | slider |
 
 The folders of a run (parameter file, input, output and the optional ROI mask folder) are chosen on the Batch Run page and are not part of the parameter file; the folders used are recorded in `version_params.yaml` in the output folder.
@@ -138,15 +138,15 @@ if the `Dark Line` is set to `true` (for Picrosirius Red), the low contrast and 
 
 1. **Contrast Enhancement**
 
-   A value between [0,1] shows the percent of pixels that will be saturated for contrast enhancement.
+   A value between [0,1] shows the percent of pixels that will be saturated for contrast enhancement of the HDM image. The GUI shows it in percent as **HDM Saturation** on the Gap Analysis page.
 
 2. **Min/Max Curvature Window and Curvature Window Step**
 
-   The curvature of ridges/lines in curvature windows bounded by the minimum and maximum curvature windows with a window step size.
+   The curvature of ridges/lines in curvature windows bounded by the minimum and maximum curvature windows with a window step size. Set on the Fibre Detection page as **Curvature Window** and **Window Step**.
 
 3. **Minimum Branch Length**
 
-   Any line/ridge with a length smaller than this value is ignored.
+   Side branches of the fibre skeleton shorter than this value are pruned before length, branching and curvature are measured. Set on the Fibre Detection page as **Min Branch Length**.
 
    Note: If the minimum branch length value is too low, short branch artefacts are introduced.
 

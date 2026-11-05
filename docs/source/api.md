@@ -119,6 +119,27 @@ defaults as the `cabana-tma` command line options (`core_diameter_um`,
   compact column set.
 - `version_params.yaml`: the parameters, Cabana version, git commit and the
   folders (including the ROI mask folder) used for the run.
+- `BRF/Stats/ResultsBRF.csv` (with `Configs: Birefringence` on): the
+  birefringence colour bands of every image, see
+  [Read-outs](readouts.md#birefringence-brf-results).
+
+A bright-field run and a polarised-light run of the same samples can be
+joined into one row per sample:
+
+```python
+from cabana.scores import combine_modalities
+
+combined, counts = combine_modalities(
+    "out_BF/QuantificationResults.csv",
+    "out_POL/QuantificationResults.csv",
+    "QuantificationResults_BF_POL.csv",
+)
+print(counts)          # {'matched': ..., 'bf_only': ..., 'pol_only': ...}
+```
+
+Rows are matched on the image name without its `BF`/`POL` token
+(`A1420.vsi_BF_S01` and `A1420.vsi_POL_S01` are sample `A1420.vsi_S01`);
+the columns of each run are prefixed `BF: ` and `POL: `.
 
 ## Choosing the compute device
 

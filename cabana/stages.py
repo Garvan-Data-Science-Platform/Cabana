@@ -5,6 +5,7 @@ and ``BatchCabana`` (folder of images). Keeping the science in one place
 prevents the two pipelines from drifting apart.
 """
 
+import csv
 import os
 from pathlib import Path
 
@@ -15,6 +16,7 @@ import imageio.v3 as iio
 import tifffile
 from skimage.color import rgb2hed, hed2rgb, rgb2gray
 
+from . import brf
 from .hdm import HDM
 from .detector import FibreDetector
 from .analyzer import SkeletonAnalyzer
@@ -24,6 +26,7 @@ from skimage.feature import peak_local_max
 from scipy.spatial import cKDTree
 
 from .utils import join_path
+from .log import Log
 from .io import list_files
 from .viz import (mask_color_map, overlay_colorbar, color_survey_with_colorbar, skeleton_value_map,
                   skeleton_class_map, image_with_colorbar, DIRECTION_CMAP, CURVATURE_EDGES,
@@ -288,6 +291,135 @@ def hdm_reference_area(stats):
             analysed = np.where(pct > 0, roi / pct, total)
         return pd.Series(analysed, index=stats.index)
     return total
+
+
+# ------------------------------------------------------------ birefringence --
+
+BRF_RESULTS = "ResultsBRF.csv"
+BRF_STATS_DIR = "Stats"
+# (image key of brf.channel_images, folder when sorted, file-name suffix)
+BRF_IMAGES = (("Total", "Total", "total"), ("Red-Orange", "Red", "red_orange"),
+              ("Yellow", "Yellow", "yellow"), ("Green", "Green", "green"))
+# BRF columns copied into QuantificationResults.csv
+BRF_SUMMARY_COLUMNS = tuple(
+    f"BRF {band} {metric}" for band in brf.BANDS
+    for metric in ("Area (µm²)", "(% Region)", "(% Signal)", "(% Intensity)")
+) + ("BRF Total Area (µm²)", "BRF Total (% Region)", "BRF Unclassified (% Region)")
+
+
+def brf_enabled(args):
+    """Whether ``Configs: Birefringence`` is on (off when the key is absent)."""
+    return bool(((args or {}).get("Configs") or {}).get("Birefringence", False))
+
+
+def brf_folder(args, brf_dir, folder):
+    """Folder of one kind of BRF output: ``brf_dir/<folder>`` when ``Sort Into
+    Folders`` is on, else ``brf_dir`` itself."""
+    return join_path(brf_dir, folder) if brf.settings(args)["Sort Into Folders"] else brf_dir
+
+
+def write_calibrated_tiff(path, rgb, pixel_size_um):
+    """RGB TIFF (deflate) carrying its pixel size as ImageJ calibration (µm), so
+    Fiji and :func:`cabana.io.pixel_size_um` read it back."""
+    px = float(pixel_size_um) if pixel_size_um else 1.0
+    tifffile.imwrite(path, np.ascontiguousarray(rgb), imagej=True, resolution=(1 / px, 1 / px),
+                     metadata={"unit": "um"}, compression="zlib")
+
+
+def run_brf(args, image_path, stem, brf_dir, roi_mask_path=None, pixel_size_um=1.0,
+            visuals=True, image_name=None):
+    """Birefringence colour bands of one image (``Configs: Birefringence``).
+
+    The region measured is the ROI mask (``roi_mask_path``, e.g. a TMA core or
+    a stroma mask) or the whole image; the segmentation mask is not used, the
+    hue bands being the collagen classifier. Writes the statistics
+    ``Stats/<stem>_statistics.csv`` and, when ``visuals``, the images
+    ``Total/<stem>_total.tif`` (all bands) and ``<stem>_original.tif``,
+    ``Red/<stem>_red_orange.tif``, ``Yellow/<stem>_yellow.tif`` and
+    ``Green/<stem>_green.tif``; with ``Sort Into Folders`` off they all go in
+    ``brf_dir`` itself. Returns the results row: ``Image`` (``image_name``,
+    default ``<stem>_roi.png`` as in QuantificationResults.csv) and the
+    :func:`cabana.brf.band_stats` columns.
+    """
+    params = brf.settings(args)
+    rgb = cv2.cvtColor(cv2.imread(image_path, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
+    region = None
+    if roi_mask_path:
+        mask = cv2.imread(roi_mask_path, cv2.IMREAD_GRAYSCALE)
+        if mask is not None and mask.shape == rgb.shape[:2]:
+            region = mask > 0
+        else:
+            Log.logger.warning(f"ROI mask {roi_mask_path} does not match {image_path}; "
+                               f"birefringence is measured on the whole image.")
+    masks, gate = brf.separate(rgb, params)
+    stats = brf.band_stats(masks, gate, rgb, region=region, pixel_size_um=pixel_size_um)
+
+    stats_dir = brf_folder(args, brf_dir, BRF_STATS_DIR)
+    os.makedirs(stats_dir, exist_ok=True)
+    write_brf_image_stats(join_path(stats_dir, f"{stem}_statistics.csv"), stats, params,
+                          pixel_size_um, region is not None)
+    if visuals:
+        images = brf.channel_images(rgb, masks)
+        for key, folder, suffix in BRF_IMAGES:
+            out_dir = brf_folder(args, brf_dir, folder)
+            os.makedirs(out_dir, exist_ok=True)
+            write_calibrated_tiff(join_path(out_dir, f"{stem}_{suffix}.tif"), images[key], pixel_size_um)
+        write_calibrated_tiff(join_path(brf_folder(args, brf_dir, "Total"), f"{stem}_original.tif"),
+                              rgb, pixel_size_um)
+    return {"Image": image_name or stem + "_roi.png", **stats}
+
+
+def write_brf_image_stats(path, stats, params, pixel_size_um, has_region):
+    """Per-image BRF table: one row per band, the total and the unclassified
+    pixels, after a ``#`` legend (read it with ``pandas.read_csv(comment='#')``)."""
+    area = float(pixel_size_um) ** 2
+    hue = ", ".join(f"{b} {lo}-{hi}" for b, (lo, hi) in zip(brf.BANDS, brf.band_ranges(params)))
+    total_sum = sum(stats[f"BRF {b} Sum Intensity"] for b in brf.BANDS)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        # legend lines are written raw: csv.writer would quote those with commas
+        f.write("\n".join([
+            "# Birefringence colour bands (CMM Lab PR-BRF Analyser classification)",
+            f"# Region = {'the ROI mask' if has_region else 'the whole image (no ROI mask)'}",
+            "# % Region = band pixels / region pixels * 100",
+            "# % Image = band pixels / image pixels * 100 over the whole image (the macro's measure)",
+            "# % Signal = band pixels / pixels in all bands * 100 (sums to 100; the macro's % Area)",
+            "# % Intensity = band sum intensity / all bands' sum intensity * 100",
+            "# Unclassified = pixels above the brightness and saturation limits in no band",
+            f"# Settings: Brightness Threshold {params['Brightness Threshold']}, "
+            f"Saturation Min {params['Saturation Min']}, hue {hue}",
+            f"# Pixel size: {float(pixel_size_um):g} um",
+        ]) + "\n")
+        w = csv.writer(f)
+        w.writerow(["Band", "Pixels", "Area (µm²)", "% Region", "% Image", "% Signal",
+                    "Sum Intensity", "% Intensity"])
+        for b in brf.BANDS:
+            w.writerow([b, stats[f"BRF {b} Pixels"], f"{stats[f'BRF {b} Area (µm²)']:.4f}",
+                        f"{stats[f'BRF {b} (% Region)']:.4f}", f"{stats[f'BRF {b} (% Image)']:.4f}",
+                        f"{stats[f'BRF {b} (% Signal)']:.4f}", f"{stats[f'BRF {b} Sum Intensity']:.0f}",
+                        f"{stats[f'BRF {b} (% Intensity)']:.4f}"])
+        total_image = sum(stats[f"BRF {b} (% Image)"] for b in brf.BANDS)
+        signal = 100.0 if stats["BRF Total Pixels"] else 0.0
+        w.writerow(["Total (all bands)", stats["BRF Total Pixels"], f"{stats['BRF Total Area (µm²)']:.4f}",
+                    f"{stats['BRF Total (% Region)']:.4f}", f"{total_image:.4f}", f"{signal:.4f}",
+                    f"{total_sum:.0f}", f"{signal:.4f}"])
+        n = stats["BRF Unclassified Pixels"]
+        w.writerow(["Unclassified", n, f"{n * area:.4f}", f"{stats['BRF Unclassified (% Region)']:.4f}",
+                    "", "", "", ""])
+
+
+def write_brf_results(rows, path):
+    """``ResultsBRF.csv``: one row per image (``run_brf`` rows)."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    pd.DataFrame(rows).to_csv(path, index=False, float_format="%.4f")
+
+
+def merge_brf_columns(df, rows):
+    """``df`` (a QuantificationResults frame) with the BRF summary columns of
+    ``rows`` joined on ``Image``."""
+    if not rows:
+        return df
+    brf_df = pd.DataFrame(rows)[["Image", *BRF_SUMMARY_COLUMNS]]
+    return df.merge(brf_df, on="Image", how="left")
 
 
 def _range_from_params(section, min_key, max_key, step_key, cast=float):

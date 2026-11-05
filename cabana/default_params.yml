@@ -4,6 +4,7 @@ Configs:
   Gap Analysis: True
   Max Size: 5000
   Save Visualisations: True
+  Birefringence: False
 
 Segmentation:
   Number of Labels: 32
@@ -34,3 +35,14 @@ Quantification:
 
 Gap Analysis:
   Minimum Gap Diameter: 20
+
+Birefringence:
+  Brightness Threshold: 10
+  Saturation Min: 0
+  Red-Orange Min: 0
+  Red-Orange Max: 27
+  Yellow Min: 28
+  Yellow Max: 47
+  Green Min: 48
+  Green Max: 140
+  Sort Into Folders: True

@@ -76,6 +76,9 @@ class Cabana:
         self.eligible_dir = None
         self._work_dir = None
         self.roimask_dir = join_path(self.output_folder, 'ROIMasks', "")
+        # Birefringence results (made only when Configs: Birefringence is on)
+        self.brf_dir = join_path(self.output_folder, 'BRF', "")
+        self.brf_row = None
 
         # Create folders
         create_folder(self.roimask_dir)
@@ -285,6 +288,19 @@ class Cabana:
         self.skeleton_img = key_pts_image
         self.length_map = length_map
         self.curve_maps = curve_maps
+
+    def quantify_brf(self):
+        """Birefringence colour bands of the image (Configs: Birefringence)."""
+        from .stages import brf_enabled, brf_folder, run_brf, write_brf_results, BRF_RESULTS, BRF_STATS_DIR
+        self.brf_row = None
+        if not brf_enabled(self.args):
+            return
+        Log.logger.info('Measuring birefringence colour bands')
+        self.brf_row = run_brf(self.args, join_path(self.eligible_dir, self.name_wo_ext + ".png"),
+                               self.name_wo_ext, self.brf_dir, roi_mask_path=self.roi_mask_path,
+                               pixel_size_um=self.ims_res, visuals=self._visuals())
+        write_brf_results([self.brf_row],
+                          join_path(brf_folder(self.args, self.brf_dir, BRF_STATS_DIR), BRF_RESULTS))
 
     def quantify_hdm(self):
         """Quantify high density matrix areas"""
@@ -522,6 +538,11 @@ class Cabana:
             roi_columns = [col for col in self.stats.columns if 'ROI' in col]
             self.stats = self.stats.drop(columns=roi_columns)
 
+        # Birefringence columns (named "% Region", so the drop above keeps them)
+        if self.brf_row is not None:
+            from .stages import merge_brf_columns
+            self.stats = merge_brf_columns(self.stats, [self.brf_row])
+
     def export_results(self):
         """Export all results to files"""
         # Export stats to CSV
@@ -685,6 +706,9 @@ class Cabana:
 
         # Generate ROI
         self.generate_roi()
+
+        # Birefringence colour bands (independent of segmentation and quantification)
+        self.quantify_brf()
 
         if self.args["Configs"]["Quantification"]:
             # Perform quantification

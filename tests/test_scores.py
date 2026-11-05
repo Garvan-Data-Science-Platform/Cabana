@@ -458,3 +458,51 @@ class TestCompactResults:
         path = write_compact_results(_full_df(), str(full))
         assert path == str(tmp_path / 'QuantificationResults_Compact.csv')
         assert len(pd.read_csv(path).columns) == 35
+
+
+# ---------------------------------------------------------------------------
+# combine_modalities
+# ---------------------------------------------------------------------------
+
+class TestCombineModalities:
+    def test_modality_key_of_qupath_and_tma_names(self):
+        from cabana.scores import modality_key
+        assert modality_key("A1420.vsi_POL_S01_roi.png") == "A1420.vsi_S01"
+        assert modality_key("A1420.vsi_BF_S01.tif") == "A1420.vsi_S01"
+        assert modality_key("1734.vsi - TMA1_BF_A4Annotation (Tumor)_1_roi.png") == \
+            "1734.vsi - TMA1_A4Annotation (Tumor)_1"
+        assert modality_key("K324.vsi - 20x_XPL_01Annotation (Tumor)_1_roi.png") == \
+            "K324.vsi - 20x_01Annotation (Tumor)_1"
+        assert modality_key("A1420.vsi_POL_S01_blk_0_1_roi.png") == "A1420.vsi_S01_blk_0_1"
+        assert modality_key("sample_1_roi.png") is None
+
+    def _write(self, tmp_path, name, images, value):
+        path = tmp_path / name
+        pd.DataFrame({"Image": images, "Total Length (µm)": value}).to_csv(path, index=False)
+        return str(path)
+
+    def test_rows_are_matched_per_sample_with_prefixed_columns(self, tmp_path):
+        from cabana.scores import combine_modalities
+        bf = self._write(tmp_path, "bf.csv", ["A1420.vsi_BF_S01_roi.png", "A1420.vsi_BF_S02_roi.png",
+                                              "B7.vsi_BF_S01_roi.png"], [1.0, 2.0, 3.0])
+        pol = self._write(tmp_path, "pol.csv", ["A1420.vsi_POL_S02_roi.png", "A1420.vsi_POL_S01_roi.png",
+                                                "C9.vsi_POL_S01_roi.png"], [20.0, 10.0, 30.0])
+        out = tmp_path / "combined.csv"
+        combined, counts = combine_modalities(bf, pol, str(out))
+        assert counts == {"matched": 2, "bf_only": 1, "pol_only": 1}
+        assert list(combined.columns[:4]) == ["Sample", "Patient", "BF: Image", "BF: Total Length (µm)"]
+        row = combined.set_index("Sample").loc["A1420.vsi_S01"]
+        assert row["Patient"] == "A1420"
+        assert row["BF: Total Length (µm)"] == 1.0 and row["POL: Total Length (µm)"] == 10.0
+        assert pd.isna(combined.set_index("Sample").loc["B7.vsi_S01", "POL: Image"])
+        assert pd.read_csv(out).shape == combined.shape
+
+    def test_names_without_modality_or_with_repeats_are_rejected(self, tmp_path):
+        from cabana.scores import combine_modalities
+        pol = self._write(tmp_path, "pol.csv", ["A.vsi_POL_S01_roi.png"], [1.0])
+        bad = self._write(tmp_path, "bad.csv", ["A_S01_roi.png"], [1.0])
+        with pytest.raises(ValueError, match="no BF/POL"):
+            combine_modalities(bad, pol)
+        dup = self._write(tmp_path, "dup.csv", ["A.vsi_BF_S01_roi.png", "A.vsi_POL_S01_roi.png"], [1.0, 2.0])
+        with pytest.raises(ValueError, match="several images"):
+            combine_modalities(dup, pol)

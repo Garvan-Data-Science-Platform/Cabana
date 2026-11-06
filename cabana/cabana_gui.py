@@ -797,8 +797,8 @@ class MainWindow(QMainWindow):
     def _page_layout():
         """Top-level layout of a side-panel page: a column of section cards."""
         layout = QVBoxLayout()
-        layout.setContentsMargins(0, 2, 0, 6)
-        layout.setSpacing(10)
+        layout.setContentsMargins(0, 4, 0, 8)
+        layout.setSpacing(14)
         return layout
 
     def _set_play_icon(self, btn):
@@ -881,8 +881,8 @@ class MainWindow(QMainWindow):
         save_title = QLabel("Save, besides the measurements")
         save_title.setObjectName("optionTitle")
         save_block = QVBoxLayout()
-        save_block.setContentsMargins(0, 4, 0, 0)
-        save_block.setSpacing(5)
+        save_block.setContentsMargins(0, 6, 0, 0)
+        save_block.setSpacing(8)
         save_block.addWidget(save_title)
         self.visuals_cb = QCheckBox("Visualisations")
         self.visuals_cb.setChecked(True)

@@ -19,7 +19,7 @@ OUT = os.path.join(HERE, "ui_compare")
 sys.path.insert(0, REPO)
 
 THEMES = ["Light", "Dark"]
-SIZE = (1500, 980)
+SIZE = (1500, 1000)
 
 
 class _FakeSettings:
@@ -51,6 +51,7 @@ def capture(tag):
     gui.MainWindow.check_updates_on_start = False
     win = gui.MainWindow()
     win.confirm_on_close = False
+    win.showNormal()            # not maximised to the small offscreen screen
     win.resize(*SIZE)
     win.show()
     settle(app)

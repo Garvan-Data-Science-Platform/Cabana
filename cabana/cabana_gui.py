@@ -569,7 +569,7 @@ class MainWindow(QMainWindow):
         return self._ask_tma("Quit Cabana", "Quit Cabana?", "If you quit now:\n- " + "\n- ".join(risks),
                              "Confirm", "Cancel")
 
-    TMA_LABEL_WIDTH = 90      # TMA labels are short: the narrower column leaves room for paired fields
+    TMA_LABEL_WIDTH = 86      # TMA labels are short: the narrower column leaves room for paired fields
     MAP_LOAD_ITEM = "__load_map__"
 
     def _tma_selected_map(self):
@@ -973,7 +973,7 @@ class MainWindow(QMainWindow):
         font = QFont()
         font.setPixelSize(FONT_SIZES['base'])
         second = max(QFontMetrics(font).horizontalAdvance(t) for t in ("Orientation", "Min stain", "Mask shrink"))
-        split = dict(field_width=140, label2_width=second + 4, right_width=120)
+        split = dict(field_width=112, label2_width=second + 2, right_width=100)
 
         # --- Fit -------------------------------------------------------------
         fit = SectionCard("Fit", compact=True)

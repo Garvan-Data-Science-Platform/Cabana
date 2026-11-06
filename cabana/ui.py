@@ -128,8 +128,8 @@ _ICON_SHAPES = {
                     'stroke-linecap="round" stroke-linejoin="round"/>',
     'chevron-right': '<polyline points="5.5,4 8.5,7 5.5,10" fill="none" stroke="{c}" stroke-width="1.4" '
                      'stroke-linecap="round" stroke-linejoin="round"/>',
-    'minus': '<line x1="3.5" y1="7" x2="10.5" y2="7" stroke="{c}" stroke-width="1.4" stroke-linecap="round"/>',
-    'plus': '<path d="M3.5 7H10.5M7 3.5V10.5" stroke="{c}" stroke-width="1.4" stroke-linecap="round"/>',
+    'chevron-up': '<polyline points="4,8.5 7,5.5 10,8.5" fill="none" stroke="{c}" stroke-width="1.4" '
+                  'stroke-linecap="round" stroke-linejoin="round"/>',
     'folder': '<path d="M1.5 3H5.3L6.8 4.6H12.5V11.5H1.5Z" fill="none" stroke="{c}" stroke-width="1.3" '
               'stroke-linejoin="round"/>',
     'file': '<path d="M3.2 1.5H8.3L11 4.2V12.5H3.2Z M8.3 1.5V4.2H11" fill="none" stroke="{c}" '
@@ -186,18 +186,18 @@ def themed_icon(name: str, color: QColor, color2: QColor = None):
 
 
 def generate_spinner_style():
-    """Spin boxes as inset fields with − and + steppers on the right."""
+    """Spin boxes as inset fields with small stacked up/down arrows on the right."""
     pc = panel_colors()
     field, text = color_to_stylesheet(pc['field']), color_to_stylesheet(COLORS['text'])
-    plus, minus = icon_path('plus', COLORS['text_dim']), icon_path('minus', COLORS['text_dim'])
-    plus_off, minus_off = icon_path('plus', COLORS['text_muted']), icon_path('minus', COLORS['text_muted'])
+    up, down = icon_path('chevron-up', COLORS['text_dim']), icon_path('chevron-down', COLORS['text_dim'])
+    up_off, down_off = icon_path('chevron-up', COLORS['text_muted']), icon_path('chevron-down', COLORS['text_muted'])
     return f"""
         QSpinBox, QDoubleSpinBox {{
             background-color: {field};
             color: {text};
             border: 1px solid {color_to_stylesheet(pc['outline'])};
             border-radius: 5px;
-            padding: 0px 28px 0px 8px;      /* Qt reserves one button width more */
+            padding: 0px 2px 0px 8px;       /* Qt reserves the arrow column itself */
             min-height: 26px;
             font-size: {FONT_SIZES['base']}px;
             selection-background-color: {color_to_stylesheet(COLORS['highlight'])};
@@ -207,25 +207,25 @@ def generate_spinner_style():
         QSpinBox::up-button, QDoubleSpinBox::up-button,
         QSpinBox::down-button, QDoubleSpinBox::down-button {{
             subcontrol-origin: border;
-            subcontrol-position: center right;
-            width: 24px;
-            height: 24px;
+            width: 18px;
+            height: 13px;
             border: none;
-            border-radius: 4px;
             background: transparent;
         }}
-        QSpinBox::up-button, QDoubleSpinBox::up-button {{ right: 1px; }}
-        QSpinBox::down-button, QDoubleSpinBox::down-button {{ right: 25px; }}
+        QSpinBox::up-button, QDoubleSpinBox::up-button {{
+            subcontrol-position: top right; top: 1px; right: 1px; border-top-right-radius: 4px; }}
+        QSpinBox::down-button, QDoubleSpinBox::down-button {{
+            subcontrol-position: bottom right; bottom: 1px; right: 1px; border-bottom-right-radius: 4px; }}
         QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
         QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {{
             background: {color_to_stylesheet(COLORS['border'])};
         }}
-        QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{ image: url({plus}); width: 11px; height: 11px; }}
-        QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{ image: url({minus}); width: 11px; height: 11px; }}
+        QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{ image: url({up}); width: 10px; height: 10px; }}
+        QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{ image: url({down}); width: 10px; height: 10px; }}
         QSpinBox::up-arrow:disabled, QSpinBox::up-arrow:off,
-        QDoubleSpinBox::up-arrow:disabled, QDoubleSpinBox::up-arrow:off {{ image: url({plus_off}); }}
+        QDoubleSpinBox::up-arrow:disabled, QDoubleSpinBox::up-arrow:off {{ image: url({up_off}); }}
         QSpinBox::down-arrow:disabled, QSpinBox::down-arrow:off,
-        QDoubleSpinBox::down-arrow:disabled, QDoubleSpinBox::down-arrow:off {{ image: url({minus_off}); }}
+        QDoubleSpinBox::down-arrow:disabled, QDoubleSpinBox::down-arrow:off {{ image: url({down_off}); }}
         QSpinBox:disabled, QDoubleSpinBox:disabled {{
             color: {color_to_stylesheet(COLORS['text_muted'])};
         }}
@@ -927,7 +927,7 @@ class SectionCard(QFrame):
         row.setSpacing(0)
         left.setFixedWidth(field_width)
         row.addWidget(left)
-        row.addSpacing(12)
+        row.addSpacing(10)
         row.addStretch(1)
         block = QWidget()
         right_width = right_width or field_width

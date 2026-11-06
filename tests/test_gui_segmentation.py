@@ -210,3 +210,35 @@ def test_gap_results_are_painted_live_with_a_summary(win):
     win.image_panel.grab()                          # paints without errors
     win._clear_gap_results()
     assert win.gap_summary_label.text() == "" and win.gap_circles is None
+
+
+def test_new_batch_run_asks_before_clearing_the_results_folder(win, tmp_path, monkeypatch):
+    import cabana.cabana_gui as gui
+
+    class _Signal:
+        def connect(self, *a):
+            pass
+
+    class _Worker:                                     # records the start instead of running
+        started = []
+
+        def __init__(self, *a, **k):
+            self.progress_updated = self.status_updated = _Signal()
+            self.batch_complete = self.batch_cancelled = self.batch_failed = _Signal()
+
+        def start(self):
+            _Worker.started.append(1)
+    monkeypatch.setattr(gui, "BatchProcessingWorker", _Worker)
+    monkeypatch.setattr(win, "_check_batch_running_status", lambda: (False, 5, 0, False, {}))
+    asked = []
+    monkeypatch.setattr(win, "_ask_tma", lambda *a: asked.append(a) or False)
+    out = tmp_path / "out"
+    (out / "Logs").mkdir(parents=True)
+    win.param_file, win.input_folder, win.output_folder = str(tmp_path / "p.yml"), str(tmp_path), str(out)
+    win.run_batch_processing()                         # only Logs: nothing to lose, no question
+    assert asked == [] and _Worker.started == [1]
+    (out / "QuantificationResults.csv").write_text("x")
+    win.run_batch_processing()                         # results there: asked, and Cancel keeps them
+    assert len(asked) == 1 and asked[0][1] == "The results folder is not empty."
+    assert _Worker.started == [1] and (out / "QuantificationResults.csv").exists()
+    assert not win.process_batch_btn.isHidden() and win.cancel_batch_btn.isHidden() and win.input_btn.isEnabled()

@@ -21,7 +21,7 @@ from PyQt5.QtCore import QPointF, QSettings, QTimer, QUrl
 from PyQt5.QtGui import QDesktopServices
 
 from .ui import *
-from .log import Log
+from .log import Log, LOGS_DIR
 from .batch import read_checkpoint, run_settings_changes, saved_run_parameters
 from .themes import THEMES, DEFAULT_THEME
 from .tma import AUTO_START_DIAMETER_UM, ORIENTATIONS, EDITS_FILE
@@ -2001,6 +2001,15 @@ class MainWindow(QMainWindow):
 
         resume, batch_size, batch_num, ignore_large, kept = self._check_batch_running_status()
 
+        # a new run deletes what the results folder holds (all but its Logs): ask first
+        if not resume and self._results_folder_in_use(self.output_folder) and not self._ask_tma(
+                "Process Batch", "The results folder is not empty.",
+                f"{self.output_folder}\n\nA new run deletes everything in it except the Logs folder.",
+                "Delete and Run", "Cancel"):
+            self.hide_progress_bar()
+            self._restore_batch_buttons()
+            return
+
         if not resume:
             batch_size = self.batch_size_spinner.value()
             batch_num = 0
@@ -2036,6 +2045,14 @@ class MainWindow(QMainWindow):
 
         # Start the worker thread
         self.batch_worker.start()
+
+    @staticmethod
+    def _results_folder_in_use(folder):
+        """True when ``folder`` holds anything a new run would delete (all but a Logs folder)."""
+        try:
+            return any(entry.lower() != LOGS_DIR.lower() for entry in os.listdir(folder))
+        except OSError:
+            return False
 
     def _restore_batch_buttons(self):
         self.cancel_batch_btn.setVisible(False)

@@ -877,9 +877,13 @@ class MainWindow(QMainWindow):
             "set it on the Segmentation page.")
         run.add_row("Max size", self.batch_max_size_label)
 
+        # the heading sits close to its list, a little apart from Max size
         save_title = QLabel("Save, besides the measurements")
         save_title.setObjectName("optionTitle")
-        run.add_widget(save_title)
+        save_block = QVBoxLayout()
+        save_block.setContentsMargins(0, 4, 0, 0)
+        save_block.setSpacing(5)
+        save_block.addWidget(save_title)
         self.visuals_cb = QCheckBox("Visualisations")
         self.visuals_cb.setChecked(True)
         self.visuals_cb.setToolTip(
@@ -901,7 +905,8 @@ class MainWindow(QMainWindow):
                          (self.scores_cb, "rigidity, bundling")):
             cb.setStyleSheet(self.checkbox_style)
             options.add_option(cb, note)
-        run.add_widget(options)
+        save_block.addWidget(options)
+        run.add_layout(save_block)
 
         # Process / cancel share the footer row
         batch_btn_layout = QHBoxLayout()

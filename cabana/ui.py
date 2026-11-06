@@ -927,7 +927,7 @@ class OptionList(QFrame):
             sep_row.addWidget(sep)
             self._layout.addLayout(sep_row)
         row = QHBoxLayout()
-        row.setContentsMargins(10, 5, 10, 5)
+        row.setContentsMargins(10, 2, 10, 2)
         row.addWidget(checkbox)
         row.addStretch(1)
         label = QLabel(note)

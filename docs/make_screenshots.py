@@ -116,12 +116,28 @@ def grab(win, name, marks):
 
 
 # ------------------------------------------------------------------- pages --
+class _FakeSettings:
+    """Stand-in for QSettings, so the screenshots leave the user's settings alone."""
+    store = {}
+
+    def __init__(self, *a):
+        pass
+
+    def value(self, key, default=None, **kw):
+        return self.store.get(key, default)
+
+    def setValue(self, key, value):
+        self.store[key] = value
+
+
 def main(argv):
     only = set(argv)
     want = lambda name: not only or name in only  # noqa: E731
 
     app = QApplication.instance() or QApplication([])
+    import cabana.cabana_gui as gui
     from cabana.cabana_gui import MainWindow
+    gui.QSettings = _FakeSettings      # the Light screenshots never change the user's theme or folders
     MainWindow.check_updates_on_start = False
     MainWindow.startup_messages = False
     win = MainWindow()         # maximises itself to the 800x600 offscreen screen
@@ -240,13 +256,13 @@ def main(argv):
                        label="core fitting")
             grab(win, "tma.png", [
                 (1, rect_of(win, win.tma_slide_path), "right"),
-                (2, rect_of(win, win.tma_array_combo), "left"),
-                (3, union(win, (win.tma_core_auto_cb, win.tma_core_diameter_spin, win.tma_sat_spin, win.tma_recover_cb))),
+                (2, rect_of(win, win.tma_array_combo), "right"),
+                (3, union(win, (win.tma_core_auto_cb, win.tma_core_diameter_spin, win.tma_sat_spin, win.tma_recover_cb)), "right"),
                 (4, rect_of(win, win.tma_fit_btn)),
-                (5, union(win, (win.tma_offset_spin, win.tma_stain_spin, win.tma_dmin_spin, win.tma_dmax_spin))),
+                (5, union(win, (win.tma_offset_spin, win.tma_stain_spin, win.tma_dmin_spin, win.tma_dmax_spin)), "right"),
                 (6, union(win, (win.tma_edit_cb, win.tma_links_cb, win.tma_undo_btn,
-                                 win.tma_load_edits_btn, win.tma_save_edits_btn))),
-                (7, union(win, (win.tma_margin_spin, win.tma_erode_spin, *win.tma_channel_cbs.values()))),
+                                 win.tma_load_edits_btn, win.tma_save_edits_btn)), "right"),
+                (7, union(win, (win.tma_margin_spin, win.tma_erode_spin, *win.tma_channel_cbs.values())), "right"),
                 (8, rect_of(win, win.tma_output_path), "right"),
                 (9, rect_of(win, win.tma_export_btn), "below"),
             ])

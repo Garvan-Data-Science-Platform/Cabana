@@ -63,10 +63,10 @@ before exporting, and exporting can be repeated into a different folder.
    instantly without a refit (see [Quality filters](#quality-filters)).
 6. **Edit.** *Edit cores* turns on hand correction of the circles on the
    overlay, *Grid lines* shows or hides the lattice and *Undo* reverts the
-   last edit; **Load Edits…** and **Save Edits…** reinstate or keep hand
+   last edit; **Load Edits…** and **Save Edits…** in the card's title bar reinstate or keep hand
    edits without exporting (see [Editing cores by hand](#editing-cores-by-hand)).
 7. **Export settings.** *Margin* around each circle, *Mask shrink*, and the
-   channels (BF, POL) to write.
+   channels to write (BF, POL, in the card's title bar).
 8. **Output folder** for the export. Opening a slide always sets it to
    `<slide>_cores`, placed in the folder that held the output folder you last
    chose with its folder icon (remembered between sessions), or beside the slide

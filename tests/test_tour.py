@@ -175,3 +175,16 @@ def test_page_rail_opens_pages_and_folds_the_panel(win, app):
     rail.help_btn.click()
     assert win._tour is not None
     win._tour.end()
+
+
+def test_title_bar_controls_do_not_fold_the_card(win, app):
+    from PyQt5.QtTest import QTest
+    win.show_page(win.pages.indexOf(win.tma_tab))
+    settle(app)
+    card = win.tma_export_card
+    box = win.tma_channel_cbs["BF"]
+    assert not box.isEnabled() and card.header.isAncestorOf(box)    # disabled until Fit Cores
+    QTest.mouseClick(box, Qt.LeftButton)
+    assert card.is_open()
+    QTest.mouseClick(win.tma_edit_card.header, Qt.LeftButton, pos=win.tma_edit_card.title_label.geometry().center())
+    assert not win.tma_edit_card.is_open()                           # the title still folds it

@@ -583,6 +583,11 @@ def generate_panel_style():
         }}
         QLabel#sectionTitle {{ color: {color_to_stylesheet(COLORS['text'])}; background: transparent;
             font-size: {FONT_SIZES['base'] + 1}px; font-weight: 600; }}
+        QPushButton#headerButton {{ border: 1px solid transparent; border-radius: 4px; background: transparent;
+            color: {color_to_stylesheet(COLORS['highlight'])}; font-size: {small}px; padding: 2px 6px; }}
+        QPushButton#headerButton:hover {{ text-decoration: underline; }}
+        QPushButton#headerButton:disabled {{ color: {faint}; }}
+        QPushButton#headerButton:focus {{ border-color: {color_to_stylesheet(COLORS['highlight'])}; }}
         QLabel#rowValue, QLabel#note, QLabel#optionNote {{
             color: {faint}; background: transparent; font-size: {small}px; }}
         QLabel#rowLabel, QLabel#optionTitle {{ color: {color_to_stylesheet(COLORS['text_dim'])};
@@ -860,7 +865,7 @@ class SectionCard(QFrame):
         self.header.setObjectName("sectionHeader")
         self.header.setCursor(Qt.PointingHandCursor)
         self.header.setFocusPolicy(Qt.TabFocus)
-        self.header.mousePressEvent = lambda event: self.set_open(not self._open)
+        self.header.mousePressEvent = self._header_press
         self.header.keyPressEvent = self._header_key
         head = QHBoxLayout(self.header)
         head.setContentsMargins(10, 10, 12, 10)
@@ -901,7 +906,50 @@ class SectionCard(QFrame):
         self._open = True
         self.restyle()
 
+    def _header_press(self, event):
+        # a click on a title-bar control (even a disabled one) never folds the card
+        child = self.header.childAt(event.pos())
+        if child is None or child in (self.title_label, self.chevron):
+            self.set_open(not self._open)
+
     # --- content -------------------------------------------------------
+    def add_header_widget(self, widget):
+        """A control in the title bar, right-aligned (it stays visible when the card is folded)."""
+        self.header_right.addWidget(widget)
+
+    def add_split_row(self, label, left, right, label2=None, field_width=128, label2_width=80, right_width=None):
+        """A row in two columns: ``left`` (a short field) in the field column and
+        ``right`` (a field after ``label2``, or a checkbox) in a block of fixed
+        width at the right edge, so every split row lines up with the others
+        and with the full-width fields. ``right_width`` defaults to ``field_width``.
+        Returns both labels."""
+        row = QHBoxLayout()
+        row.setSpacing(0)
+        left.setFixedWidth(field_width)
+        row.addWidget(left)
+        row.addSpacing(12)
+        row.addStretch(1)
+        block = QWidget()
+        right_width = right_width or field_width
+        block.setFixedWidth(label2_width + 8 + right_width)
+        inner = QHBoxLayout(block)
+        inner.setContentsMargins(0, 0, 0, 0)
+        inner.setSpacing(8)
+        lab2 = None
+        if label2 is not None:
+            lab2 = QLabel(label2)
+            lab2.setObjectName("rowLabel")
+            lab2.setFixedWidth(label2_width)
+            lab2.setToolTip(right.toolTip())
+            inner.addWidget(lab2)
+            right.setFixedWidth(right_width)
+            inner.addWidget(right)
+        else:
+            inner.addWidget(right)
+            inner.addStretch(1)
+        row.addWidget(block)
+        return self.add_row(label, row), lab2
+
     def _row_label(self, text, width):
         label = QLabel(text)
         label.setObjectName("rowLabel")

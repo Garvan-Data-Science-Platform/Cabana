@@ -46,7 +46,7 @@ described in detail on the [TMA preprocessing](tma.md) page.
      takes the patient ID of the cell it lands in (see
      [Editing cores by hand](tma.md#editing-cores-by-hand)).
 5. Check the **Output folder** (defaults to `<slide>_cores` next to the slide),
-   tick the **Channels** to export and click **Export Cores**. A 20x slide
+   tick the channels to export (**BF**, **POL**, in the Export title bar) and click **Export Cores**. A 20x slide
    with 80 cores exports in one to two minutes. The dialog at the end offers
    **Use BF in Batch Run** and **Use POL in Batch Run**.
 

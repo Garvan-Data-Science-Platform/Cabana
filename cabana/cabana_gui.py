@@ -16,7 +16,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QSpinBox,
                              QMessageBox, QGroupBox, QComboBox, QWidget,
                              QStatusBar, QLineEdit, QDoubleSpinBox, QStackedWidget, QGridLayout,
                              QAction, QActionGroup, QDialog, QScrollArea, QFrame, QLayout)
-from PyQt5.QtGui import QIcon, QPalette, QFont, QKeySequence
+from PyQt5.QtGui import QIcon, QPalette, QFont, QFontMetrics, QKeySequence
 from PyQt5.QtCore import QPointF, QSettings, QTimer, QUrl
 from PyQt5.QtGui import QDesktopServices
 
@@ -569,6 +569,7 @@ class MainWindow(QMainWindow):
         return self._ask_tma("Quit Cabana", "Quit Cabana?", "If you quit now:\n- " + "\n- ".join(risks),
                              "Confirm", "Cancel")
 
+    TMA_LABEL_WIDTH = 90      # TMA labels are short: the narrower column leaves room for paired fields
     MAP_LOAD_ITEM = "__load_map__"
 
     def _tma_selected_map(self):
@@ -968,16 +969,15 @@ class MainWindow(QMainWindow):
         """Set up the TMA preprocessing page: Fit, Filter, Edit and Export cards
         (load slide -> fit cores -> correct -> export)."""
         layout = self._page_layout(spacing=10)
-
-        def spin_row(*widgets):
-            row = QHBoxLayout()
-            row.setSpacing(12)
-            for w in widgets:
-                row.addWidget(w)
-            return row
+        # two columns: short fields in the field column, a fixed block at the right edge
+        font = QFont()
+        font.setPixelSize(FONT_SIZES['base'])
+        second = max(QFontMetrics(font).horizontalAdvance(t) for t in ("Orientation", "Min stain", "Mask shrink"))
+        split = dict(field_width=140, label2_width=second + 4, right_width=120)
 
         # --- Fit -------------------------------------------------------------
         fit = SectionCard("Fit", compact=True)
+        fit.LABEL_WIDTH = self.TMA_LABEL_WIDTH
         fit.title_label.setToolTip("Settings for Fit Cores; fit again after changing them.")
         self.tma_slide_path = PathEdit("", icon="file")
         self.tma_slide_path.setPlaceholderText("Olympus .vsi, TIFF or PNG")
@@ -1009,7 +1009,7 @@ class MainWindow(QMainWindow):
             "can mistake a rotation for its mirror, so check the control cores. Relabels at once.")
         self.tma_orientation_combo.currentIndexChanged.connect(self._tma_map_changed)
         self.tma_array_combo.currentIndexChanged.connect(self._tma_array_selected)
-        fit.add_row("Orientation", self.tma_orientation_combo)
+        self.tma_orientation_combo.setFixedWidth(104)
 
         self.tma_pixel_size_spin = QDoubleSpinBox()
         self.tma_pixel_size_spin.setRange(0.01, 50.0)
@@ -1020,7 +1020,7 @@ class MainWindow(QMainWindow):
         self.tma_pixel_size_spin.setFixedWidth(140)
         self.tma_pixel_size_spin.setStyleSheet(self.spinner_style)
         self.tma_pixel_size_spin.setToolTip("Filled from the slide metadata when available.")
-        fit.add_row("Pixel size", self.tma_pixel_size_spin, stretch=False)
+        fit.add_split_row("Pixel size", self.tma_pixel_size_spin, self.tma_orientation_combo, "Orientation", **split)
 
         self.tma_core_auto_cb = QCheckBox("Auto")
         self.tma_core_auto_cb.setChecked(True)
@@ -1038,7 +1038,7 @@ class MainWindow(QMainWindow):
         self.tma_core_diameter_spin.setEnabled(False)
         self._set_tma_core_tooltip()
         self.tma_core_auto_cb.toggled.connect(self._tma_core_auto_toggled)
-        fit.add_row("Core Ø", spin_row(self.tma_core_diameter_spin, self.tma_core_auto_cb), stretch=False)
+        fit.add_split_row("Core Ø", self.tma_core_diameter_spin, self.tma_core_auto_cb, **split)
 
         self.tma_sat_spin = QSpinBox()
         self.tma_sat_spin.setRange(2, 60)
@@ -1053,7 +1053,7 @@ class MainWindow(QMainWindow):
         self.tma_recover_cb.setStyleSheet(self.checkbox_style)
         self.tma_recover_cb.setToolTip(
             "Look for pale cores at empty grid positions and add them (purple).")
-        fit.add_row("Sensitivity", spin_row(self.tma_sat_spin, self.tma_recover_cb), stretch=False)
+        fit.add_split_row("Sensitivity", self.tma_sat_spin, self.tma_recover_cb, **split)
 
         self.tma_fit_btn = self._primary_button("Fit Cores")
         self.tma_fit_btn.setEnabled(False)
@@ -1069,6 +1069,7 @@ class MainWindow(QMainWindow):
         # --- Filter ----------------------------------------------------------
         # QC filters re-evaluate instantly on the fitted cores (no refit).
         self.tma_filter_card = flt = SectionCard("Filter", compact=True)
+        flt.LABEL_WIDTH = self.TMA_LABEL_WIDTH
         flt.title_label.setToolTip(
             "Quality filters; changes update the overlay at once. Excluded cores are grey with\n"
             "a cross and not exported. Filters never change patient IDs.")
@@ -1089,29 +1090,23 @@ class MainWindow(QMainWindow):
 
         self.tma_offset_spin = _spin(0.05, 1.0, 0.35, 0.05, " pitch",
                                      "Exclude cores this far from their grid position (fraction of the core spacing);\n"
-                                     "catches debris.", decimals=2)
+                                     "catches debris.", decimals=2, width=132)
         self.tma_stain_spin = _spin(0, 100, 2, 1, " %",
-                                    "Exclude patient cores with less stained area than this; controls are exempt.")
+                                    "Exclude patient cores with less stained area than this; controls are exempt.",
+                                    width=106)
         self.tma_dmin_spin = _spin(10, 100, 80, 5, " %",
                                    "Exclude cores smaller than this share of Core Ø; lower it to keep partial cores.",
                                    width=106)
         self.tma_dmax_spin = _spin(100, 300, 120, 5, " %",
                                    "Exclude cores larger than this share of Core Ø.", width=106)
-        flt.add_row("Grid offset", self.tma_offset_spin, stretch=False)
-        flt.add_row("Min stain", self.tma_stain_spin, stretch=False)
-        size_row = QHBoxLayout()
-        size_row.setSpacing(6)
-        size_row.addWidget(self.tma_dmin_spin)
-        to = QLabel("to")
-        to.setObjectName("rowLabel")
-        size_row.addWidget(to)
-        size_row.addWidget(self.tma_dmax_spin)
-        flt.add_row("Core size", size_row, stretch=False)
+        flt.add_split_row("Grid offset", self.tma_offset_spin, self.tma_stain_spin, "Min stain", **split)
+        flt.add_split_row("Core size", self.tma_dmin_spin, self.tma_dmax_spin, "to", **split)
         layout.addWidget(flt)
 
         # --- Edit ------------------------------------------------------------
         # Hand corrections of the fitted circles; every edit re-snaps to the grid.
         self.tma_edit_card = edit = SectionCard("Edit", compact=True)
+        edit.LABEL_WIDTH = self.TMA_LABEL_WIDTH
         edit.title_label.setToolTip(
             "Correct the fit by hand; a moved or added core takes the patient ID of its grid cell.\n"
             "Edits are saved with the export and offered back after refitting.")
@@ -1140,51 +1135,52 @@ class MainWindow(QMainWindow):
         edit_layout.addWidget(self.tma_undo_btn)
         edit.add_layout(edit_layout)
 
-        edits_file_layout = QHBoxLayout()
-        edits_file_layout.setSpacing(8)
+        # loading and saving edits sit in the title bar: one row for the card
         self.tma_load_edits_btn = QPushButton("Load Edits…")
-        self.tma_load_edits_btn.setStyleSheet(self.btn_style)
+        self.tma_load_edits_btn.setObjectName("headerButton")
         self.tma_load_edits_btn.setEnabled(False)
         self.tma_load_edits_btn.setToolTip(
             f"Load hand edits saved earlier ({EDITS_FILE}), with the orientation and map position.")
         self.tma_load_edits_btn.clicked.connect(self.open_tma_edits)
-        edits_file_layout.addWidget(self.tma_load_edits_btn)
+        edit.add_header_widget(self.tma_load_edits_btn)
         self.tma_save_edits_btn = QPushButton("Save Edits…")
-        self.tma_save_edits_btn.setStyleSheet(self.btn_style)
+        self.tma_save_edits_btn.setObjectName("headerButton")
         self.tma_save_edits_btn.setEnabled(False)
         self.tma_save_edits_btn.setToolTip(
             f"Save the cores, orientation and map position as {EDITS_FILE} without exporting;\n"
             "they are offered back after the next fit.")
         self.tma_save_edits_btn.clicked.connect(self.save_tma_edits)
-        edits_file_layout.addWidget(self.tma_save_edits_btn)
-        edit.add_layout(edits_file_layout)
+        edit.add_header_widget(self.tma_save_edits_btn)
         layout.addWidget(edit)
 
         # --- Export ----------------------------------------------------------
         # Settings below only affect Export Cores; changing them needs no refit.
         self.tma_export_card = export = SectionCard("Export", compact=True)
+        export.LABEL_WIDTH = self.TMA_LABEL_WIDTH
         export.title_label.setToolTip("Settings for Export Cores; no refit needed.")
         self.tma_margin_spin = QSpinBox()
         self.tma_margin_spin.setRange(0, 1000)
         self.tma_margin_spin.setSingleStep(10)
         self.tma_margin_spin.setValue(30)
         self.tma_margin_spin.setSuffix(" µm")
-        self.tma_margin_spin.setFixedWidth(140)
+        self.tma_margin_spin.setFixedWidth(122)
         self.tma_margin_spin.setStyleSheet(self.spinner_style)
         self.tma_margin_spin.setToolTip("Extra border around the fitted circle in each crop.")
-        export.add_row("Margin", self.tma_margin_spin, stretch=False)
 
         self.tma_erode_spin = QSpinBox()
         self.tma_erode_spin.setRange(0, 200)
         self.tma_erode_spin.setValue(8)
         self.tma_erode_spin.setSuffix(" px")
-        self.tma_erode_spin.setFixedWidth(140)
+        self.tma_erode_spin.setFixedWidth(112)
         self.tma_erode_spin.setStyleSheet(self.spinner_style)
         self.tma_erode_spin.setToolTip("Shrinks the core mask so the core edge is left out.")
-        export.add_row("Mask shrink", self.tma_erode_spin, stretch=False)
+        export.add_split_row("Margin", self.tma_margin_spin, self.tma_erode_spin, "Mask shrink", **split)
 
-        ch_layout = QHBoxLayout()
-        ch_layout.setSpacing(18)
+        # the channels sit in the title bar
+        self.tma_channels_box = QWidget()
+        ch_layout = QHBoxLayout(self.tma_channels_box)
+        ch_layout.setContentsMargins(0, 0, 0, 0)
+        ch_layout.setSpacing(14)
         self.tma_channel_cbs = {}
         ch_hints = {"BF": "Bright-field layer; analyse it with Dark line on.",
                     "POL": "Polarised-light layer; separate its bands on the Birefringence page,\n"
@@ -1194,11 +1190,11 @@ class MainWindow(QMainWindow):
             cb.setChecked(True)
             cb.setEnabled(False)
             cb.setStyleSheet(self.checkbox_style)
-            cb.setToolTip(ch_hints[name])
+            cb.setToolTip(ch_hints[name] + "\nSlide layers to export, one image per core each; "
+                                           "available after Fit Cores.")
             self.tma_channel_cbs[name] = cb
             ch_layout.addWidget(cb)
-        ch_label = export.add_row("Channels", ch_layout, stretch=False)
-        ch_label.setToolTip("Slide layers to export, one image per core each. Available after Fit Cores.")
+        export.add_header_widget(self.tma_channels_box)
 
         self.tma_output_path = PathEdit("")
         self.tma_output_path.setPlaceholderText("Defaults to <slide>_cores")
@@ -2198,8 +2194,8 @@ class MainWindow(QMainWindow):
         swatch.setSpacing(10)
         self.color_btn = QPushButton("")
         self.color_btn.setStyleSheet(
-            f"background-color: #f53282; border: 1px solid {color_to_stylesheet(COLORS['border'])}; border-radius: 5px;")
-        self.color_btn.setFixedSize(QSize(24, 24))
+            f"background-color: #f53282; border: 1px solid {color_to_stylesheet(COLORS['border'])}; border-radius: 4px;")
+        self.color_btn.setFixedSize(QSize(18, 18))
         self.color_btn.clicked.connect(self.select_color)
         self.color_btn.setToolTip("Colour of the structures to keep, e.g. Picrosirius Red collagen; click to pick.")
         swatch.addWidget(self.color_btn)
@@ -4042,7 +4038,7 @@ class MainWindow(QMainWindow):
 
         # Buttons
         for btn in (self.start_open_btn, self.start_params_btn, self.cancel_batch_btn,
-                     self.tma_cancel_btn, self.tma_undo_btn, self.tma_load_edits_btn, self.tma_save_edits_btn):
+                     self.tma_cancel_btn, self.tma_undo_btn):
             btn.setStyleSheet(self.btn_style)
 
         # Primary buttons

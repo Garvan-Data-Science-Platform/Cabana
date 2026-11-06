@@ -57,6 +57,8 @@ class TourOverlay(QWidget):
             f" font-size: {FONT_SIZES['title'] + 1}px; font-weight: 600; }}"
             f"QLabel#tourText {{ color: {color_to_stylesheet(COLORS['text_dim'])};"
             f" font-size: {FONT_SIZES['base'] + 1}px; }}"
+            f"QLabel#tourCount {{ color: {color_to_stylesheet(pc['faint'])};"
+            f" font-size: {FONT_SIZES['small']}px; }}"
             f"QToolButton {{ border: none; background: transparent;"
             f" color: {color_to_stylesheet(pc['faint'])}; font-size: 16px; }}"
             f"QToolButton:hover {{ color: {color_to_stylesheet(COLORS['text'])}; }}")
@@ -85,8 +87,9 @@ class TourOverlay(QWidget):
 
         bottom = QHBoxLayout()
         bottom.setSpacing(8)
-        self.dots = _StepDots(len(self.steps))
-        bottom.addWidget(self.dots, 1, Qt.AlignVCenter)
+        self.count_label = QLabel()
+        self.count_label.setObjectName("tourCount")
+        bottom.addWidget(self.count_label, 1, Qt.AlignVCenter)
         self.back_btn = QPushButton("Back")
         self.back_btn.setStyleSheet(generate_button_style())
         self.back_btn.clicked.connect(self.back)
@@ -112,7 +115,7 @@ class TourOverlay(QWidget):
             step.enter()
         self.title_label.setText(step.title)
         self.text_label.setText(step.text)
-        self.dots.set_current(self.index)
+        self.count_label.setText(f"{self.index + 1} of {len(self.steps)}")
         self.back_btn.setVisible(self.index > 0)
         self.next_btn.setText("Done" if self.index == len(self.steps) - 1 else "Next")
         # the page switch lays out on the next pass: place the card after it
@@ -203,27 +206,3 @@ class TourOverlay(QWidget):
     def wheelEvent(self, event):
         event.accept()
 
-
-class _StepDots(QWidget):
-    """One dot per step; the current one is a wider accent pill."""
-
-    def __init__(self, count, parent=None):
-        super().__init__(parent)
-        self.count, self.current = count, 0
-        self.setFixedHeight(10)
-        self.setMinimumWidth(count * 12 + 12)
-
-    def set_current(self, index):
-        self.current = index
-        self.update()
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(Qt.NoPen)
-        x, y = 0.0, (self.height() - 6) / 2
-        for i in range(self.count):
-            w = 16 if i == self.current else 6
-            painter.setBrush(COLORS['highlight'] if i <= self.current else COLORS['border'])
-            painter.drawRoundedRect(QRectF(x, y, w, 6), 3, 3)
-            x += w + 5

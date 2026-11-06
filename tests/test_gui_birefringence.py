@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 pytest.importorskip("PyQt5")
 from PyQt5.QtCore import QEventLoop, QTimer  # noqa: E402
-from PyQt5.QtWidgets import QApplication  # noqa: E402
+from PyQt5.QtWidgets import QApplication, QLabel  # noqa: E402
 
 from cabana import brf  # noqa: E402
 from tests.test_brf_folder import pol_image  # noqa: E402
@@ -90,16 +90,26 @@ def test_separate_shows_the_class_map_and_a_summary(win, tmp_path, monkeypatch, 
     assert not shown[-1].any() and "0.00 % of the image" in win.brf_summary_label.text()
 
 
-def test_bands_stay_joined(win):
+def test_bands_never_move_each_other(win):
     red, yellow, green = win.brf_band_sliders
-    red.setValues(0, 35)
-    assert (yellow.lower_value, yellow.upper_value) == (36, 47)
-    yellow.setValues(20, 60)
-    assert (red.lower_value, red.upper_value) == (0, 19)
-    assert (green.lower_value, green.upper_value) == (61, 140)
+    span = lambda s: (s.lower_value, s.upper_value)
+    yellow.setValues(30, 45)                          # shrinking leaves gaps, the others stay
+    assert span(red) == (0, 27) and span(yellow) == (30, 45) and span(green) == (48, 140)
+    yellow.setValues(20, 60)                          # growing stops at the neighbours' edges
+    assert span(red) == (0, 27) and span(yellow) == (28, 47) and span(green) == (48, 140)
+    green.setValues(40, 150)
+    assert span(yellow) == (28, 47) and span(green) == (48, 150)
+    red.setValues(-20, 35)
+    assert span(red) == (-20, 27) and span(yellow) == (28, 47)
     params = win._brf_settings
-    assert [params[k] for k in ("Red-Orange Max", "Yellow Min", "Yellow Max", "Green Min")] == [19, 20, 60, 61]
-    assert win.brf_band_values[1].text() == "20, 60"
+    assert [params[k] for k in ("Red-Orange Min", "Red-Orange Max", "Yellow Min", "Yellow Max",
+                                "Green Min", "Green Max")] == [236, 27, 28, 47, 48, 150]
+    assert win.brf_band_values[2].text() == "48, 150"
+
+
+def test_band_rows_are_named_by_band(win):
+    labels = [l.text() for l in win.brf_bands_card.findChildren(QLabel) if l.objectName() == "rowLabel"]
+    assert {"Red-orange", "Yellow", "Green"} <= set(labels) and not any("hue" in l for l in labels)
 
 
 def test_red_orange_wraps_below_zero(win):

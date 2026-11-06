@@ -816,11 +816,11 @@ class MainWindow(QMainWindow):
         )
 
     @staticmethod
-    def _page_layout():
+    def _page_layout(spacing=14):
         """Top-level layout of a side-panel page: a column of section cards."""
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 4, 0, 8)
-        layout.setSpacing(14)
+        layout.setSpacing(spacing)
         return layout
 
     def _set_play_icon(self, btn):
@@ -883,7 +883,7 @@ class MainWindow(QMainWindow):
         self.bat_files_card = flow
         layout.addWidget(flow)
 
-        run = SectionCard("Run")
+        self.bat_run_card = run = SectionCard("Run")
         self.batch_size_spinner = QSpinBox()
         self.batch_size_spinner.setRange(1, 100)
         self.batch_size_spinner.setValue(5)
@@ -967,7 +967,7 @@ class MainWindow(QMainWindow):
     def setup_tma_tab(self):
         """Set up the TMA preprocessing page: Fit, Filter, Edit and Export cards
         (load slide -> fit cores -> correct -> export)."""
-        layout = self._page_layout()
+        layout = self._page_layout(spacing=10)
 
         def spin_row(*widgets):
             row = QHBoxLayout()
@@ -977,7 +977,7 @@ class MainWindow(QMainWindow):
             return row
 
         # --- Fit -------------------------------------------------------------
-        fit = SectionCard("Fit")
+        fit = SectionCard("Fit", compact=True)
         fit.title_label.setToolTip("Settings for Fit Cores; fit again after changing them.")
         self.tma_slide_path = PathEdit("", icon="file")
         self.tma_slide_path.setPlaceholderText("Olympus .vsi, TIFF or PNG")
@@ -1068,7 +1068,7 @@ class MainWindow(QMainWindow):
 
         # --- Filter ----------------------------------------------------------
         # QC filters re-evaluate instantly on the fitted cores (no refit).
-        flt = SectionCard("Filter")
+        self.tma_filter_card = flt = SectionCard("Filter", compact=True)
         flt.title_label.setToolTip(
             "Quality filters; changes update the overlay at once. Excluded cores are grey with\n"
             "a cross and not exported. Filters never change patient IDs.")
@@ -1111,7 +1111,7 @@ class MainWindow(QMainWindow):
 
         # --- Edit ------------------------------------------------------------
         # Hand corrections of the fitted circles; every edit re-snaps to the grid.
-        edit = SectionCard("Edit")
+        self.tma_edit_card = edit = SectionCard("Edit", compact=True)
         edit.title_label.setToolTip(
             "Correct the fit by hand; a moved or added core takes the patient ID of its grid cell.\n"
             "Edits are saved with the export and offered back after refitting.")
@@ -1162,7 +1162,7 @@ class MainWindow(QMainWindow):
 
         # --- Export ----------------------------------------------------------
         # Settings below only affect Export Cores; changing them needs no refit.
-        export = SectionCard("Export")
+        self.tma_export_card = export = SectionCard("Export", compact=True)
         export.title_label.setToolTip("Settings for Export Cores; no refit needed.")
         self.tma_margin_spin = QSpinBox()
         self.tma_margin_spin.setRange(0, 1000)
@@ -1213,7 +1213,6 @@ class MainWindow(QMainWindow):
         # Status of the fit and export, then the export action
         self.tma_status_label = QLabel("No slide loaded")
         self.tma_status_label.setWordWrap(True)
-        self.tma_status_label.setMinimumHeight(40)
         self.tma_status_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.tma_status_label.setStyleSheet(self.value_label_style)
         self.tma_status_label.setToolTip(
@@ -2221,7 +2220,7 @@ class MainWindow(QMainWindow):
         self.seg_colour_card = colour
         layout.addWidget(colour)
 
-        training = SectionCard("Training")
+        self.seg_training_card = training = SectionCard("Training")
         self.num_labels_slider = CustomSlider(Qt.Horizontal)
         self.num_labels_slider.setRange(8, 96)
         self.num_labels_slider.setValue(32)  # Default
@@ -2239,7 +2238,7 @@ class MainWindow(QMainWindow):
         training.add_row("Max iterations", self.max_iters_slider, self.max_iters_value)
         layout.addWidget(training)
 
-        large = SectionCard("Large images")
+        self.seg_large_card = large = SectionCard("Large images")
         # Patch size (0 = segment the whole image at once)
         self.patch_size_spinner = QSpinBox()
         self.patch_size_spinner.setRange(0, 8192)
@@ -2344,7 +2343,7 @@ class MainWindow(QMainWindow):
         self.brf_saturation_value = self._slider_value_label("0")
         bands.add_row("Min saturation", self.brf_saturation_slider, self.brf_saturation_value)
 
-        # Hue bands: joined range sliders on one hue axis, filled in the band's colour
+        # Hue bands: range sliders on one hue axis, filled in the band's colour; they never overlap
         self._brf_syncing = False
         self.brf_band_sliders, self.brf_band_values = [], []
         tips = {
@@ -2361,9 +2360,9 @@ class MainWindow(QMainWindow):
             slider.setValues(lo, hi)
             slider.valueChanged.connect(lambda lo, hi, i=index: self.update_brf_band(i, lo, hi))
             slider.setToolTip(tips[band] + "\n"
-                                           "The bands stay joined.")
+                                           "An edge stops at the neighbouring band.")
             value = self._slider_value_label(f"{lo}, {hi}")
-            bands.add_row(f"{band.capitalize()} hue", slider, value)
+            bands.add_row(band.capitalize(), slider, value)
             self.brf_band_sliders.append(slider)
             self.brf_band_values.append(value)
 
@@ -2408,7 +2407,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(bands)
 
         # --- Folder: colour separation only, no segmentation or fibre analysis ---
-        folder = SectionCard("Folder run")
+        self.brf_folder_card = folder = SectionCard("Folder run")
         folder.title_label.setToolTip("Separate every image of a folder (no segmentation or fibre analysis);\n"
                                       "analyse the band images afterwards with Batch Run.")
 
@@ -2488,24 +2487,21 @@ class MainWindow(QMainWindow):
         self._brf_settings["Sort Into Folders"] = self.brf_sort_cb.isChecked()
 
     def update_brf_band(self, index, lo, hi):
-        """A band slider moved: keep the bands joined (each starts one hue after
-        the previous ends), then store all three ranges."""
+        """A band slider moved: it stops at its neighbours' edges (bands never
+        overlap and never move each other), then store all three ranges."""
         if self._brf_syncing:
             return
         self._brf_syncing = True
         try:
-            axis_lo, axis_hi = self.BRF_HUE_AXIS
-            ranges = [[s.lower_value, s.upper_value] for s in self.brf_band_sliders]
-            ranges[index] = [lo, hi]
-            for j in range(index + 1, len(ranges)):           # push the later bands up
-                ranges[j][0] = min(ranges[j - 1][1] + 1, axis_hi)
-                ranges[j][1] = max(ranges[j][1], ranges[j][0])
-            for j in range(index - 1, -1, -1):                 # and the earlier ones down
-                ranges[j][1] = max(ranges[j + 1][0] - 1, axis_lo)
-                ranges[j][0] = min(ranges[j][0], ranges[j][1])
-            for slider, (a, b) in zip(self.brf_band_sliders, ranges):
-                if (slider.lower_value, slider.upper_value) != (a, b):
-                    slider.setValues(a, b)
+            sliders = self.brf_band_sliders
+            if index > 0:
+                lo = max(lo, sliders[index - 1].upper_value + 1)
+            if index < len(sliders) - 1:
+                hi = min(hi, sliders[index + 1].lower_value - 1)
+            lo = min(lo, hi)
+            slider = sliders[index]
+            if (slider.lower_value, slider.upper_value) != (lo, hi):
+                slider.setValues(lo, hi)
         finally:
             self._brf_syncing = False
         params = self._brf_settings
@@ -2778,7 +2774,7 @@ class MainWindow(QMainWindow):
 
         # Fibre measurements: used by the skeleton analysis of a full run
         # (Batch Run), not by the Detect preview above
-        measurements = SectionCard("Measurements")
+        self.det_measurements_card = measurements = SectionCard("Measurements")
         measurements.setToolTip("Used by Batch Run, not by Detect.")
         note = QLabel("Used by Batch Run, not by Detect.")
         note.setObjectName("note")
@@ -2858,7 +2854,7 @@ class MainWindow(QMainWindow):
         self.gap_gaps_card = gaps
         layout.addWidget(gaps)
 
-        hdm = SectionCard("Hematoxylin density (HDM)")
+        self.gap_hdm_card = hdm = SectionCard("Hematoxylin density (HDM)")
         self.max_hdm_slider = CustomSlider(Qt.Horizontal)
         self.max_hdm_slider.setRange(100, 255)
         self.max_hdm_slider.setValue(230)  # Default
@@ -3828,43 +3824,63 @@ class MainWindow(QMainWindow):
         dlg.exec_()
 
     def _tour_steps(self):
-        """The pipeline, one step per page: what to do there, pointing at its card."""
+        """The pipeline, one step per card: what to do there, pointing at the card."""
         def page(tab, card=None):
             def enter():
                 self.show_page(self.pages.indexOf(tab))
                 if card is not None:
+                    if not card.is_open():
+                        card.set_open(True)
                     self.pages_scroll.ensureWidgetVisible(card, 0, 0)
             return enter
+
+        def card(tab, widget, title, text):
+            return TourStep(title, text, page(tab, widget), lambda: widget)
         return [
             TourStep("Welcome to Cabana",
                      "This tour shows where each step of the analysis lives. It changes no settings; "
                      "press Esc to leave at any time.",
                      page(self.start_tab), lambda: self.start_actions),
-            TourStep("Cut a TMA slide into cores",
-                     "Optional. Fit the cores of a whole-slide TMA scan, check them on the overlay and "
-                     "export one image and mask per core.",
-                     page(self.tma_tab, self.tma_fit_card), lambda: self.tma_fit_card),
-            TourStep("Separate birefringence bands",
-                     "For polarised-light images: sort the pixels into red-orange, yellow and green "
-                     "bands, for one image or a whole folder.",
-                     page(self.brf_tab, self.brf_bands_card), lambda: self.brf_bands_card),
-            TourStep("Keep the stained tissue",
-                     "Open a typical image, pick the stain colour and click Segment at the bottom "
-                     "of the page.",
-                     page(self.seg_tab, self.seg_colour_card), lambda: self.seg_colour_card),
-            TourStep("Detect the fibres",
-                     "Set the fibre widths and contrast, then Detect to check them on the image.",
-                     page(self.det_tab, self.det_detection_card), lambda: self.det_detection_card),
-            TourStep("Measure the gaps",
-                     "Analyse fills the spaces between the fibres with circles.",
-                     page(self.gap_tab, self.gap_gaps_card), lambda: self.gap_gaps_card),
-            TourStep("Save the settings",
-                     "Parameters > Export Parameters writes the settings of these pages to a file "
-                     "for batch runs.",
-                     None, None),
-            TourStep("Run a whole folder",
-                     "Choose the images, the parameter file and a results folder, then Process Batch.",
-                     page(self.bat_tab, self.bat_files_card), lambda: self.bat_files_card),
+            TourStep("Pages",
+                     "Each icon opens a page of the side panel. Click the open page's icon to fold "
+                     "the panel and give the image more room.",
+                     page(self.start_tab), lambda: self.page_rail),
+            card(self.tma_tab, self.tma_fit_card, "Cut a TMA slide into cores",
+                 "Optional. Open a whole-slide TMA scan and fit its cores to the array map."),
+            card(self.tma_tab, self.tma_filter_card, "Leave out poor cores",
+                 "Quality filters exclude cores; excluded cores are grey with a cross on the overlay "
+                 "and are not exported."),
+            card(self.tma_tab, self.tma_edit_card, "Correct the fit by hand",
+                 "Turn on Edit cores to move, resize, add or remove cores on the image."),
+            card(self.tma_tab, self.tma_export_card, "Export the cores",
+                 "Writes one image and mask per core, named by patient, ready for Batch Run."),
+            card(self.brf_tab, self.brf_bands_card, "Separate birefringence bands",
+                 "For polarised-light images: set the hues of the red-orange, yellow and green bands "
+                 "and check them on the image."),
+            card(self.brf_tab, self.brf_folder_card, "Separate a whole folder",
+                 "Run Folder writes the band images of every image in a folder, inside ROI masks "
+                 "if you choose them."),
+            card(self.seg_tab, self.seg_colour_card, "Keep the stained tissue",
+                 "Open a typical image, pick the stain colour and click Segment."),
+            card(self.seg_tab, self.seg_training_card, "Fine or coarse",
+                 "More labels or fewer iterations give a finer segmentation."),
+            card(self.seg_tab, self.seg_large_card, "Large images",
+                 "Big images are segmented in patches; images over Max size are split into blocks "
+                 "in a batch run."),
+            card(self.det_tab, self.det_detection_card, "Detect the fibres",
+                 "Set the fibre widths and contrast, then Detect to check them on the image."),
+            card(self.det_tab, self.det_measurements_card, "Measure the fibres",
+                 "How Batch Run measures fibre length, branching and curvature."),
+            card(self.gap_tab, self.gap_gaps_card, "Measure the gaps",
+                 "Analyse fills the spaces between the fibres with circles."),
+            card(self.gap_tab, self.gap_hdm_card, "Hematoxylin density",
+                 "Settings of the hematoxylin density map (HDM) that Batch Run measures."),
+            card(self.bat_tab, self.bat_files_card, "Choose the files",
+                 "Pick the images, optional ROI masks, a parameter file and a results folder. "
+                 "Parameters > Export Parameters saves the settings of the earlier pages as that file."),
+            card(self.bat_tab, self.bat_run_card, "Run a whole folder",
+                 "Choose what to save besides the measurements, then Process Batch. The progress "
+                 "shows here."),
         ]
 
     def start_tour(self):

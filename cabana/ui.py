@@ -139,13 +139,20 @@ _ICON_SHAPES = {
              'stroke-width="1.3" stroke-linecap="round"/>',
     # side-panel pages (the page rail)
     'page-start': '<path d="M2 6.6L7 2.6L12 6.6V12H8.6V9H5.4V12H2Z"/>',
-    'page-tma': ''.join(f'<circle cx="{x}" cy="{y}" r="1.35"/>' for x in (3.2, 7, 10.8) for y in (3.2, 7, 10.8)),
-    'page-brf': '<circle cx="7" cy="7" r="5.2"/><path d="M7 1.8A5.2 5.2 0 0 1 7 12.2Z" fill="{c}"/>',
-    'page-seg': '<path d="M7 1.8C7 1.8 3 6.4 3 8.9A4 4 0 0 0 11 8.9C11 6.4 7 1.8 7 1.8Z"/>',
-    'page-fibres': '<path d="M1.6 4.2C3.4 2.4 5 5.6 7 3.8S10.6 2.4 12.4 4.2M1.6 7.6C3.4 5.8 5 9 7 7.2'
-                   'S10.6 5.8 12.4 7.6M1.6 11C3.4 9.2 5 12.4 7 10.6S10.6 9.2 12.4 11"/>',
-    'page-gaps': '<rect x="1.8" y="1.8" width="10.4" height="10.4" rx="2.2"/><circle cx="7" cy="7" r="2.9"/>',
-    'page-batch': '<rect x="4" y="1.8" width="8.2" height="7.2" rx="1.4"/><path d="M1.8 4.6V11.2A1 1 0 0 0 2.8 12.2H9.6"/>',
+    'page-tma': ''.join(f'<circle cx="{x}" cy="{y}" r="1.4"/>' for x in (2.8, 7, 11.2) for y in (2.8, 7, 11.2)),
+    'page-brf': '<circle cx="7" cy="7" r="5.2"/><path d="M4.6 3.4V10.6M7 2.6V11.4M9.4 3.4V10.6"/>',
+    # TaiJi from quarter arcs: arcs spanning a full diameter overshoot when rendered
+    'page-seg': ('<path d="M7 1.4A5.6 5.6 0 0 1 12.6 7A5.6 5.6 0 0 1 7 12.6A2.8 2.8 0 0 1 4.2 9.8A2.8 2.8 0 0 1 7 7'
+                 'A2.8 2.8 0 0 0 9.8 4.2A2.8 2.8 0 0 0 7 1.4Z" fill="{c}" stroke="none"/>'
+                 '<circle cx="7" cy="7" r="5.6" stroke-width="1.1"/>'
+                 '<path d="M7 1.4A2.8 2.8 0 0 1 9.8 4.2A2.8 2.8 0 0 1 7 7A2.8 2.8 0 0 0 4.2 9.8'
+                 'A2.8 2.8 0 0 0 7 12.6" stroke-width="1.1"/>'),
+    'page-fibres': ('<g transform="rotate(-45 7 7)"><path d="M2.4 3.6C4 2.2 5.4 5 7 3.6S10 2.2 11.6 3.6'
+                    'M1.6 7C3.4 5.6 5.2 8.4 7 7S10.6 5.6 12.4 7M2.4 10.4C4 9 5.4 11.8 7 10.4S10 9 11.6 10.4"/></g>'),
+    'page-gaps': ('<path d="M2.4 1.6C1.4 4.4 3.4 9.6 2.4 12.4M11.6 1.6C12.6 4.4 10.6 9.6 11.6 12.4"/>'
+                  '<circle cx="7" cy="7" r="2.9"/>'),
+    'page-batch': ('<rect x="4.2" y="1.6" width="8.2" height="6.8" rx="1.3"/><path d="M2.9 3.9V9A1 1 0 0 0 3.9 10H10.1"/>'
+                   '<path d="M1.6 6.2V11.4A1 1 0 0 0 2.6 12.4H8.8"/>'),
     'page-help': '<circle cx="7" cy="7" r="5.5"/><path d="M5.3 5.5A1.8 1.8 0 1 1 7.7 7.2C7.2 7.4 7 7.8 7 8.3V8.6"/>'
                  '<circle cx="7" cy="10.4" r="0.45" fill="{c}"/>',
 }
@@ -154,14 +161,17 @@ _ICON_SHAPES = {
 def icon_path(name: str, color: QColor, color2: QColor = None) -> str:
     """Path of an SVG file drawing icon ``name`` in ``color`` (``color2`` for
     the cut-out of two-tone icons), with forward slashes for stylesheets."""
+    import hashlib
     import os
     import tempfile
     folder = os.path.join(tempfile.gettempdir(), "cabana_icons")
     os.makedirs(folder, exist_ok=True)
     c, c2 = color.name(), (color2 or color).name()
-    path = os.path.join(folder, f"{name}_{c[1:]}_{c2[1:]}.svg")
+    body = _ICON_SHAPES[name].format(c=c, c2=c2)
+    # the shape's hash in the name: a redesigned icon never reuses an old file
+    digest = hashlib.md5(body.encode()).hexdigest()[:8]
+    path = os.path.join(folder, f"{name}_{c[1:]}_{c2[1:]}_{digest}.svg")
     if not os.path.isfile(path):
-        body = _ICON_SHAPES[name].format(c=c, c2=c2)
         if name.startswith('page-'):          # line icons: one stroke style for the whole set
             body = (f'<g fill="none" stroke="{c}" stroke-width="1.25" stroke-linecap="round" '
                     f'stroke-linejoin="round">{body}</g>')
@@ -837,9 +847,11 @@ class SectionCard(QFrame):
     LABEL_WIDTH = 118
     VALUE_WIDTH = 58
 
-    def __init__(self, title, parent=None):
+    def __init__(self, title, parent=None, compact=False):
+        """``compact``: tighter rows and margins, for pages with many settings."""
         super().__init__(parent)
         self.setObjectName("sectionCard")
+        gap, top, bottom = (8, 10, 12) if compact else (14, 14, 16)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(1, 1, 1, 1)
         outer.setSpacing(0)
@@ -866,8 +878,8 @@ class SectionCard(QFrame):
 
         self.body = QWidget()
         self.body_layout = QVBoxLayout(self.body)
-        self.body_layout.setContentsMargins(12, 14, 12, 16)
-        self.body_layout.setSpacing(14)
+        self.body_layout.setContentsMargins(12, top, 12, bottom)
+        self.body_layout.setSpacing(gap)
         outer.addWidget(self.body)
 
         self.footer = QWidget()
@@ -879,7 +891,7 @@ class SectionCard(QFrame):
         divider.setFixedHeight(1)
         footer_outer.addWidget(divider)
         self.footer_layout = QVBoxLayout()
-        self.footer_layout.setContentsMargins(12, 14, 12, 16)
+        self.footer_layout.setContentsMargins(12, top, 12, bottom)
         self.footer_layout.setSpacing(8)
         footer_outer.addLayout(self.footer_layout)
         self.footer.setVisible(False)
@@ -1505,6 +1517,7 @@ class RangeSlider(QWidget):
         self.moving_lower = False
         self.moving_upper = False
         self.handle_radius = SLIDER_HANDLE_RADIUS
+        self.edge = SLIDER_HANDLE_RADIUS + 5   # track inset: room for the ring and focus ring
         self.hover_handle = None  # 0 for none, 1 for lower, 2 for upper
         self.fill_color = None    # colour of the selected span; None = theme accent
         self._kbd_focus = False   # focus came from the keyboard: draw the focus ring
@@ -1541,7 +1554,7 @@ class RangeSlider(QWidget):
     def update_positions(self):
         """Update the pixel positions based on values"""
         if self.orientation == Qt.Horizontal:
-            avail_width = self.width() - 2 * self.handle_radius
+            avail_width = self.width() - 2 * self.edge
             if self.max_val == self.min_val:
                 self.lower_pos = 0
                 self.upper_pos = avail_width
@@ -1549,7 +1562,7 @@ class RangeSlider(QWidget):
                 self.lower_pos = int(avail_width * (self.lower_value - self.min_val) / (self.max_val - self.min_val))
                 self.upper_pos = int(avail_width * (self.upper_value - self.min_val) / (self.max_val - self.min_val))
         else:
-            avail_height = self.height() - 2 * self.handle_radius
+            avail_height = self.height() - 2 * self.edge
             if self.max_val == self.min_val:
                 self.lower_pos = avail_height
                 self.upper_pos = 0
@@ -1564,6 +1577,7 @@ class RangeSlider(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         fill = QColor(self.fill_color) if self.fill_color is not None else COLORS['highlight']
+        ring = COLORS['highlight']     # handle rings stay the accent; only the span takes fill_color
 
         # Update handle positions based on current values
         self.update_positions()
@@ -1576,16 +1590,16 @@ class RangeSlider(QWidget):
         if self.orientation == Qt.Horizontal:
             track_height = 4
             track_y = (self.height() - track_height) // 2
-            painter.drawRoundedRect(self.handle_radius, track_y, self.width() - 2 * self.handle_radius, track_height, 2, 2)
+            painter.drawRoundedRect(self.edge, track_y, self.width() - 2 * self.edge, track_height, 2, 2)
 
             # Draw active range
             painter.setBrush(fill)
-            painter.drawRoundedRect(self.handle_radius + self.lower_pos, track_y,
+            painter.drawRoundedRect(self.edge + self.lower_pos, track_y,
                              self.upper_pos - self.lower_pos, track_height, 2, 2)
 
             # Draw handles
-            lower_handle_x = self.handle_radius + self.lower_pos
-            upper_handle_x = self.handle_radius + self.upper_pos
+            lower_handle_x = self.edge + self.lower_pos
+            upper_handle_x = self.edge + self.upper_pos
             handle_y = self.height() // 2
 
             # Draw upper handle shadow
@@ -1596,10 +1610,10 @@ class RangeSlider(QWidget):
             # Draw upper handle (so lower is on top)
             if self.hover_handle == 2 or self.moving_upper:
                 painter.setBrush(panel_colors()['handle'])
-                painter.setPen(QPen(fill, 3))
+                painter.setPen(QPen(ring, 3))
             else:
                 painter.setBrush(panel_colors()['handle'])
-                painter.setPen(QPen(fill, 2))
+                painter.setPen(QPen(ring, 2))
             painter.drawEllipse(QPoint(upper_handle_x, handle_y), self.handle_radius, self.handle_radius)
 
             # Draw lower handle shadow
@@ -1610,10 +1624,10 @@ class RangeSlider(QWidget):
             # Draw lower handle
             if self.hover_handle == 1 or self.moving_lower:
                 painter.setBrush(panel_colors()['handle'])
-                painter.setPen(QPen(fill, 3))
+                painter.setPen(QPen(ring, 3))
             else:
                 painter.setBrush(panel_colors()['handle'])
-                painter.setPen(QPen(fill, 2))
+                painter.setPen(QPen(ring, 2))
             painter.drawEllipse(QPoint(lower_handle_x, handle_y), self.handle_radius, self.handle_radius)
             if self._kbd_focus and self.hasFocus():
                 cx = lower_handle_x if self._key_handle == 1 else upper_handle_x
@@ -1622,17 +1636,17 @@ class RangeSlider(QWidget):
         else:  # Vertical orientation
             track_width = 4
             track_x = (self.width() - track_width) // 2
-            painter.drawRoundedRect(track_x, self.handle_radius, track_width, self.height() - 2 * self.handle_radius, 2, 2)
+            painter.drawRoundedRect(track_x, self.edge, track_width, self.height() - 2 * self.edge, 2, 2)
 
             # Draw active range
             painter.setBrush(fill)
-            painter.drawRoundedRect(track_x, self.handle_radius + self.upper_pos,
+            painter.drawRoundedRect(track_x, self.edge + self.upper_pos,
                              track_width, self.lower_pos - self.upper_pos, 2, 2)
 
             # Draw handles
             handle_x = self.width() // 2
-            lower_handle_y = self.handle_radius + self.lower_pos
-            upper_handle_y = self.handle_radius + self.upper_pos
+            lower_handle_y = self.edge + self.lower_pos
+            upper_handle_y = self.edge + self.upper_pos
 
             # Draw upper handle shadow
             painter.setBrush(QColor(0, 0, 0, 40))
@@ -1642,10 +1656,10 @@ class RangeSlider(QWidget):
             # Draw upper handle (top)
             if self.hover_handle == 2 or self.moving_upper:
                 painter.setBrush(panel_colors()['handle'])
-                painter.setPen(QPen(fill, 3))
+                painter.setPen(QPen(ring, 3))
             else:
                 painter.setBrush(panel_colors()['handle'])
-                painter.setPen(QPen(fill, 2))
+                painter.setPen(QPen(ring, 2))
             painter.drawEllipse(QPoint(handle_x, upper_handle_y), self.handle_radius, self.handle_radius)
 
             # Draw lower handle shadow
@@ -1656,10 +1670,10 @@ class RangeSlider(QWidget):
             # Draw lower handle (bottom)
             if self.hover_handle == 1 or self.moving_lower:
                 painter.setBrush(panel_colors()['handle'])
-                painter.setPen(QPen(fill, 3))
+                painter.setPen(QPen(ring, 3))
             else:
                 painter.setBrush(panel_colors()['handle'])
-                painter.setPen(QPen(fill, 2))
+                painter.setPen(QPen(ring, 2))
             painter.drawEllipse(QPoint(handle_x, lower_handle_y), self.handle_radius, self.handle_radius)
 
     def focusInEvent(self, event):
@@ -1708,26 +1722,26 @@ class RangeSlider(QWidget):
 
             if handle == 1:  # Lower handle
                 self.moving_lower = True
-                self.offset = self.handle_radius + self.lower_pos - (
+                self.offset = self.edge + self.lower_pos - (
                     event.x() if self.orientation == Qt.Horizontal else event.y())
             elif handle == 2:  # Upper handle
                 self.moving_upper = True
-                self.offset = self.handle_radius + self.upper_pos - (
+                self.offset = self.edge + self.upper_pos - (
                     event.x() if self.orientation == Qt.Horizontal else event.y())
             else:
                 # Click on track - move nearest handle to this position
                 pos = event.x() if self.orientation == Qt.Horizontal else event.y()
-                pos -= self.handle_radius  # Adjust for handle radius
+                pos -= self.edge  # Adjust for handle radius
 
                 # Convert position to value
                 if self.orientation == Qt.Horizontal:
-                    avail_width = self.width() - 2 * self.handle_radius
+                    avail_width = self.width() - 2 * self.edge
                     if avail_width <= 0:
                         return
                     normalized_pos = max(0, min(1, pos / avail_width))
                     value = self.min_val + normalized_pos * (self.max_val - self.min_val)
                 else:
-                    avail_height = self.height() - 2 * self.handle_radius
+                    avail_height = self.height() - 2 * self.edge
                     if avail_height <= 0:
                         return
                     normalized_pos = max(0, min(1, 1 - (pos / avail_height)))
@@ -1751,14 +1765,14 @@ class RangeSlider(QWidget):
         if self.moving_lower or self.moving_upper:
             if self.orientation == Qt.Horizontal:
                 pos = event.x() - self.offset  # Adjusted position
-                avail_width = self.width() - 2 * self.handle_radius
+                avail_width = self.width() - 2 * self.edge
                 if avail_width <= 0:
                     return
                 normalized_pos = max(0, min(1, pos / avail_width))
                 value = self.min_val + normalized_pos * (self.max_val - self.min_val)
             else:
                 pos = event.y() - self.offset  # Adjusted position
-                avail_height = self.height() - 2 * self.handle_radius
+                avail_height = self.height() - 2 * self.edge
                 if avail_height <= 0:
                     return
                 normalized_pos = max(0, min(1, 1 - (pos / avail_height)))
@@ -1790,8 +1804,8 @@ class RangeSlider(QWidget):
         handle_size = self.handle_radius + 2  # Add a little extra for better click experience
 
         if self.orientation == Qt.Horizontal:
-            lower_handle_x = self.handle_radius + self.lower_pos
-            upper_handle_x = self.handle_radius + self.upper_pos
+            lower_handle_x = self.edge + self.lower_pos
+            upper_handle_x = self.edge + self.upper_pos
             handle_y = self.height() // 2
 
             lower_rect = QRect(lower_handle_x - handle_size, handle_y - handle_size,
@@ -1805,8 +1819,8 @@ class RangeSlider(QWidget):
                 return 2
         else:
             handle_x = self.width() // 2
-            lower_handle_y = self.handle_radius + self.lower_pos
-            upper_handle_y = self.handle_radius + self.upper_pos
+            lower_handle_y = self.edge + self.lower_pos
+            upper_handle_y = self.edge + self.upper_pos
 
             lower_rect = QRect(handle_x - handle_size, lower_handle_y - handle_size,
                                handle_size * 2, handle_size * 2)
@@ -1843,6 +1857,7 @@ class CustomSlider(QSlider):
         super().__init__(orientation, parent)
         self.is_dragging = False
         self.handle_radius = SLIDER_HANDLE_RADIUS
+        self.edge = SLIDER_HANDLE_RADIUS + 5   # track inset: room for the ring and focus ring
         self.hover = False
         self.fill_color = None    # colour of the filled track; None = theme accent
         self._kbd_focus = False   # focus came from the keyboard: draw the focus ring
@@ -1863,6 +1878,7 @@ class CustomSlider(QSlider):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         fill = QColor(self.fill_color) if self.fill_color is not None else COLORS['highlight']
+        ring = COLORS['highlight']     # handle rings stay the accent; only the span takes fill_color
 
         # Get the current position as a fraction of the available range
         value_range = self.maximum() - self.minimum()
@@ -1879,16 +1895,16 @@ class CustomSlider(QSlider):
         if self.orientation() == Qt.Horizontal:
             track_height = 4
             track_y = (self.height() - track_height) // 2
-            track_width = self.width() - 2 * self.handle_radius
-            painter.drawRoundedRect(self.handle_radius, track_y, track_width, track_height, 2, 2)
+            track_width = self.width() - 2 * self.edge
+            painter.drawRoundedRect(self.edge, track_y, track_width, track_height, 2, 2)
 
             # Draw active portion of the track
             painter.setBrush(fill)
             handle_pos = int(normalized_position * track_width)
-            painter.drawRoundedRect(self.handle_radius, track_y, handle_pos, track_height, 2, 2)
+            painter.drawRoundedRect(self.edge, track_y, handle_pos, track_height, 2, 2)
 
             # Draw handle
-            handle_x = self.handle_radius + handle_pos
+            handle_x = self.edge + handle_pos
             handle_y = self.height() // 2
 
             # Draw subtle handle shadow
@@ -1899,10 +1915,10 @@ class CustomSlider(QSlider):
             # Set handle appearance based on hover/drag state
             if self.hover or self.is_dragging:
                 painter.setBrush(panel_colors()['handle'])
-                painter.setPen(QPen(fill, 3))
+                painter.setPen(QPen(ring, 3))
             else:
                 painter.setBrush(panel_colors()['handle'])
-                painter.setPen(QPen(fill, 2))
+                painter.setPen(QPen(ring, 2))
 
             painter.drawEllipse(QPoint(handle_x, handle_y), self.handle_radius, self.handle_radius)
             if self._kbd_focus and self.hasFocus():
@@ -1911,17 +1927,17 @@ class CustomSlider(QSlider):
         else:  # Vertical orientation
             track_width = 4
             track_x = (self.width() - track_width) // 2
-            track_height = self.height() - 2 * self.handle_radius
-            painter.drawRoundedRect(track_x, self.handle_radius, track_width, track_height, 2, 2)
+            track_height = self.height() - 2 * self.edge
+            painter.drawRoundedRect(track_x, self.edge, track_width, track_height, 2, 2)
 
             # Draw active portion of the track
             painter.setBrush(fill)
             handle_pos = int((1 - normalized_position) * track_height)
-            painter.drawRoundedRect(track_x, self.handle_radius + handle_pos, track_width, track_height - handle_pos, 2, 2)
+            painter.drawRoundedRect(track_x, self.edge + handle_pos, track_width, track_height - handle_pos, 2, 2)
 
             # Draw handle
             handle_x = self.width() // 2
-            handle_y = self.handle_radius + handle_pos
+            handle_y = self.edge + handle_pos
 
             # Draw subtle handle shadow
             painter.setBrush(QColor(0, 0, 0, 40))
@@ -1931,10 +1947,10 @@ class CustomSlider(QSlider):
             # Set handle appearance based on hover/drag state
             if self.hover or self.is_dragging:
                 painter.setBrush(panel_colors()['handle'])
-                painter.setPen(QPen(fill, 3))
+                painter.setPen(QPen(ring, 3))
             else:
                 painter.setBrush(panel_colors()['handle'])
-                painter.setPen(QPen(fill, 2))
+                painter.setPen(QPen(ring, 2))
 
             painter.drawEllipse(QPoint(handle_x, handle_y), self.handle_radius, self.handle_radius)
 
@@ -2003,18 +2019,18 @@ class CustomSlider(QSlider):
             normalized_position = (self.value() - self.minimum()) / value_range
 
         if self.orientation() == Qt.Horizontal:
-            track_width = self.width() - 2 * self.handle_radius
+            track_width = self.width() - 2 * self.edge
             handle_pos = int(normalized_position * track_width)
-            handle_x = self.handle_radius + handle_pos
+            handle_x = self.edge + handle_pos
             handle_y = self.height() // 2
 
             return QRect(handle_x - handle_size, handle_y - handle_size,
                          handle_size * 2, handle_size * 2)
         else:
-            track_height = self.height() - 2 * self.handle_radius
+            track_height = self.height() - 2 * self.edge
             handle_pos = int((1 - normalized_position) * track_height)
             handle_x = self.width() // 2
-            handle_y = self.handle_radius + handle_pos
+            handle_y = self.edge + handle_pos
 
             return QRect(handle_x - handle_size, handle_y - handle_size,
                          handle_size * 2, handle_size * 2)
@@ -2022,17 +2038,17 @@ class CustomSlider(QSlider):
     def positionFromEvent(self, event):
         """Convert mouse event position to normalized slider position (0-1)"""
         if self.orientation() == Qt.Horizontal:
-            pos = max(self.handle_radius, min(event.x(), self.width() - self.handle_radius))
-            track_width = self.width() - 2 * self.handle_radius
+            pos = max(self.edge, min(event.x(), self.width() - self.edge))
+            track_width = self.width() - 2 * self.edge
             if track_width <= 0:
                 return 0
-            return (pos - self.handle_radius) / track_width
+            return (pos - self.edge) / track_width
         else:
-            pos = max(self.handle_radius, min(event.y(), self.height() - self.handle_radius))
-            track_height = self.height() - 2 * self.handle_radius
+            pos = max(self.edge, min(event.y(), self.height() - self.edge))
+            track_height = self.height() - 2 * self.edge
             if track_height <= 0:
                 return 0
-            return 1 - ((pos - self.handle_radius) / track_height)
+            return 1 - ((pos - self.edge) / track_height)
 
     def valueFromPosition(self, normalized_position):
         """Convert normalized position (0-1) to slider value"""

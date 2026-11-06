@@ -48,23 +48,26 @@ def win(app, monkeypatch):
 
 
 def test_tour_walks_the_pipeline_and_highlights_each_step(win, app):
+    from cabana.ui import SectionCard
+    win.seg_training_card.set_open(False)                            # a folded card is opened for its step
     win.start_tour()
     tour = win._tour
-    assert tour is not None and tour.isVisible() and len(tour.steps) == 8
-    pages = []
+    assert tour is not None and tour.isVisible()
+    pages, targets = [], []
     for i in range(len(tour.steps)):
-        assert tour.index == i
+        assert tour.index == i and tour.count_label.text() == f"{i + 1} of {len(tour.steps)}"
         settle(app)
         pages.append(win.pages.currentWidget())
+        targets.append(tour.steps[i].target())
         target = tour.target_rect()
-        if tour.steps[i].target is None:
-            assert target is None                                    # the menu step is a centred card
-        else:
-            assert target is not None and win.rect().contains(target.center())
-            assert not tour.card.geometry().intersects(target.adjusted(4, 4, -4, -4))
+        assert target is not None and win.rect().contains(target.center())   # no centred card
+        assert not tour.card.geometry().intersects(target.adjusted(4, 4, -4, -4))
         assert tour.card.height() >= tour.card.layout().totalHeightForWidth(tour.CARD_WIDTH)
         tour.next()
-    assert pages[0] is win.start_tab and pages[3] is win.seg_tab and pages[-1] is win.bat_tab
+    assert pages[0] is win.start_tab and targets[1] is win.page_rail and pages[-1] is win.bat_tab
+    cards = [c for i in range(win.pages.count()) for c in win.pages.widget(i).findChildren(SectionCard)]
+    assert cards and all(c in targets for c in cards)                # every card has a step
+    assert win.seg_training_card.is_open()
     settle(app)
     assert win._tour is None                                         # Done ends the tour
 

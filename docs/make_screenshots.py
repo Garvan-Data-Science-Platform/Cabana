@@ -248,7 +248,7 @@ def main(argv):
                                  win.tma_load_edits_btn, win.tma_save_edits_btn))),
                 (7, union(win, (win.tma_margin_spin, win.tma_erode_spin, *win.tma_channel_cbs.values()))),
                 (8, rect_of(win, win.tma_output_path), "right"),
-                (9, rect_of(win, win.tma_export_btn)),
+                (9, rect_of(win, win.tma_export_btn), "below"),
             ])
             win.resize(1500, 980)
 

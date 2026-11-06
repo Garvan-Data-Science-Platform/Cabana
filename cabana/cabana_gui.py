@@ -135,12 +135,14 @@ class MainWindow(QMainWindow):
 
         # Create and add the left dock widget to the splitter with Napari dock color
         self.dock_contents = QWidget()
+        self.dock_contents.setObjectName("dockContents")
+        self.dock_contents.setAttribute(Qt.WA_StyledBackground, True)   # panel colour from the stylesheet
         self.dock_contents.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         self.dock_contents.setAutoFillBackground(True)
 
         # Set Napari dock color
         dock_palette = self.dock_contents.palette()
-        dock_palette.setColor(QPalette.Window, COLORS['dock'])
+        dock_palette.setColor(QPalette.Window, panel_colors()['panel'])
         self.dock_contents.setPalette(dock_palette)
 
         self.dock_layout = QVBoxLayout(self.dock_contents)
@@ -149,6 +151,8 @@ class MainWindow(QMainWindow):
         self.panel_visible = True
 
         self._setup_styles()
+        self.dock_contents.setStyleSheet(self.panel_style)
+        self._play_buttons = []              # primary buttons with a play icon (recoloured per theme)
 
         # Menu bar carries the Image / Parameters / Analysis / About commands,
         # so the side panel holds only the selected analysis page.
@@ -156,7 +160,16 @@ class MainWindow(QMainWindow):
 
         self.page_title = QLabel("")
         self.page_title.setStyleSheet(self.page_title_style)
-        self.dock_layout.addWidget(self.page_title)
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 4, 0)
+        title_row.addWidget(self.page_title)
+        title_row.addStretch(1)
+        # pages that can be switched off in the pipeline show their switch here
+        self.page_title_right = QHBoxLayout()
+        self.page_title_right.setSpacing(8)
+        title_row.addLayout(self.page_title_right)
+        self._title_switches = {}            # page widget -> its switch container
+        self.dock_layout.addLayout(title_row)
 
         self.dock_inner_layout = QVBoxLayout()
         self.dock_inner_layout.setContentsMargins(0, 4, 0, 0)
@@ -453,6 +466,8 @@ class MainWindow(QMainWindow):
         """Show side-panel page ``index`` (0 = Start) and sync the Analysis menu."""
         self.pages.setCurrentIndex(index)
         self.page_title.setText(self._page_titles[index])
+        for page, switch in self._title_switches.items():
+            switch.setVisible(self.pages.widget(index) is page)
         if index == 0:
             checked = self._page_group.checkedAction()
             if checked is not None:
@@ -734,6 +749,9 @@ class MainWindow(QMainWindow):
         # Group box style
         self.group_style = generate_group_box_style()
 
+        # Side panel: section cards, row labels, notes, option lists
+        self.panel_style = generate_panel_style()
+
         # Read-only path line edit style
         self.path_edit_style = (
             f"QLineEdit {{ background-color: {color_to_stylesheet(COLORS['background'])}; "
@@ -775,171 +793,130 @@ class MainWindow(QMainWindow):
             f"selection-color: {color_to_stylesheet(COLORS['background'])}; }}"
         )
 
-    def setup_batch_processing_tab(self):
-        """Set up the batch processing tab UI"""
+    @staticmethod
+    def _page_layout():
+        """Top-level layout of a side-panel page: a column of section cards."""
         layout = QVBoxLayout()
-        layout.setContentsMargins(6, 10, 6, 6)
-        layout.setSpacing(12)
+        layout.setContentsMargins(0, 2, 0, 6)
+        layout.setSpacing(10)
+        return layout
 
-        # Parameter file selection
-        param_layout = QHBoxLayout()
-        param_label = QLabel("Parameter File:")
-        param_label.setFixedWidth(95)
-        param_layout.addWidget(param_label)
+    def _set_play_icon(self, btn):
+        icon = QIcon()
+        icon.addFile(icon_path('play', COLORS['background']), QSize(), QIcon.Normal)
+        icon.addFile(icon_path('play', COLORS['text_muted']), QSize(), QIcon.Disabled)
+        btn.setIcon(icon)
+        btn.setIconSize(QSize(12, 12))
 
-        self.param_file_path = QLineEdit("Not selected")
-        self.param_file_path.setReadOnly(True)
-        self.param_file_path.setStyleSheet(self.path_edit_style)
-        self.param_file_path.setToolTip("Parameters.yml applied to every image (Parameters > Export).")
-        param_layout.addWidget(self.param_file_path, 1)
+    def _primary_button(self, text, play=True):
+        """The main action of a section card (filled; a play icon for runs)."""
+        btn = QPushButton(text)
+        btn.setStyleSheet(self.primary_btn_style)
+        if play:
+            self._set_play_icon(btn)
+            self._play_buttons.append(btn)
+        return btn
 
-        self.param_btn = QPushButton("Select")
-        self.param_btn.clicked.connect(self.select_param_file)
-        self.param_btn.setStyleSheet(self.btn_style)
-        param_layout.addWidget(self.param_btn)
+    def setup_batch_processing_tab(self):
+        """Set up the Batch Run page: a Data flow card from the inputs to the
+        results, and a Run card with this run's settings and the action."""
+        layout = self._page_layout()
 
-        layout.addLayout(param_layout)
-
-        # Input folder selection
-        input_layout = QHBoxLayout()
-        input_label = QLabel("Input Folder:")
-        input_label.setFixedWidth(95)
-        input_layout.addWidget(input_label)
-
-        self.input_folder_path = QLineEdit("Not selected")
-        self.input_folder_path.setReadOnly(True)
-        self.input_folder_path.setStyleSheet(self.path_edit_style)
+        flow = SectionCard("Data flow", "What goes in, and where the results go.")
+        self.input_folder_path = PathEdit("Not selected")
         self.input_folder_path.setToolTip("Images to analyse (TIFF/PNG/JPEG); the pixel size is read from their metadata.")
-        input_layout.addWidget(self.input_folder_path, 1)
+        self.input_btn = self.input_folder_path.pick_action
+        self.input_btn.setToolTip("Choose the image folder")
+        self.input_btn.triggered.connect(self.select_input_folder)
+        flow.add_flow_row("Images", self.input_folder_path)
 
-        self.input_btn = QPushButton("Select")
-        self.input_btn.clicked.connect(self.select_input_folder)
-        self.input_btn.setStyleSheet(self.btn_style)
-        input_layout.addWidget(self.input_btn)
-
-        layout.addLayout(input_layout)
-
-        # Output folder selection
-        output_layout = QHBoxLayout()
-        output_label = QLabel("Output Folder:")
-        output_label.setFixedWidth(95)
-        output_layout.addWidget(output_label)
-
-        self.output_folder_path = QLineEdit("Not selected")
-        self.output_folder_path.setReadOnly(True)
-        self.output_folder_path.setStyleSheet(self.path_edit_style)
-        self.output_folder_path.setToolTip("Where the results go; also holds the checkpoint for resuming a run.")
-        output_layout.addWidget(self.output_folder_path, 1)
-
-        self.output_btn = QPushButton("Select")
-        self.output_btn.clicked.connect(self.select_output_folder)
-        self.output_btn.setStyleSheet(self.btn_style)
-        output_layout.addWidget(self.output_btn)
-
-        layout.addLayout(output_layout)
-
-        # Optional ROI mask folder (e.g. TMA core circles)
-        mask_layout = QHBoxLayout()
-        mask_label = QLabel("ROI Masks:")
-        mask_label.setFixedWidth(95)
-        mask_label.setToolTip("Optional masks named like the images (white = analyse).")
-        mask_layout.addWidget(mask_label)
-
-        self.mask_folder_path = QLineEdit("")
-        self.mask_folder_path.setReadOnly(True)
-        self.mask_folder_path.setPlaceholderText("Optional: leave empty to use segmentation only")
-        self.mask_folder_path.setStyleSheet(self.path_edit_style)
+        # Optional ROI mask folder (e.g. TMA core circles); empty = no masks
+        self.mask_folder_path = PathEdit("")
+        self.mask_folder_path.setPlaceholderText("Optional")
         self.mask_folder_path.setToolTip(
             "Optional masks named like the images (white = analyse), e.g. a TMA export's\n"
             "Masks folder. Empty: no masks.")
-        mask_layout.addWidget(self.mask_folder_path, 1)
-
-        self.mask_btn = QPushButton("Select")
-        self.mask_btn.clicked.connect(self.select_mask_folder)
-        self.mask_btn.setStyleSheet(self.btn_style)
-        mask_layout.addWidget(self.mask_btn)
-
-        # empty = no masks; the clear icon in the field empties it
+        self.mask_btn = self.mask_folder_path.pick_action
+        self.mask_btn.setToolTip("Choose the ROI mask folder")
+        self.mask_btn.triggered.connect(self.select_mask_folder)
         self.mask_clear_action = add_clear_action(self.mask_folder_path, self.clear_mask_folder,
                                                   "Clear the ROI mask folder (no masks)")
-
-        layout.addLayout(mask_layout)
+        flow.add_flow_row("ROI masks", self.mask_folder_path)
         self.mask_folder = None
 
-        # Batch size spinbox
-        batch_size_layout = QHBoxLayout()
-        batch_size_label = QLabel("Batch Size:")
-        batch_size_layout.addWidget(batch_size_label)
+        self.param_file_path = PathEdit("Not selected", icon="file")
+        self.param_file_path.setToolTip("Parameters.yml applied to every image (Parameters > Export).")
+        self.param_btn = self.param_file_path.pick_action
+        self.param_btn.setToolTip("Choose the parameter file")
+        self.param_btn.triggered.connect(self.select_param_file)
+        flow.add_flow_row("Parameters", self.param_file_path)
 
+        self.output_folder_path = PathEdit("Not selected")
+        self.output_folder_path.setToolTip("Where the results go; also holds the checkpoint for resuming a run.")
+        self.output_btn = self.output_folder_path.pick_action
+        self.output_btn.setToolTip("Choose the results folder")
+        self.output_btn.triggered.connect(self.select_output_folder)
+        flow.add_flow_row("Results", self.output_folder_path)
+        layout.addWidget(flow)
+
+        run = SectionCard("Run", "Settings for this run only.")
         self.batch_size_spinner = QSpinBox()
         self.batch_size_spinner.setRange(1, 100)
         self.batch_size_spinner.setValue(5)
-        self.batch_size_spinner.setFixedWidth(50)
+        self.batch_size_spinner.setFixedWidth(110)
         self.batch_size_spinner.setStyleSheet(self.spinner_style)
         self.batch_size_spinner.setToolTip("Images per batch; lower it for very large images to save memory.")
-        batch_size_layout.addWidget(self.batch_size_spinner)
-        batch_size_layout.addStretch()
+        run.add_row("Batch size", self.batch_size_spinner, stretch=False)
 
         # Max Size of the run, shown read-only: it comes from the parameter file
         # (set it on the Segmentation page and export), or from the interrupted
         # run on a resume, so the file kept with the results describes the run
-        self.batch_max_size_label = QLabel("Max Size: –")
-        self.batch_max_size_label.setStyleSheet(self.value_label_style)
+        self.batch_max_size_label = QLabel("–")
         self.batch_max_size_label.setToolTip(
             "Larger images are split into blocks of this size. From the parameter file;\n"
             "set it on the Segmentation page.")
-        batch_size_layout.addWidget(self.batch_max_size_label)
+        run.add_row("Max size", self.batch_max_size_label)
 
-        layout.addLayout(batch_size_layout)
-
-        # Post-processing options
-        layout.addWidget(create_separator())
-        options_layout = QHBoxLayout()
-        options_layout.setSpacing(16)
-
-        self.stats_cb = QCheckBox("Stats")
-        self.stats_cb.setChecked(False)
-        self.stats_cb.setEnabled(False)
-        self.stats_cb.setStyleSheet(self.checkbox_style)
-        self.stats_cb.setToolTip(
-            "Per-patient mean, STD and SEM (QuantificationResults_MEAN_STD_SEM.csv).")
-
-        self.scores_cb = QCheckBox("Scores")
-        self.scores_cb.setChecked(False)
-        self.scores_cb.setEnabled(False)
-        self.scores_cb.setStyleSheet(self.checkbox_style)
-        self.scores_cb.setToolTip(
-            "Rigidity and bundling risk scores (QuantificationResults_SCORES.csv).")
-
+        save_title = QLabel("Save, besides the measurements")
+        save_title.setObjectName("optionTitle")
+        run.add_widget(save_title)
         self.visuals_cb = QCheckBox("Visualisations")
         self.visuals_cb.setChecked(True)
-        self.visuals_cb.setStyleSheet(self.checkbox_style)
         self.visuals_cb.setToolTip(
             "Save the colour maps and gap images; untick to keep only the measurements.\n"
             "Starts from the parameter file; a change applies to this run only.")
+        self.stats_cb = QCheckBox("Per-patient statistics")
+        self.stats_cb.setChecked(False)
+        self.stats_cb.setEnabled(False)
+        self.stats_cb.setToolTip(
+            "Per-patient mean, STD and SEM (QuantificationResults_MEAN_STD_SEM.csv).")
+        self.scores_cb = QCheckBox("Risk scores")
+        self.scores_cb.setChecked(False)
+        self.scores_cb.setEnabled(False)
+        self.scores_cb.setToolTip(
+            "Rigidity and bundling risk scores (QuantificationResults_SCORES.csv).")
+        options = OptionList()
+        for cb, note in ((self.visuals_cb, "colour maps, gap images"),
+                         (self.stats_cb, "mean, STD, SEM"),
+                         (self.scores_cb, "rigidity, bundling")):
+            cb.setStyleSheet(self.checkbox_style)
+            options.add_option(cb, note)
+        run.add_widget(options)
 
-        options_layout.addWidget(self.stats_cb)
-        options_layout.addWidget(self.scores_cb)
-        options_layout.addWidget(self.visuals_cb)
-        options_layout.addStretch()
-        layout.addLayout(options_layout)
-
-        # Batch processing / cancel buttons (share the same row)
+        # Process / cancel share the footer row
         batch_btn_layout = QHBoxLayout()
-
-        self.process_batch_btn = QPushButton("Process Batch")
+        batch_btn_layout.setSpacing(8)
+        self.process_batch_btn = self._primary_button("Process Batch")
         self.process_batch_btn.clicked.connect(self.run_batch_processing)
         self.process_batch_btn.setEnabled(False)
-        self.process_batch_btn.setStyleSheet(self.primary_btn_style)
         batch_btn_layout.addWidget(self.process_batch_btn)
-
         self.cancel_batch_btn = QPushButton("Cancel")
         self.cancel_batch_btn.clicked.connect(self._cancel_batch_processing)
         self.cancel_batch_btn.setVisible(False)
         self.cancel_batch_btn.setStyleSheet(self.btn_style)
         batch_btn_layout.addWidget(self.cancel_batch_btn)
-
-        layout.addLayout(batch_btn_layout)
+        run.add_footer(batch_btn_layout)
+        layout.addWidget(run)
 
         layout.addStretch()
         self.bat_tab.setLayout(layout)
@@ -1900,7 +1877,7 @@ class MainWindow(QMainWindow):
 
     def _show_batch_max_size(self, max_size, source=""):
         text = f"{int(max_size)} px" if max_size else "No limit"
-        self.batch_max_size_label.setText(f"Max Size: {text}{source}")
+        self.batch_max_size_label.setText(f"{text}{source}")
 
     def select_input_folder(self):
         """Open a file dialog to select an input folder"""
@@ -4156,9 +4133,8 @@ class MainWindow(QMainWindow):
         self.page_title.setStyleSheet(self.page_title_style)
 
         # Buttons
-        for btn in (self.start_open_btn, self.start_params_btn,
-                    self.param_btn, self.input_btn, self.output_btn, self.cancel_batch_btn,
-                     self.mask_btn, self.tma_slide_btn, self.tma_output_btn,
+        for btn in (self.start_open_btn, self.start_params_btn, self.cancel_batch_btn,
+                     self.tma_slide_btn, self.tma_output_btn,
                      self.tma_cancel_btn, self.tma_undo_btn, self.tma_load_edits_btn, self.tma_save_edits_btn,
                      self.brf_input_btn, self.brf_mask_btn, self.brf_output_btn):
             btn.setStyleSheet(self.btn_style)
@@ -4196,15 +4172,13 @@ class MainWindow(QMainWindow):
             cb.setStyleSheet(self.checkbox_style)
 
         # Path edits
-        for edit in (self.param_file_path, self.input_folder_path, self.output_folder_path,
-                     self.mask_folder_path, self.tma_slide_path, self.tma_output_path,
+        for edit in (self.tma_slide_path, self.tma_output_path,
                      self.brf_input_path, self.brf_mask_path, self.brf_output_path):
             edit.setStyleSheet(self.path_edit_style)
         self.tma_status_label.setStyleSheet(self.value_label_style)
         self.progress_label.setStyleSheet(self.value_label_style)
         self.gap_summary_label.setStyleSheet(self.value_label_style)
         self.seg_size_note.setStyleSheet(self.value_label_style)
-        self.batch_max_size_label.setStyleSheet(self.value_label_style)
         self.brf_note.setStyleSheet(self.value_label_style)
         self.brf_summary_label.setStyleSheet(self.value_label_style)
         self.brf_folder_label.setStyleSheet(self.value_label_style)
@@ -4227,10 +4201,15 @@ class MainWindow(QMainWindow):
         # Theme combo
         self.theme_combo.setStyleSheet(self.theme_combo_style)
 
-        # Dock panel palette
+        # Dock panel palette and card stylesheet
         dock_palette = self.dock_contents.palette()
-        dock_palette.setColor(QPalette.Window, COLORS['dock'])
+        dock_palette.setColor(QPalette.Window, panel_colors()['panel'])
         self.dock_contents.setPalette(dock_palette)
+        self.dock_contents.setStyleSheet(self.panel_style)
+        for widget in self.dock_contents.findChildren((SectionCard, PathEdit)):
+            widget.restyle()
+        for btn in self._play_buttons:
+            self._set_play_icon(btn)
 
         # Image panel palette
         img_palette = self.image_panel.palette()

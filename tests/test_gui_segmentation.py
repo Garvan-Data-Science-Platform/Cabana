@@ -53,7 +53,7 @@ def _segment(win, monkeypatch):
 def test_defaults(win):
     assert win.patch_size_spinner.value() == 1024 and win.color_thresh_slider.value() == 20
     assert win.seg_max_size_spinner.value() == 5000 and win.yml_data["Configs"]["Max Size"] == 5000
-    assert win.batch_max_size_label.text() == "Max Size: –"           # until a parameter file is chosen
+    assert win.batch_max_size_label.text() == "–"           # until a parameter file is chosen
     assert "Max Size" not in win.yml_data["Segmentation"]
 
 
@@ -80,9 +80,9 @@ def test_batch_max_size_line_follows_the_parameter_file(win, tmp_path):
     yaml.safe_dump({"Configs": {"Max Size": 0}, "Segmentation": {}}, open(new, "w"))
     yaml.safe_dump({"Configs": {}, "Segmentation": {"Max Size": 3000}}, open(old, "w"))
     win._show_param_file_max_size(str(new))
-    assert win.batch_max_size_label.text() == "Max Size: No limit"
+    assert win.batch_max_size_label.text() == "No limit"
     win._show_param_file_max_size(str(old))
-    assert win.batch_max_size_label.text() == "Max Size: 3000 px"
+    assert win.batch_max_size_label.text() == "3000 px"
     assert win.visuals_cb.isChecked()                       # default when the file does not say
     yaml.safe_dump({"Configs": {"Save Visualisations": False}}, open(new, "w"))
     win._show_param_file_max_size(str(new))

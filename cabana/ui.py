@@ -15,9 +15,11 @@ from PyQt5.QtWidgets import (QSlider, QWidget, QSplitter, QSplitterHandle,
                              QMenu, QAction, QFileDialog, QMessageBox,
                              QProgressBar, QSizePolicy, QPushButton, QSpinBox,
                              QAbstractSpinBox, QAbstractSlider, QComboBox, QScrollBar,
-                             QAbstractScrollArea, QApplication)
+                             QAbstractScrollArea, QApplication, QFrame, QLabel, QLineEdit,
+                             QHBoxLayout, QVBoxLayout, QGridLayout, QLayout, QToolButton)
 from PyQt5.QtCore import Qt, QSize, QEvent, QPoint, QRect, QRectF, QPropertyAnimation, QEasingCurve, pyqtProperty
-from PyQt5.QtGui import QPixmap, QPainter, QPen, QColor, QDragEnterEvent, QDropEvent, QImage, QBrush, QFont
+from PyQt5.QtGui import (QPixmap, QPainter, QPen, QColor, QDragEnterEvent, QDropEvent, QImage, QBrush,
+                         QFont, QFontMetrics, QIcon)
 from PyQt5.QtCore import QThread, pyqtSignal, QObject
 
 
@@ -53,92 +55,150 @@ def color_to_stylesheet(color: QColor) -> str:
     return f"rgb({color.red()}, {color.green()}, {color.blue()})"
 
 
+def is_light_theme() -> bool:
+    """True when the current theme has dark text on a light background."""
+    return COLORS['text'].lightness() < COLORS['background'].lightness()
+
+
+def _mix(a: QColor, b: QColor, f: float) -> QColor:
+    """``a`` blended toward ``b`` by ``f`` (0 = a, 1 = b)."""
+    return QColor(round(a.red() + (b.red() - a.red()) * f),
+                  round(a.green() + (b.green() - a.green()) * f),
+                  round(a.blue() + (b.blue() - a.blue()) * f))
+
+
+def panel_colors() -> dict:
+    """Colours of the card-style side panel, derived from the current theme:
+    cards sit one layer above the panel, inputs are inset (filled) on the
+    card, and each card header is a tinted band."""
+    c = COLORS
+    light = is_light_theme()
+    panel = c['dock'] if light else c['canvas']
+    card = c['elevated'] if light else c['surface']
+    return {
+        'panel': panel,
+        'card': card,
+        'header': _mix(card, c['dock'], 0.7) if light else _mix(card, panel, 0.8),
+        'card_border': c['border_subtle'] if light else c['border'],
+        'field': c['background'],
+        'border_hover': _mix(c['border'], c['text_dim'], 0.5),
+        'faint': _mix(c['text_dim'], c['text_muted'], 0.45),
+        'placeholder': c['text_muted'] if light else _mix(c['text_muted'], c['text_dim'], 0.3),
+        'handle': c['elevated'] if light else c['text'],
+    }
+
+
+# Line icons on a 14 x 14 grid, written once per colour as SVG files that
+# stylesheets (url()) and QIcon can load.
+_ICON_SHAPES = {
+    'check': '<polyline points="3.3,7.3 5.9,9.8 10.7,4.4" fill="none" stroke="{c}" stroke-width="1.8" '
+             'stroke-linecap="round" stroke-linejoin="round"/>',
+    'chevron-down': '<polyline points="4,5.5 7,8.5 10,5.5" fill="none" stroke="{c}" stroke-width="1.4" '
+                    'stroke-linecap="round" stroke-linejoin="round"/>',
+    'chevron-right': '<polyline points="5.5,4 8.5,7 5.5,10" fill="none" stroke="{c}" stroke-width="1.4" '
+                     'stroke-linecap="round" stroke-linejoin="round"/>',
+    'minus': '<line x1="3.5" y1="7" x2="10.5" y2="7" stroke="{c}" stroke-width="1.4" stroke-linecap="round"/>',
+    'plus': '<path d="M3.5 7H10.5M7 3.5V10.5" stroke="{c}" stroke-width="1.4" stroke-linecap="round"/>',
+    'folder': '<path d="M1.5 3H5.3L6.8 4.6H12.5V11.5H1.5Z" fill="none" stroke="{c}" stroke-width="1.3" '
+              'stroke-linejoin="round"/>',
+    'file': '<path d="M3.2 1.5H8.3L11 4.2V12.5H3.2Z M8.3 1.5V4.2H11" fill="none" stroke="{c}" '
+            'stroke-width="1.3" stroke-linejoin="round"/>',
+    'play': '<path d="M3.5 2L12.5 7L3.5 12Z" fill="{c}"/>',
+    'clear': '<circle cx="7" cy="7" r="5.5" fill="{c}"/><path d="M5 5L9 9M9 5L5 9" stroke="{c2}" '
+             'stroke-width="1.3" stroke-linecap="round"/>',
+}
+
+
+def icon_path(name: str, color: QColor, color2: QColor = None) -> str:
+    """Path of an SVG file drawing icon ``name`` in ``color`` (``color2`` for
+    the cut-out of two-tone icons), with forward slashes for stylesheets."""
+    import os
+    import tempfile
+    folder = os.path.join(tempfile.gettempdir(), "cabana_icons")
+    os.makedirs(folder, exist_ok=True)
+    c, c2 = color.name(), (color2 or color).name()
+    path = os.path.join(folder, f"{name}_{c[1:]}_{c2[1:]}.svg")
+    if not os.path.isfile(path):
+        body = _ICON_SHAPES[name].format(c=c, c2=c2)
+        with open(path, "w") as f:
+            f.write(f'<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14">{body}</svg>')
+    return path.replace("\\", "/")
+
+
+def themed_icon(name: str, color: QColor, color2: QColor = None):
+    from PyQt5.QtGui import QIcon
+    return QIcon(icon_path(name, color, color2))
+
+
 def generate_spinner_style():
-    """Generate a styled QSpinBox with theme colors."""
-    bg_color = COLORS['dock']
-    text_color = COLORS['text']
-    border_color = COLORS['border']
-    highlight_color = COLORS['highlight']
+    """Spin boxes as inset fields with − and + steppers on the right."""
+    pc = panel_colors()
+    field, text = color_to_stylesheet(pc['field']), color_to_stylesheet(COLORS['text'])
+    plus, minus = icon_path('plus', COLORS['text_dim']), icon_path('minus', COLORS['text_dim'])
+    plus_off, minus_off = icon_path('plus', COLORS['text_muted']), icon_path('minus', COLORS['text_muted'])
     return f"""
         QSpinBox, QDoubleSpinBox {{
-            background-color: rgb({bg_color.red()}, {bg_color.green()}, {bg_color.blue()});
-            color: rgb({text_color.red()}, {text_color.green()}, {text_color.blue()});
-            border: 1px solid rgb({border_color.red()}, {border_color.green()}, {border_color.blue()});
-            border-radius: 4px;
-            padding: 3px;
-            min-width: 50px;
+            background-color: {field};
+            color: {text};
+            border: 1px solid {field};
+            border-radius: 5px;
+            padding: 0px 48px 0px 8px;
+            min-height: 26px;
             font-size: {FONT_SIZES['base']}px;
+            selection-background-color: {color_to_stylesheet(COLORS['highlight'])};
         }}
-
-        QSpinBox::up-button, QSpinBox::down-button,
-        QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
-            background-color: rgb({bg_color.red()}, {bg_color.green()}, {bg_color.blue()});
-            border: 1px solid rgb({border_color.red()}, {border_color.green()}, {border_color.blue()});
-            border-radius: 2px;
+        QSpinBox:hover, QDoubleSpinBox:hover {{ border-color: {color_to_stylesheet(pc['border_hover'])}; }}
+        QSpinBox:focus, QDoubleSpinBox:focus {{ border-color: {color_to_stylesheet(COLORS['highlight'])}; }}
+        QSpinBox::up-button, QDoubleSpinBox::up-button,
+        QSpinBox::down-button, QDoubleSpinBox::down-button {{
+            subcontrol-origin: border;
+            subcontrol-position: center right;
+            width: 22px;
+            height: 22px;
+            border: none;
+            border-radius: 4px;
+            background: transparent;
         }}
-
-        QSpinBox::up-button:hover, QSpinBox::down-button:hover,
-        QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {{
-            background-color: rgb({highlight_color.red()}, {highlight_color.green()}, {highlight_color.blue()});
+        QSpinBox::up-button, QDoubleSpinBox::up-button {{ right: 2px; }}
+        QSpinBox::down-button, QDoubleSpinBox::down-button {{ right: 24px; }}
+        QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+        QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {{
+            background: {color_to_stylesheet(COLORS['border'])};
         }}
-
-        QSpinBox::up-arrow {{
-                    image: none;
-                    width: 0;
-                    height: 0;
-                    border-style: solid;
-                    border-width: 0 5px 5px 5px;
-                    border-bottom: 6px solid rgb({highlight_color.red()}, {highlight_color.green()}, {highlight_color.blue()});
-                }}
-
-        QSpinBox::down-arrow {{
-            image: none;
-            width: 0;
-            height: 0;
-            border-style: solid;
-            border-width: 5px 5px 0 5px;
-            border-top: 6px solid rgb({highlight_color.red()}, {highlight_color.green()}, {highlight_color.blue()});
-        }}
-
-        QSpinBox:focus {{
-            border: 1px solid {color_to_stylesheet(highlight_color)};
-        }}
-
-        QSpinBox:disabled {{
-            background-color: {color_to_stylesheet(COLORS['background'])};
-            color: {color_to_stylesheet(COLORS['text_dim'])};
-            border-color: {color_to_stylesheet(COLORS['border_subtle'])};
+        QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{ image: url({plus}); width: 11px; height: 11px; }}
+        QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{ image: url({minus}); width: 11px; height: 11px; }}
+        QSpinBox::up-arrow:disabled, QSpinBox::up-arrow:off,
+        QDoubleSpinBox::up-arrow:disabled, QDoubleSpinBox::up-arrow:off {{ image: url({plus_off}); }}
+        QSpinBox::down-arrow:disabled, QSpinBox::down-arrow:off,
+        QDoubleSpinBox::down-arrow:disabled, QDoubleSpinBox::down-arrow:off {{ image: url({minus_off}); }}
+        QSpinBox:disabled, QDoubleSpinBox:disabled {{
+            color: {color_to_stylesheet(COLORS['text_muted'])};
         }}
     """
 
+
 def generate_button_style():
-    """Generate button stylesheet with specified colors."""
-    bg_color = COLORS['dock']
-    text_color = COLORS['text']
-    border_color = COLORS['border']
-    highlight_color = COLORS['highlight']
+    """Secondary buttons: outlined, no fill until hovered."""
+    pc = panel_colors()
     return f"""
         QPushButton {{
-            background-color: {color_to_stylesheet(bg_color)};
-            color: {color_to_stylesheet(text_color)};
-            border: 1px solid {color_to_stylesheet(border_color)};
-            border-radius: 4px;
-            padding: 8px 12px;
+            background-color: transparent;
+            color: {color_to_stylesheet(COLORS['text'])};
+            border: 1px solid {color_to_stylesheet(COLORS['border'])};
+            border-radius: 6px;
+            padding: 5px 12px;
+            min-height: 18px;
             font-size: {FONT_SIZES['base']}px;
-            font-weight: 600;
+            font-weight: 500;
         }}
         QPushButton:hover {{
-            background-color: {color_to_stylesheet(COLORS['hover'])};
-            color: {color_to_stylesheet(highlight_color)};
-            border-color: {color_to_stylesheet(highlight_color)};
+            background-color: {color_to_stylesheet(pc['field'])};
+            border-color: {color_to_stylesheet(pc['border_hover'])};
         }}
         QPushButton:pressed {{
-            background-color: {color_to_stylesheet(COLORS['active'])};
-            color: {color_to_stylesheet(highlight_color)};
-            border-color: {color_to_stylesheet(highlight_color)};
+            background-color: {color_to_stylesheet(COLORS['border'])};
         }}
         QPushButton:disabled {{
-            background-color: {color_to_stylesheet(COLORS['surface'])};
             color: {color_to_stylesheet(COLORS['text_muted'])};
             border-color: {color_to_stylesheet(COLORS['border_subtle'])};
         }}
@@ -146,34 +206,23 @@ def generate_button_style():
 
 
 def generate_primary_button_style():
-    """Generate a filled primary action button stylesheet."""
-    bg_color = COLORS['highlight']
-    text_color = COLORS['background']
-    border_color = COLORS['highlight']
-    hover_color = COLORS['highlight_hover']
-    pressed_color = COLORS['highlight_dim']
+    """The main action of a section: filled with the theme's accent."""
     return f"""
         QPushButton {{
-            background-color: {color_to_stylesheet(bg_color)};
-            color: {color_to_stylesheet(text_color)};
-            border: 1px solid {color_to_stylesheet(border_color)};
-            border-radius: 4px;
-            padding: 9px 12px;
+            background-color: {color_to_stylesheet(COLORS['highlight'])};
+            color: {color_to_stylesheet(COLORS['background'])};
+            border: none;
+            border-radius: 8px;
+            padding: 8px 12px;
+            min-height: 18px;
             font-size: {FONT_SIZES['base']}px;
-            font-weight: 700;
+            font-weight: 600;
         }}
-        QPushButton:hover {{
-            background-color: {color_to_stylesheet(hover_color)};
-            border-color: {color_to_stylesheet(hover_color)};
-        }}
-        QPushButton:pressed {{
-            background-color: {color_to_stylesheet(pressed_color)};
-            border-color: {color_to_stylesheet(pressed_color)};
-        }}
+        QPushButton:hover {{ background-color: {color_to_stylesheet(COLORS['highlight_hover'])}; }}
+        QPushButton:pressed {{ background-color: {color_to_stylesheet(COLORS['highlight_dim'])}; }}
         QPushButton:disabled {{
-            background-color: {color_to_stylesheet(COLORS['surface'])};
+            background-color: {color_to_stylesheet(panel_colors()['field'])};
             color: {color_to_stylesheet(COLORS['text_muted'])};
-            border-color: {color_to_stylesheet(COLORS['border_subtle'])};
         }}
     """
 
@@ -328,51 +377,37 @@ def generate_section_header_style():
 
 
 def generate_checkbox_style():
-    """Generate a styled QCheckBox with hover and checked states."""
-    text_color = COLORS['text']
-    border_color = COLORS['border']
-    bg_color = COLORS['dock']
-    highlight_color = COLORS['highlight']
-    highlight_text_color = COLORS['background']
+    """Checkboxes: an inset box that fills with the accent and a tick."""
+    pc = panel_colors()
+    tick = icon_path('check', COLORS['background'])
+    tick_off = icon_path('check', pc['field'])
     return f"""
         QCheckBox {{
-            color: {color_to_stylesheet(text_color)};
-            spacing: 6px;
-            padding: 4px 6px;
-            border-radius: 4px;
+            color: {color_to_stylesheet(COLORS['text'])};
+            spacing: 8px;
+            padding: 2px 0px;
+            background: transparent;
             font-size: {FONT_SIZES['base']}px;
         }}
-        QCheckBox:hover {{
-            color: {color_to_stylesheet(highlight_color)};
-            background-color: {color_to_stylesheet(COLORS['hover'])};
-            border-radius: 4px;
-        }}
         QCheckBox::indicator {{
-            width: 16px;
-            height: 16px;
-            border: 1px solid {color_to_stylesheet(border_color)};
-            border-radius: 3px;
-            background-color: {color_to_stylesheet(bg_color)};
+            width: 15px;
+            height: 15px;
+            border: 1px solid {color_to_stylesheet(pc['border_hover'])};
+            border-radius: 4px;
+            background-color: {color_to_stylesheet(pc['field'])};
         }}
-        QCheckBox::indicator:hover {{
-            border-color: {color_to_stylesheet(highlight_color)};
-        }}
+        QCheckBox::indicator:hover {{ border-color: {color_to_stylesheet(COLORS['highlight'])}; }}
         QCheckBox::indicator:checked {{
-            background-color: {color_to_stylesheet(highlight_color)};
-            border-color: {color_to_stylesheet(highlight_color)};
-            image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%23{highlight_text_color.red():02x}{highlight_text_color.green():02x}{highlight_text_color.blue():02x}' d='M1,5 L3.5,7.5 L9,2'/%3E%3C/svg%3E");
+            background-color: {color_to_stylesheet(COLORS['highlight'])};
+            border-color: {color_to_stylesheet(COLORS['highlight'])};
+            image: url({tick});
         }}
-        QCheckBox:disabled {{
-            color: {color_to_stylesheet(COLORS['text_muted'])};
-        }}
-        QCheckBox::indicator:disabled {{
-            background-color: {color_to_stylesheet(COLORS['background'])};
-            border-color: {color_to_stylesheet(COLORS['border_subtle'])};
-        }}
+        QCheckBox:disabled {{ color: {color_to_stylesheet(COLORS['text_muted'])}; }}
+        QCheckBox::indicator:disabled {{ border-color: {color_to_stylesheet(COLORS['border_subtle'])}; }}
         QCheckBox::indicator:checked:disabled {{
             background-color: {color_to_stylesheet(COLORS['text_muted'])};
             border-color: {color_to_stylesheet(COLORS['text_muted'])};
-            image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%23{COLORS['text'].red():02x}{COLORS['text'].green():02x}{COLORS['text'].blue():02x}' d='M1,5 L3.5,7.5 L9,2'/%3E%3C/svg%3E");
+            image: url({tick_off});
         }}
     """
 
@@ -429,37 +464,71 @@ def generate_scroll_area_style():
 
 
 def generate_page_stack_style():
-    """Stylesheet for the QStackedWidget holding the analysis pages; matches
-    the former tab pane (thin border, surface background)."""
-    return f"""
-        QStackedWidget {{
-            border: 1px solid {color_to_stylesheet(COLORS['border'])};
-            border-radius: 6px;
-            background-color: {color_to_stylesheet(COLORS['surface'])};
-        }}
-    """
+    """The analysis pages sit directly on the panel; their cards carry the surfaces."""
+    return "QStackedWidget { border: none; background: transparent; }"
 
 
 def generate_combo_style():
-    """Stylesheet for QComboBox controls inside the dock (base font size)."""
+    """Drop-downs as inset fields with a chevron."""
+    pc = panel_colors()
+    chevron = icon_path('chevron-down', COLORS['text_dim'])
     return (
-        f"QComboBox {{ background-color: {color_to_stylesheet(COLORS['dock'])}; "
+        f"QComboBox {{ background-color: {color_to_stylesheet(pc['field'])}; "
         f"color: {color_to_stylesheet(COLORS['text'])}; "
-        f"border: 1px solid {color_to_stylesheet(COLORS['border'])}; "
-        f"border-radius: 4px; padding: 4px 8px; "
+        f"border: 1px solid {color_to_stylesheet(pc['field'])}; "
+        f"border-radius: 5px; padding: 0px 8px; min-height: 26px; "
         f"font-size: {FONT_SIZES['base']}px; }}"
-        f"QComboBox:hover {{ border-color: {color_to_stylesheet(COLORS['highlight'])}; }}"
+        f"QComboBox:hover {{ border-color: {color_to_stylesheet(pc['border_hover'])}; }}"
         f"QComboBox:disabled {{ color: {color_to_stylesheet(COLORS['text_muted'])}; }}"
-        f"QComboBox::drop-down {{ border: none; width: 18px; }}"
-        f"QComboBox::down-arrow {{ image: none; border-left: 4px solid transparent; "
-        f"border-right: 4px solid transparent; "
-        f"border-top: 5px solid {color_to_stylesheet(COLORS['text_dim'])}; }}"
+        f"QComboBox::drop-down {{ border: none; width: 26px; }}"
+        f"QComboBox::down-arrow {{ image: url({chevron}); width: 12px; height: 12px; }}"
         f"QComboBox QAbstractItemView {{ background-color: {color_to_stylesheet(COLORS['elevated'])}; "
         f"color: {color_to_stylesheet(COLORS['text'])}; "
         f"border: 1px solid {color_to_stylesheet(COLORS['border'])}; "
         f"selection-background-color: {color_to_stylesheet(COLORS['highlight'])}; "
         f"selection-color: {color_to_stylesheet(COLORS['background'])}; }}"
     )
+
+
+def generate_path_edit_style():
+    """Read-only path fields (PathEdit paints the name and folder itself)."""
+    pc = panel_colors()
+    return (
+        f"QLineEdit {{ background-color: {color_to_stylesheet(pc['field'])}; color: transparent; "
+        f"border: 1px solid {color_to_stylesheet(pc['field'])}; border-radius: 5px; "
+        f"padding: 0px 4px; min-height: 26px; font-size: {FONT_SIZES['base']}px; }}"
+        f"QLineEdit:hover {{ border-color: {color_to_stylesheet(pc['border_hover'])}; }}"
+    )
+
+
+def generate_panel_style():
+    """Side-panel stylesheet: section cards, their header bands, row labels,
+    value readouts, notes and option lists (all selected by object name)."""
+    pc = panel_colors()
+    card, border = color_to_stylesheet(pc['card']), color_to_stylesheet(pc['card_border'])
+    faint, small = color_to_stylesheet(pc['faint']), FONT_SIZES['small']
+    return f"""
+        QWidget#dockContents {{ background-color: {color_to_stylesheet(pc['panel'])}; }}
+        QFrame#sectionCard {{ background-color: {card}; border: 1px solid {border}; border-radius: 10px; }}
+        QFrame#sectionHeader {{
+            background-color: {color_to_stylesheet(pc['header'])};
+            border: none; border-bottom: 1px solid {border};
+            border-top-left-radius: 9px; border-top-right-radius: 9px;
+        }}
+        QFrame#sectionHeader[collapsed="true"] {{
+            border-bottom: none; border-bottom-left-radius: 9px; border-bottom-right-radius: 9px;
+        }}
+        QLabel#sectionTitle {{ color: {color_to_stylesheet(COLORS['text'])}; background: transparent;
+            font-size: {FONT_SIZES['base'] + 1}px; font-weight: 600; }}
+        QLabel#sectionDesc, QLabel#rowValue, QLabel#note, QLabel#optionNote {{
+            color: {faint}; background: transparent; font-size: {small}px; }}
+        QLabel#rowLabel, QLabel#optionTitle {{ color: {color_to_stylesheet(COLORS['text_dim'])};
+            background: transparent; font-size: {FONT_SIZES['base']}px; }}
+        QLabel#optionTitle {{ font-size: {small}px; }}
+        QFrame#cardDivider, QFrame#optionSep {{ background-color: {border}; border: none; }}
+        QFrame#optionList {{ background-color: {color_to_stylesheet(pc['field'])}; border: none;
+            border-radius: 5px; }}
+    """
 
 
 def generate_context_menu_style():
@@ -554,13 +623,326 @@ def create_separator():
 def add_clear_action(edit, on_clear, tip="Clear"):
     """A small clear icon inside a (read-only) path field, shown only while the
     field holds a path; clicking it calls ``on_clear``. Returns the action."""
-    from PyQt5.QtWidgets import QLineEdit, QStyle
-    action = edit.addAction(edit.style().standardIcon(QStyle.SP_LineEditClearButton), QLineEdit.TrailingPosition)
+    from PyQt5.QtWidgets import QLineEdit
+    pc = panel_colors()
+    action = edit.addAction(themed_icon('clear', pc['faint'], pc['field']), QLineEdit.TrailingPosition)
+    edit._clear_action = action          # PathEdit.restyle() recolours it
     action.setToolTip(tip)
     action.triggered.connect(on_clear)
     action.setVisible(bool(edit.text()))
     edit.textChanged.connect(lambda text: action.setVisible(bool(text)))
     return action
+
+
+class PathEdit(QLineEdit):
+    """Read-only path field: the file or folder name, then its parent folder
+    in a fainter colour. ``pick_action`` is the trailing folder (or file) icon
+    that chooses a new path; a click anywhere on the field triggers it too.
+    ``text()`` is the full path, as for any QLineEdit."""
+
+    def __init__(self, text="", icon="folder", parent=None):
+        super().__init__(text, parent)
+        self.setReadOnly(True)
+        self._icon = icon
+        self._placeholder = ""
+        self.pick_action = self.addAction(QIcon(), QLineEdit.TrailingPosition)
+        self.setCursor(Qt.PointingHandCursor)
+        self.restyle()
+
+    def setPlaceholderText(self, text):
+        # drawn by paintEvent: the stylesheet hides the line edit's own text
+        self._placeholder = text
+        self.update()
+
+    def placeholderText(self):
+        return self._placeholder
+
+    def restyle(self):
+        """Apply the current theme (call after a theme change)."""
+        self.setStyleSheet(generate_path_edit_style())
+        self.pick_action.setIcon(themed_icon(self._icon, COLORS['text_dim']))
+        clear = getattr(self, '_clear_action', None)
+        if clear is not None:
+            pc = panel_colors()
+            clear.setIcon(themed_icon('clear', pc['faint'], pc['field']))
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton and self.isEnabled():
+            self.pick_action.trigger()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def _text_rect(self):
+        r = self.rect().adjusted(9, 0, -6, 0)
+        for button in self.findChildren(QToolButton):        # the trailing icons
+            if button.isVisible():
+                r.setRight(min(r.right(), button.geometry().left() - 6))
+        return r
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        import os
+        pc = panel_colors()
+        painter = QPainter(self)
+        r = self._text_rect()
+        text = self.text()
+        if not text or text == "Not selected":
+            painter.setPen(pc['placeholder'])
+            label = self._placeholder or text
+            painter.drawText(r, Qt.AlignVCenter | Qt.AlignLeft,
+                             QFontMetrics(self.font()).elidedText(label, Qt.ElideRight, r.width()))
+            return
+        path = text.rstrip("/\\") or text
+        name, folder = os.path.basename(path) or path, os.path.dirname(path)
+        home = os.path.expanduser("~")
+        if folder.startswith(home):
+            folder = "~" + folder[len(home):]
+        name_font = QFont(self.font())
+        name_font.setWeight(QFont.Medium)
+        fm = QFontMetrics(name_font)
+        name = fm.elidedText(name, Qt.ElideMiddle, r.width())
+        painter.setFont(name_font)
+        painter.setPen(COLORS['text'] if self.isEnabled() else COLORS['text_muted'])
+        painter.drawText(r, Qt.AlignVCenter | Qt.AlignLeft, name)
+        used = fm.horizontalAdvance(name) + 8
+        if folder and used < r.width() - 24:
+            folder_font = QFont(self.font())
+            folder_font.setPixelSize(FONT_SIZES['small'])
+            rest = QRect(r.left() + used, r.top(), r.width() - used, r.height())
+            painter.setFont(folder_font)
+            painter.setPen(pc['faint'])
+            painter.drawText(rest, Qt.AlignVCenter | Qt.AlignLeft,
+                             QFontMetrics(folder_font).elidedText(folder, Qt.ElideLeft, rest.width()))
+
+
+class RailNode(QWidget):
+    """One node of a data-flow rail: a dot (filled when its field holds a
+    path, hollow when empty) on a line joining it to its neighbours."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedWidth(22)
+        self.filled = True
+        self.first = self.last = False
+
+    def set_filled(self, filled):
+        self.filled = bool(filled)
+        self.update()
+
+    def paintEvent(self, event):
+        pc = panel_colors()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        accent = QColor(COLORS['highlight'])
+        line = QColor(accent)
+        line.setAlpha(140)
+        cy = self.height() / 2
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(line)
+        top = cy + 6 if self.first else 0
+        bottom = cy - 6 if self.last else self.height()
+        painter.drawRect(QRectF(6, top, 2, cy - 6 - top))
+        painter.drawRect(QRectF(6, cy + 6, 2, bottom - cy - 6))
+        painter.setBrush(accent if self.filled else pc['card'])
+        painter.setPen(QPen(accent if self.filled else pc['faint'], 1.5))
+        painter.drawEllipse(QRectF(2.5, cy - 4.5, 9, 9))
+
+
+class SectionCard(QFrame):
+    """A collapsible section card: a tinted header band with the title and a
+    one-line description, the rows, and a footer (behind a divider) for the
+    section's main action and its result. Styled by ``generate_panel_style``
+    through object names."""
+
+    LABEL_WIDTH = 118
+    VALUE_WIDTH = 58
+
+    def __init__(self, title, description="", parent=None):
+        super().__init__(parent)
+        self.setObjectName("sectionCard")
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(1, 1, 1, 1)
+        outer.setSpacing(0)
+
+        self.header = QFrame()
+        self.header.setObjectName("sectionHeader")
+        self.header.setCursor(Qt.PointingHandCursor)
+        self.header.mousePressEvent = lambda event: self.set_open(not self._open)
+        grid = QGridLayout(self.header)
+        grid.setContentsMargins(10, 8, 12, 8)
+        grid.setHorizontalSpacing(6)
+        grid.setVerticalSpacing(1)
+        self.chevron = QLabel()
+        self.chevron.setFixedSize(14, 14)
+        self.title_label = QLabel(title)
+        self.title_label.setObjectName("sectionTitle")
+        self.desc_label = QLabel(description)
+        self.desc_label.setObjectName("sectionDesc")
+        self.desc_label.setWordWrap(True)
+        self.desc_label.setVisible(bool(description))
+        self.header_right = QHBoxLayout()
+        self.header_right.setSpacing(8)
+        grid.addWidget(self.chevron, 0, 0, Qt.AlignVCenter)
+        grid.addWidget(self.title_label, 0, 1)
+        grid.addLayout(self.header_right, 0, 2, Qt.AlignRight)
+        grid.addWidget(self.desc_label, 1, 1, 1, 2)
+        grid.setColumnStretch(1, 1)
+        outer.addWidget(self.header)
+
+        self.body = QWidget()
+        self.body_layout = QVBoxLayout(self.body)
+        self.body_layout.setContentsMargins(14, 10, 14, 12)
+        self.body_layout.setSpacing(10)
+        outer.addWidget(self.body)
+
+        self.footer = QWidget()
+        footer_outer = QVBoxLayout(self.footer)
+        footer_outer.setContentsMargins(0, 0, 0, 0)
+        footer_outer.setSpacing(0)
+        divider = QFrame()
+        divider.setObjectName("cardDivider")
+        divider.setFixedHeight(1)
+        footer_outer.addWidget(divider)
+        self.footer_layout = QVBoxLayout()
+        self.footer_layout.setContentsMargins(14, 10, 14, 12)
+        self.footer_layout.setSpacing(8)
+        footer_outer.addLayout(self.footer_layout)
+        self.footer.setVisible(False)
+        outer.addWidget(self.footer)
+
+        self._flow = None
+        self._rail = []
+        self._open = True
+        self.restyle()
+
+    # --- content -------------------------------------------------------
+    def _row_label(self, text, width):
+        label = QLabel(text)
+        label.setObjectName("rowLabel")
+        label.setFixedWidth(width)
+        return label
+
+    def add_row(self, label, control, value=None, stretch=True):
+        """A labelled row; ``control`` is a widget or a layout. ``value`` is an
+        optional readout label shown right-aligned (sliders). Returns the row
+        label."""
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        lab = self._row_label(label, self.LABEL_WIDTH)
+        row.addWidget(lab)
+        self._add_control(row, control, stretch)
+        if value is not None:
+            value.setObjectName("rowValue")
+            value.setFixedWidth(self.VALUE_WIDTH)
+            value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            row.addWidget(value)
+        self.body_layout.addLayout(row)
+        return lab
+
+    @staticmethod
+    def _add_control(row, control, stretch):
+        if isinstance(control, QLayout):
+            row.addLayout(control, 1 if stretch else 0)
+        else:
+            row.addWidget(control, 1 if stretch else 0)
+        if not stretch:
+            row.addStretch(1)
+
+    def add_flow_row(self, label, edit):
+        """A path row on the data-flow rail: the node is filled while ``edit``
+        holds a path. Consecutive flow rows share one rail."""
+        if self._flow is None:
+            self._flow = QVBoxLayout()
+            self._flow.setContentsMargins(0, 0, 0, 0)
+            self._flow.setSpacing(0)
+            self.body_layout.addLayout(self._flow)
+        node = RailNode()
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        row.addWidget(node)
+        inner = QHBoxLayout()
+        inner.setContentsMargins(0, 5, 0, 5)
+        inner.setSpacing(8)
+        lab = self._row_label(label, self.LABEL_WIDTH - node.width())
+        inner.addWidget(lab)
+        inner.addWidget(edit, 1)
+        row.addLayout(inner, 1)
+        self._flow.addLayout(row)
+        filled = lambda text: bool(text) and text != "Not selected"
+        node.set_filled(filled(edit.text()))
+        edit.textChanged.connect(lambda text: node.set_filled(filled(text)))
+        self._rail.append(node)
+        for i, n in enumerate(self._rail):
+            n.first, n.last = i == 0, i == len(self._rail) - 1
+        return lab
+
+    def add_widget(self, widget, alignment=None):
+        if alignment is None:
+            self.body_layout.addWidget(widget)
+        else:
+            self.body_layout.addWidget(widget, 0, alignment)
+
+    def add_layout(self, layout):
+        self.body_layout.addLayout(layout)
+
+    def add_footer(self, item):
+        """Add the section's main action (or its result text) below the divider."""
+        self.footer.setVisible(self._open)
+        if isinstance(item, QLayout):
+            self.footer_layout.addLayout(item)
+        else:
+            self.footer_layout.addWidget(item)
+
+    # --- state ---------------------------------------------------------
+    def set_open(self, open_):
+        self._open = bool(open_)
+        self.body.setVisible(self._open)
+        self.footer.setVisible(self._open and self.footer_layout.count() > 0)
+        self.header.setProperty("collapsed", not self._open)
+        self.header.style().unpolish(self.header)
+        self.header.style().polish(self.header)
+        self.restyle()
+
+    def is_open(self):
+        return self._open
+
+    def restyle(self):
+        """Apply the current theme to the parts not covered by the stylesheet."""
+        icon = themed_icon('chevron-down' if self._open else 'chevron-right', COLORS['text_dim'])
+        self.chevron.setPixmap(icon.pixmap(14, 14))
+
+
+class OptionList(QFrame):
+    """An inset list of on/off options, one per row: the checkbox on the left
+    and a short note on what it produces on the right."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("optionList")
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(0)
+
+    def add_option(self, checkbox, note=""):
+        if self._layout.count():
+            sep_row = QHBoxLayout()
+            sep_row.setContentsMargins(33, 0, 0, 0)
+            sep = QFrame()
+            sep.setObjectName("optionSep")
+            sep.setFixedHeight(1)
+            sep_row.addWidget(sep)
+            self._layout.addLayout(sep_row)
+        row = QHBoxLayout()
+        row.setContentsMargins(10, 5, 10, 5)
+        row.addWidget(checkbox)
+        row.addStretch(1)
+        label = QLabel(note)
+        label.setObjectName("optionNote")
+        row.addWidget(label)
+        self._layout.addLayout(row)
+        return label
 
 
 class PercentageProgressBar(QProgressBar):
@@ -958,6 +1340,7 @@ class RangeSlider(QWidget):
         self.moving_upper = False
         self.handle_radius = SLIDER_HANDLE_RADIUS
         self.hover_handle = None  # 0 for none, 1 for lower, 2 for upper
+        self.fill_color = None    # colour of the selected span; None = theme accent
 
         # Set focus policy to accept focus and keyboard input
         self.setFocusPolicy(Qt.StrongFocus)
@@ -1012,6 +1395,7 @@ class RangeSlider(QWidget):
         """Draw the slider on screen"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
+        fill = QColor(self.fill_color) if self.fill_color is not None else COLORS['highlight']
 
         # Update handle positions based on current values
         self.update_positions()
@@ -1027,8 +1411,7 @@ class RangeSlider(QWidget):
             painter.drawRoundedRect(self.handle_radius, track_y, self.width() - 2 * self.handle_radius, track_height, 2, 2)
 
             # Draw active range
-            highlight_color = COLORS['highlight']
-            painter.setBrush(highlight_color)
+            painter.setBrush(fill)
             painter.drawRoundedRect(self.handle_radius + self.lower_pos, track_y,
                              self.upper_pos - self.lower_pos, track_height, 2, 2)
 
@@ -1044,11 +1427,11 @@ class RangeSlider(QWidget):
 
             # Draw upper handle (so lower is on top)
             if self.hover_handle == 2 or self.moving_upper:
-                painter.setBrush(QColor(COLORS['highlight'].lighter(130)))
-                painter.setPen(QPen(COLORS['highlight'], 2))
+                painter.setBrush(panel_colors()['handle'])
+                painter.setPen(QPen(fill, 3))
             else:
-                painter.setBrush(COLORS['highlight'])
-                painter.setPen(QPen(COLORS['text'], 1))
+                painter.setBrush(panel_colors()['handle'])
+                painter.setPen(QPen(fill, 2))
             painter.drawEllipse(QPoint(upper_handle_x, handle_y), self.handle_radius, self.handle_radius)
 
             # Draw lower handle shadow
@@ -1058,11 +1441,11 @@ class RangeSlider(QWidget):
 
             # Draw lower handle
             if self.hover_handle == 1 or self.moving_lower:
-                painter.setBrush(QColor(COLORS['highlight'].lighter(130)))
-                painter.setPen(QPen(COLORS['highlight'], 2))
+                painter.setBrush(panel_colors()['handle'])
+                painter.setPen(QPen(fill, 3))
             else:
-                painter.setBrush(COLORS['highlight'])
-                painter.setPen(QPen(COLORS['text'], 1))
+                painter.setBrush(panel_colors()['handle'])
+                painter.setPen(QPen(fill, 2))
             painter.drawEllipse(QPoint(lower_handle_x, handle_y), self.handle_radius, self.handle_radius)
 
         else:  # Vertical orientation
@@ -1071,8 +1454,7 @@ class RangeSlider(QWidget):
             painter.drawRoundedRect(track_x, self.handle_radius, track_width, self.height() - 2 * self.handle_radius, 2, 2)
 
             # Draw active range
-            highlight_color = COLORS['highlight']
-            painter.setBrush(highlight_color)
+            painter.setBrush(fill)
             painter.drawRoundedRect(track_x, self.handle_radius + self.upper_pos,
                              track_width, self.lower_pos - self.upper_pos, 2, 2)
 
@@ -1088,11 +1470,11 @@ class RangeSlider(QWidget):
 
             # Draw upper handle (top)
             if self.hover_handle == 2 or self.moving_upper:
-                painter.setBrush(QColor(COLORS['highlight'].lighter(130)))
-                painter.setPen(QPen(COLORS['highlight'], 2))
+                painter.setBrush(panel_colors()['handle'])
+                painter.setPen(QPen(fill, 3))
             else:
-                painter.setBrush(COLORS['highlight'])
-                painter.setPen(QPen(COLORS['text'], 1))
+                painter.setBrush(panel_colors()['handle'])
+                painter.setPen(QPen(fill, 2))
             painter.drawEllipse(QPoint(handle_x, upper_handle_y), self.handle_radius, self.handle_radius)
 
             # Draw lower handle shadow
@@ -1102,11 +1484,11 @@ class RangeSlider(QWidget):
 
             # Draw lower handle (bottom)
             if self.hover_handle == 1 or self.moving_lower:
-                painter.setBrush(QColor(COLORS['highlight'].lighter(130)))
-                painter.setPen(QPen(COLORS['highlight'], 2))
+                painter.setBrush(panel_colors()['handle'])
+                painter.setPen(QPen(fill, 3))
             else:
-                painter.setBrush(COLORS['highlight'])
-                painter.setPen(QPen(COLORS['text'], 1))
+                painter.setBrush(panel_colors()['handle'])
+                painter.setPen(QPen(fill, 2))
             painter.drawEllipse(QPoint(handle_x, lower_handle_y), self.handle_radius, self.handle_radius)
 
     def mousePressEvent(self, event):
@@ -1253,6 +1635,7 @@ class CustomSlider(QSlider):
         self.is_dragging = False
         self.handle_radius = SLIDER_HANDLE_RADIUS
         self.hover = False
+        self.fill_color = None    # colour of the filled track; None = theme accent
 
         # Set focus policy to accept focus and keyboard input
         self.setFocusPolicy(Qt.StrongFocus)
@@ -1269,6 +1652,7 @@ class CustomSlider(QSlider):
         """Draw the slider with same style as RangeSlider"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
+        fill = QColor(self.fill_color) if self.fill_color is not None else COLORS['highlight']
 
         # Get the current position as a fraction of the available range
         value_range = self.maximum() - self.minimum()
@@ -1289,8 +1673,7 @@ class CustomSlider(QSlider):
             painter.drawRoundedRect(self.handle_radius, track_y, track_width, track_height, 2, 2)
 
             # Draw active portion of the track
-            highlight_color = COLORS['highlight']
-            painter.setBrush(highlight_color)
+            painter.setBrush(fill)
             handle_pos = int(normalized_position * track_width)
             painter.drawRoundedRect(self.handle_radius, track_y, handle_pos, track_height, 2, 2)
 
@@ -1305,11 +1688,11 @@ class CustomSlider(QSlider):
 
             # Set handle appearance based on hover/drag state
             if self.hover or self.is_dragging:
-                painter.setBrush(QColor(COLORS['highlight'].lighter(130)))
-                painter.setPen(QPen(COLORS['highlight'], 2))
+                painter.setBrush(panel_colors()['handle'])
+                painter.setPen(QPen(fill, 3))
             else:
-                painter.setBrush(COLORS['highlight'])
-                painter.setPen(QPen(COLORS['text'], 1))
+                painter.setBrush(panel_colors()['handle'])
+                painter.setPen(QPen(fill, 2))
 
             painter.drawEllipse(QPoint(handle_x, handle_y), self.handle_radius, self.handle_radius)
 
@@ -1320,8 +1703,7 @@ class CustomSlider(QSlider):
             painter.drawRoundedRect(track_x, self.handle_radius, track_width, track_height, 2, 2)
 
             # Draw active portion of the track
-            highlight_color = COLORS['highlight']
-            painter.setBrush(highlight_color)
+            painter.setBrush(fill)
             handle_pos = int((1 - normalized_position) * track_height)
             painter.drawRoundedRect(track_x, self.handle_radius + handle_pos, track_width, track_height - handle_pos, 2, 2)
 
@@ -1336,11 +1718,11 @@ class CustomSlider(QSlider):
 
             # Set handle appearance based on hover/drag state
             if self.hover or self.is_dragging:
-                painter.setBrush(QColor(COLORS['highlight'].lighter(130)))
-                painter.setPen(QPen(COLORS['highlight'], 2))
+                painter.setBrush(panel_colors()['handle'])
+                painter.setPen(QPen(fill, 3))
             else:
-                painter.setBrush(COLORS['highlight'])
-                painter.setPen(QPen(COLORS['text'], 1))
+                painter.setBrush(panel_colors()['handle'])
+                painter.setPen(QPen(fill, 2))
 
             painter.drawEllipse(QPoint(handle_x, handle_y), self.handle_radius, self.handle_radius)
 
@@ -2160,7 +2542,7 @@ class ToggleButton(QWidget):
 
         # Fixed size so every toggle renders identically regardless of the
         # surrounding layout (rows previously compressed some instances)
-        self.setFixedSize(60, 25)
+        self.setFixedSize(34, 20)
 
         self.setCheckable(True)
         self._checked = False
@@ -2242,11 +2624,11 @@ class ToggleButton(QWidget):
 
     def sizeHint(self):
         """Provide a reasonable default size"""
-        return QSize(60, 25)
+        return QSize(34, 20)
 
     def minimumSizeHint(self):
         """Provide minimum size"""
-        return QSize(50, 20)
+        return QSize(34, 20)
 
     def heightForWidth(self, width):
         """Calculate height based on width to maintain proportions"""
@@ -2258,53 +2640,23 @@ class ToggleButton(QWidget):
             self.toggle()
 
     def paintEvent(self, event):
-        """Custom paint event for the toggle button"""
+        """A pill track (accent when on) with a round knob."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-
-        # Get current dimensions
-        w = self.width()
-        h = self.height()
-
-        # Calculate proportional dimensions
-        radius = h * 0.45
-        track_radius = h * 0.4
-        slider_radius = h * 0.35
-
-        # Track rectangle
-        track_rect = QRect(int(radius), int((h - track_radius * 2) / 2),
-                           int(w - radius * 2), int(track_radius * 2))
-
-        # Background color based on state
-        if self._checked:
-            bg_color = QColor(COLORS['highlight'])
-        else:
-            bg_color = QColor(self.bg_color_off)
-
-        # Adjust opacity if disabled
+        w, h = self.width(), self.height()
+        track = QRectF(1, (h - 18) / 2, w - 2, 18)
+        on = QColor(COLORS['highlight']) if self._checked else QColor(COLORS['border'])
+        knob = QColor(COLORS['background']) if self._checked else QColor(panel_colors()['handle'])
         if not self._enabled:
-            bg_color.setAlpha(100)
-
-        # Draw track background
-        painter.setBrush(QBrush(bg_color))
-        painter.setPen(QPen(COLORS['background'], 1))
-        painter.drawRoundedRect(track_rect, track_radius, track_radius)
-
-        # Calculate slider position
-        slider_x = radius + (w - radius * 2 - slider_radius * 2) * self._slider_position
-        slider_y = (h - slider_radius * 2) / 2
-
-        # Draw slider with color based on state
-        slider_color = QColor(COLORS['text'])
-
-        if not self._enabled:
-            slider_color = QColor(slider_color)  # Create copy to avoid modifying original
-            slider_color.setAlpha(150)
-
-        painter.setBrush(QBrush(slider_color))
-        painter.setPen(QPen(COLORS['background'], 1))
-        painter.drawEllipse(int(slider_x), int(slider_y),
-                            int(slider_radius * 2), int(slider_radius * 2))
+            on.setAlpha(110)
+            knob.setAlpha(160)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(on)
+        painter.drawRoundedRect(track, 9, 9)
+        d = 14
+        x = track.left() + 2 + (track.width() - d - 4) * self._slider_position
+        painter.setBrush(knob)
+        painter.drawEllipse(QRectF(x, track.top() + 2, d, d))
 
 
 class MaxSizeSpinBox(QSpinBox):

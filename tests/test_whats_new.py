@@ -21,3 +21,10 @@ def test_every_entry_is_brief():
     for version, notes in whats_new.NOTES.items():
         assert 1 <= len(notes) <= 4, version
         assert all(notes) and all(len(n) < 160 for n in notes), version
+
+
+def test_a_skipped_release_still_shows_its_notes(monkeypatch):
+    monkeypatch.setattr(whats_new, "NOTES", {"1.2.0": ["Big change."], "1.2.1": ["Small fix."]})
+    assert whats_new.notes_since("1.1.0", "1.2.1") == [("1.2.1", ["Small fix."]), ("1.2.0", ["Big change."])]
+    assert whats_new.notes_since("1.2.0", "1.2.1") == [("1.2.1", ["Small fix."])]
+    assert whats_new.should_show("1.1.0", "1.2.2")             # no notes for 1.2.2, but for the skipped ones

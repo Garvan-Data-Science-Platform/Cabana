@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.1
+
+- Every message and question (Run Folder and Batch Run results, the
+  questions before writing into a folder, TMA export, Check for Updates,
+  errors and Save Image) now uses the card style of the About and What's
+  New dialogs. Check for Updates shows pip's output behind Show Details.
+- What's New after an upgrade also lists the releases that were skipped.
+- Fixed: the last line of a wrapped note in What's New could be cut off.
+- The screenshots in the documentation show the Dark theme.
+
 ## 0.4.0
 
 - New look for the side panel: each page's settings are grouped in cards

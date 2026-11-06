@@ -114,7 +114,7 @@ def test_upgrade_shows_whats_new_once(win, monkeypatch):
     from cabana import __version__, whats_new
     monkeypatch.setattr(whats_new, "NOTES", {__version__: ["Something new."]})
     shown = []
-    monkeypatch.setattr(win, "show_whats_new", lambda *a: shown.append(1))
+    monkeypatch.setattr(win, "show_whats_new", lambda *a, **k: shown.append(1))
     monkeypatch.setattr(win, "_ask_tour", lambda: pytest.fail("no tour offer after an upgrade"))
     _FakeSettings.store = {"theme": "Dark"}                          # a user of a version without the key
     win._startup_messages()
@@ -188,3 +188,15 @@ def test_title_bar_controls_do_not_fold_the_card(win, app):
     assert card.is_open()
     QTest.mouseClick(win.tma_edit_card.header, Qt.LeftButton, pos=win.tma_edit_card.title_label.geometry().center())
     assert not win.tma_edit_card.is_open()                           # the title still folds it
+
+
+def test_card_dialog_shows_every_wrapped_line(win, app):
+    import cabana.cabana_gui as gui
+    dlg = gui.CardDialog(win, "What's new", width=440)
+    dlg.add_bullets(["A long note that wraps over two or three lines in a dialog of this width, "
+                     "so its last line must not be cut off."] * 4)
+    dlg.show()
+    settle(app)
+    labels = [l for l in dlg.findChildren(gui.QLabel) if l.objectName() == "dialogText"]
+    assert labels and all(l.height() >= l.heightForWidth(l.width()) for l in labels)
+    dlg.close()

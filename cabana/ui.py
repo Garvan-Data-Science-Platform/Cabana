@@ -1126,6 +1126,10 @@ class CardDialog(QDialog):
             self.body_layout.addStretch(1)
             self._stretched = True
         super().showEvent(event)
+        # wrapped text: the height follows the actual width, which is known only now
+        height = self.layout().totalHeightForWidth(self.width())
+        if height > self.height():
+            self.resize(self.width(), height)
 
     def add_text(self, text, kind="text"):
         """A wrapped paragraph; ``kind`` is "text" or "note" (fainter)."""

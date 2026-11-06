@@ -3720,7 +3720,7 @@ class MainWindow(QMainWindow):
             if self._ask_tour():
                 self.start_tour()
         elif whats_new.should_show(last or "0.0.0", __version__):
-            self.show_whats_new()
+            self.show_whats_new(since=last or "0.0.0")
 
     def _ask_tour(self):
         """First start: offer the tour. True to start it (monkeypatched in tests)."""
@@ -3731,14 +3731,21 @@ class MainWindow(QMainWindow):
         dlg.add_button("Start Tour", primary=True, accept=True)
         return dlg.exec_() == QDialog.Accepted
 
-    def show_whats_new(self, version=None):
-        """The short notes of ``version`` (default: this version, else the newest notes)."""
-        version = version or __version__
-        notes = whats_new.notes_for(version)
-        if notes is None:
-            version, notes = whats_new.latest()
-        dlg = CardDialog(self, f"What's new in Cabana {version}", width=440)
-        dlg.add_bullets(notes)
+    def show_whats_new(self, version=None, since=None):
+        """The short notes of ``version`` (default: this version, else the newest
+        notes); with ``since``, those of every release after it, newest first."""
+        entries = whats_new.notes_since(since, __version__) if since else []
+        if not entries:
+            version = version or __version__
+            notes = whats_new.notes_for(version)
+            if notes is None:
+                version, notes = whats_new.latest()
+            entries = [(version, notes)]
+        dlg = CardDialog(self, f"What's new in Cabana {entries[0][0]}", width=440)
+        for version, notes in entries:
+            if len(entries) > 1:
+                dlg.add_text(f"<b>{version}</b>")
+            dlg.add_bullets(notes)
         dlg.add_button("Full Changelog", slot=lambda: QDesktopServices.openUrl(QUrl(CHANGELOG_URL)))
         dlg.add_button("Close", primary=True)
         self._whats_new_dialog = dlg          # for tests

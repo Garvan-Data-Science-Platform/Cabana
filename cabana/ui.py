@@ -547,6 +547,18 @@ def create_separator():
     return sep
 
 
+def add_clear_action(edit, on_clear, tip="Clear"):
+    """A small clear icon inside a (read-only) path field, shown only while the
+    field holds a path; clicking it calls ``on_clear``. Returns the action."""
+    from PyQt5.QtWidgets import QLineEdit, QStyle
+    action = edit.addAction(edit.style().standardIcon(QStyle.SP_LineEditClearButton), QLineEdit.TrailingPosition)
+    action.setToolTip(tip)
+    action.triggered.connect(on_clear)
+    action.setVisible(bool(edit.text()))
+    edit.textChanged.connect(lambda text: action.setVisible(bool(text)))
+    return action
+
+
 class PercentageProgressBar(QProgressBar):
     def __init__(self, parent=None):
         super().__init__(parent)

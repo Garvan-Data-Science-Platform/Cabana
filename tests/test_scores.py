@@ -458,3 +458,9 @@ class TestCompactResults:
         path = write_compact_results(_full_df(), str(full))
         assert path == str(tmp_path / 'QuantificationResults_Compact.csv')
         assert len(pd.read_csv(path).columns) == 35
+
+
+def test_total_band_images_are_a_channel_of_their_own():
+    assert parse_image_name("A1420.vsi_POL_S01_total_roi.png")["patient_id"] == "A1420_total"
+    assert parse_image_name("A1420.vsi_POL_S01_red_orange_roi.png")["patient_id"] == "A1420_red"
+    assert parse_image_name("A1420.vsi_POL_S01_roi.png")["patient_id"] == "A1420"

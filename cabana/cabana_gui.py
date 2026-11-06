@@ -198,7 +198,7 @@ class MainWindow(QMainWindow):
         self._page_titles = ["Start"]
         self.pages.addWidget(self.start_tab)
         for (title, action), page in zip(self._page_actions,
-                                         (self.tma_tab, self.seg_tab, self.brf_tab, self.det_tab,
+                                         (self.tma_tab, self.brf_tab, self.seg_tab, self.det_tab,
                                           self.gap_tab, self.bat_tab)):
             index = self.pages.addWidget(page)
             self._page_titles.append(title)
@@ -397,7 +397,7 @@ class MainWindow(QMainWindow):
         # ExclusiveOptional lets the Start page leave every Analysis entry unchecked
         self._page_group.setExclusionPolicy(QActionGroup.ExclusionPolicy.ExclusiveOptional)
         self._page_actions = []
-        for i, title in enumerate(("TMA Dearrayer", "Segmentation", "Birefringence", "Fibre Detection",
+        for i, title in enumerate(("TMA Dearrayer", "Birefringence", "Segmentation", "Fibre Detection",
                                    "Gap Analysis", "Batch Run")):
             action = QAction(title, self)
             action.setCheckable(True)
@@ -862,13 +862,9 @@ class MainWindow(QMainWindow):
         self.mask_btn.setStyleSheet(self.btn_style)
         mask_layout.addWidget(self.mask_btn)
 
-        self.mask_clear_btn = QPushButton("✕")
-        self.mask_clear_btn.setToolTip("Clear the ROI mask folder")
-        self.mask_clear_btn.clicked.connect(self.clear_mask_folder)
-        self.mask_clear_btn.setStyleSheet(self.btn_style)
-        self.mask_clear_btn.setFixedWidth(34)
-        self.mask_clear_btn.setEnabled(False)
-        mask_layout.addWidget(self.mask_clear_btn)
+        # empty = no masks; the clear icon in the field empties it
+        self.mask_clear_action = add_clear_action(self.mask_folder_path, self.clear_mask_folder,
+                                                  "Clear the ROI mask folder (no masks)")
 
         layout.addLayout(mask_layout)
         self.mask_folder = None
@@ -1966,7 +1962,6 @@ class MainWindow(QMainWindow):
         self.mask_folder = folder or None
         self.mask_folder_path.setText(folder or "")
         self.mask_folder_path.setToolTip(folder or "")
-        self.mask_clear_btn.setEnabled(bool(folder))
 
     def clear_mask_folder(self):
         self.set_mask_folder(None)
@@ -2067,7 +2062,7 @@ class MainWindow(QMainWindow):
         self.input_btn.setEnabled(False)
         self.output_btn.setEnabled(False)
         self.mask_btn.setEnabled(False)
-        self.mask_clear_btn.setEnabled(False)
+        self.mask_clear_action.setEnabled(False)
         self.stats_cb.setEnabled(False)
         self.scores_cb.setEnabled(False)
         self.visuals_cb.setEnabled(False)
@@ -2119,7 +2114,7 @@ class MainWindow(QMainWindow):
         self.input_btn.setEnabled(True)
         self.output_btn.setEnabled(True)
         self.mask_btn.setEnabled(True)
-        self.mask_clear_btn.setEnabled(bool(self.mask_folder))
+        self.mask_clear_action.setEnabled(True)
         self.stats_cb.setEnabled(True)
         self.scores_cb.setEnabled(True)
         self.visuals_cb.setEnabled(True)
@@ -2428,8 +2423,9 @@ class MainWindow(QMainWindow):
             self.brf_section_titles.append(label)
 
         # --- Bands: used by both the open image and the folder run ---
-        section("Bands", "How pixels are assigned to the red-orange, yellow and green bands; used for the\n"
-                         "open image and for Run Folder. The macro's defaults at every start of Cabana.")
+        section("Bands", "How pixels are assigned to the red-orange, yellow and green bands, checked on the\n"
+                         "open image with Separate and used by Folder Run. The macro's defaults at every\n"
+                         "start of Cabana.")
 
         # Brightness threshold
         bright_layout = QHBoxLayout()
@@ -2491,10 +2487,6 @@ class MainWindow(QMainWindow):
             self.brf_band_sliders.append(slider)
             self.brf_band_values.append(value)
 
-        # --- Open Image: preview of the image open in the viewer ---
-        layout.addWidget(create_separator())
-        section("Open Image", "Separate the bands of the image open in the viewer, to check the settings.")
-
         # View
         view_layout = QHBoxLayout()
         view_layout.addWidget(QLabel("View:"))
@@ -2546,7 +2538,7 @@ class MainWindow(QMainWindow):
 
         # --- Folder: colour separation only, no segmentation or fibre analysis ---
         layout.addWidget(create_separator())
-        section("Folder", "Separates every image of a folder with the band settings and writes the band\n"
+        section("Folder Run", "Separates every image of a folder with the band settings and writes the band\n"
                           "images and tables; no segmentation or fibre analysis. The band images can then\n"
                           "be analysed on the Batch Run page with a polarised-light parameter file.")
 
@@ -2574,22 +2566,17 @@ class MainWindow(QMainWindow):
         _, self.brf_input_path, self.brf_input_btn = folder_row(
             "Input Folder:", "Folder of polarised-light images (TIFF/PNG/JPEG); the pixel size is read from\n"
             "each image's metadata.", self.select_brf_input_folder)
-        # Ticked: measure each image inside its mask; unticked: whole images
-        self.brf_mask_cb = QCheckBox("ROI Masks:")
-        self.brf_mask_cb.setChecked(False)
-        self.brf_mask_cb.setStyleSheet(self.checkbox_style)
-        self.brf_mask_cb.toggled.connect(self._brf_mask_toggled)
-        self.brf_mask_cb.setToolTip("Tick to measure each image inside its mask; untick to measure whole images.")
         _, self.brf_mask_path, self.brf_mask_btn = folder_row(
-            self.brf_mask_cb, "Binary masks named like the images (white = measure), e.g. the stroma masks\n"
-            "exported from QuPath or a TMA export's Masks folder.",
-            self.select_brf_mask_folder, placeholder="Not used: whole images are measured")
-        self.brf_mask_path.setEnabled(False)
+            "ROI Masks:", "Optional. Binary masks named like the images (white = measure), e.g. the stroma\n"
+            "masks exported from QuPath or a TMA export's Masks folder. Empty: whole images.",
+            self.select_brf_mask_folder, placeholder="Optional: leave empty to measure whole images")
+        self.brf_mask_clear_action = add_clear_action(self.brf_mask_path, lambda: self.set_brf_mask_folder(None),
+                                                      "Clear the ROI mask folder (whole images)")
         _, self.brf_output_path, self.brf_output_btn = folder_row(
             "Output Folder:", "Where Total, Red, Yellow, Green and Stats are written. Files of the same names\n"
             "are replaced; nothing else is deleted.", self.select_brf_output_folder)
         self.brf_input_folder = self.brf_mask_folder = self.brf_output_folder = None
-        # one width for the three row labels (the ROI Masks tick box needs more than a label)
+        # one width for the three row labels
         label_width = max(label.sizeHint().width() for label in folder_labels)
         for label in folder_labels:
             label.setFixedWidth(label_width)
@@ -2700,29 +2687,10 @@ class MainWindow(QMainWindow):
             self.set_brf_mask_folder(folder)
 
     def set_brf_mask_folder(self, folder):
-        """Use ``folder`` as the ROI mask folder (ticks ROI Masks); None: whole images."""
+        """The ROI mask folder of Folder Run; None (empty): whole images."""
         self.brf_mask_folder = folder or None
         self.brf_mask_path.setText(folder or "")
         self.brf_mask_path.setToolTip(folder or "")
-        self.brf_mask_cb.blockSignals(True)
-        self.brf_mask_cb.setChecked(bool(folder))
-        self.brf_mask_cb.blockSignals(False)
-        self.brf_mask_path.setEnabled(bool(folder))
-
-    def _brf_mask_toggled(self, on):
-        """ROI Masks ticked: ask for the folder if none is set yet; unticked: whole images."""
-        if on and not self.brf_mask_folder:
-            self.select_brf_mask_folder()
-            if not self.brf_mask_folder:
-                self.brf_mask_cb.blockSignals(True)
-                self.brf_mask_cb.setChecked(False)
-                self.brf_mask_cb.blockSignals(False)
-                return
-        self.brf_mask_path.setEnabled(on)
-
-    def _brf_mask_dir(self):
-        """The ROI mask folder of a folder run, or None for whole images."""
-        return self.brf_mask_folder if self.brf_mask_cb.isChecked() else None
 
     def select_brf_output_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Output Folder", "", QFileDialog.ShowDirsOnly)
@@ -2754,7 +2722,7 @@ class MainWindow(QMainWindow):
                 "Continue", "Cancel"):
             return
         self.brf_folder_worker = BRFFolderWorker(dict(self._brf_settings), self.brf_input_folder, out,
-                                                 self._brf_mask_dir(), self.brf_images_cb.isChecked())
+                                                 self.brf_mask_folder, self.brf_images_cb.isChecked())
         self.brf_folder_worker.progress_updated.connect(self._brf_folder_progress)
         self.brf_folder_worker.run_complete.connect(self.handle_brf_folder_complete)
         self.brf_folder_worker.failed.connect(self.handle_brf_folder_failed)
@@ -4241,7 +4209,7 @@ class MainWindow(QMainWindow):
         # Buttons
         for btn in (self.start_open_btn, self.start_params_btn,
                     self.param_btn, self.input_btn, self.output_btn, self.cancel_batch_btn,
-                     self.mask_btn, self.mask_clear_btn, self.tma_slide_btn, self.tma_output_btn,
+                     self.mask_btn, self.tma_slide_btn, self.tma_output_btn,
                      self.tma_cancel_btn, self.tma_undo_btn, self.tma_load_edits_btn, self.tma_save_edits_btn,
                      self.brf_input_btn, self.brf_mask_btn, self.brf_output_btn):
             btn.setStyleSheet(self.btn_style)
@@ -4275,7 +4243,7 @@ class MainWindow(QMainWindow):
                    self.extend_line_cb, self.overlay_fibres_cb, self.overlay_gaps_cb,
                    self.stats_cb, self.scores_cb, self.visuals_cb, self.tma_recover_cb, self.tma_core_auto_cb,
                    self.tma_edit_cb, self.tma_links_cb, *self.tma_channel_cbs.values(),
-                   self.brf_sort_cb, self.brf_original_cb, self.brf_images_cb, self.brf_mask_cb):
+                   self.brf_sort_cb, self.brf_original_cb, self.brf_images_cb):
             cb.setStyleSheet(self.checkbox_style)
 
         # Path edits

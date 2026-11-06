@@ -9,7 +9,11 @@
   bands side by side. Run Folder separates every image in a folder, inside
   optional ROI masks, and writes the band images and tables (sorted into
   `Total`, `Red`, `Yellow`, `Green` and `Stats` by default); the band
-  images can then be analysed in a Batch Run like any other images.
+  images can then be analysed in a Batch Run like any other images;
+  per-patient statistics keep each band (`red`, `yellow`, `green`,
+  `total`) separate.
+- The ROI mask folder on the Batch Run page is cleared with the icon in its
+  field; an empty field means no masks.
 - Min Branch Length and the curvature windows are now set on the Fibre
   Detection page, and HDM Saturation (Contrast Enhancement) on the Gap
   Analysis page; before, they could only be edited in the parameter file.

@@ -55,9 +55,10 @@ def _separate(win, monkeypatch):
     return shown
 
 
-def test_page_sits_after_segmentation_and_starts_at_the_macro_defaults(win):
+def test_page_sits_between_tma_and_segmentation_and_starts_at_the_macro_defaults(win):
     titles = win._page_titles
-    assert titles.index("Birefringence") == titles.index("Segmentation") + 1
+    assert titles.index("Birefringence") == titles.index("TMA Dearrayer") + 1
+    assert titles.index("Segmentation") == titles.index("Birefringence") + 1
     assert win.pages.indexOf(win.brf_tab) == titles.index("Birefringence")
     assert not win.brf_btn.isEnabled() and win.brf_view_combo.currentText() == "Grid"   # no image yet
     assert win._brf_settings == brf.DEFAULTS
@@ -183,7 +184,7 @@ def test_run_folder_separates_a_folder(win, tmp_path, monkeypatch, app):
     os.rename(mask_dir, tmp_path / "stroma_mask")
     assert not win.brf_run_btn.isEnabled()
     win.set_brf_input_folder(str(stroma))
-    assert win.brf_mask_folder == str(tmp_path / "stroma_mask") and win.brf_mask_cb.isChecked()
+    assert win.brf_mask_folder == str(tmp_path / "stroma_mask") and win.brf_mask_clear_action.isVisible()
     win.set_brf_output_folder(str(tmp_path / "out"))
     assert win.brf_run_btn.isEnabled()
     messages = []
@@ -229,26 +230,17 @@ def test_run_folder_reports_an_output_folder_holding_the_input(win, tmp_path, mo
     assert win.brf_run_btn.text() == "Run Folder"
 
 
-def test_roi_masks_checkbox_switches_between_masks_and_whole_images(win, tmp_path, monkeypatch, app):
+def test_empty_roi_masks_means_whole_images(win, tmp_path, monkeypatch, app):
     import pandas as pd
-    from PyQt5.QtWidgets import QFileDialog
     from cabana.stages import BRF_RESULTS
     from tests.test_brf_folder import _write_inputs
     img_dir, mask_dir = _write_inputs(tmp_path)
     win.set_brf_input_folder(img_dir)
-    assert win._brf_mask_dir() == mask_dir                      # Masks/ next to Images/ is picked up
-    win.set_brf_mask_folder(None)
-    assert not win.brf_mask_cb.isChecked() and win._brf_mask_dir() is None
-    # ticking without a folder asks for one; cancelling the dialog leaves it unticked
-    monkeypatch.setattr(QFileDialog, "getExistingDirectory", staticmethod(lambda *a, **k: ""))
-    win.brf_mask_cb.setChecked(True)
-    assert not win.brf_mask_cb.isChecked() and not win.brf_mask_path.isEnabled()
-    monkeypatch.setattr(QFileDialog, "getExistingDirectory", staticmethod(lambda *a, **k: mask_dir))
-    win.brf_mask_cb.setChecked(True)
-    assert win.brf_mask_cb.isChecked() and win._brf_mask_dir() == mask_dir and win.brf_mask_path.isEnabled()
-    # unticked: the folder is kept but not used
-    win.brf_mask_cb.setChecked(False)
-    assert win._brf_mask_dir() is None and win.brf_mask_path.text() == mask_dir
+    assert win.brf_mask_folder == mask_dir                       # Masks/ next to Images/ is picked up
+    assert win.brf_mask_clear_action.isVisible()
+    win.brf_mask_clear_action.trigger()                          # the clear icon in the field
+    assert win.brf_mask_folder is None and win.brf_mask_path.text() == ""
+    assert not win.brf_mask_clear_action.isVisible()
     win.set_brf_output_folder(str(tmp_path / "out"))
     messages = []
     monkeypatch.setattr(win, "_notify", lambda *a, **k: messages.append(a))
@@ -258,9 +250,16 @@ def test_roi_masks_checkbox_switches_between_masks_and_whole_images(win, tmp_pat
     assert results.loc[0, "Region Pixels"] == 160 * 160                      # whole image
 
 
-def test_page_has_three_titled_sections(win):
-    assert [t.text() for t in win.brf_section_titles] == ["Bands", "Open Image", "Folder"]
+def test_page_has_two_titled_sections(win):
+    assert [t.text() for t in win.brf_section_titles] == ["Bands", "Folder Run"]
     for t in win.brf_section_titles:
         t.setStyleSheet("")
     win._reapply_widget_styles()
     assert all("font-weight: 600" in t.styleSheet() for t in win.brf_section_titles)
+
+
+def test_batch_run_mask_folder_is_cleared_in_the_field(win):
+    win.set_mask_folder("/some/masks")
+    assert win.mask_clear_action.isVisible()
+    win.mask_clear_action.trigger()
+    assert win.mask_folder is None and win.mask_folder_path.text() == "" and not win.mask_clear_action.isVisible()

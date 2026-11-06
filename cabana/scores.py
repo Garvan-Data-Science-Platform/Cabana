@@ -85,7 +85,7 @@ def write_compact_results(df, results_csv):
     return path
 
 
-CHANNEL_NAMES = ('original', 'red', 'yellow', 'green')     # fixed order: matching must be deterministic
+CHANNEL_NAMES = ('original', 'red', 'yellow', 'green', 'total')     # fixed order: matching must be deterministic
 SHAPE_TYPES = {'ellipse', 'rectangle', 'polygon', 'line', 'polyline', 'points'}
 
 

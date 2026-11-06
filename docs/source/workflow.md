@@ -8,7 +8,7 @@ Once the Cabana GUI is launched, you will see a window split horizontally: the c
 
 ![Start page](media/start.png)
 
-1. **Menu bar.** All commands live here: **File** (open or reload an image, open a TMA slide, generate a TMA map template, quit; quitting asks for confirmation only when a job is running or TMA hand edits are unsaved), **Parameters** (import, export, restore defaults), **Analysis** (choose which page the control panel shows: **TMA**, **Segmentation**, **Birefringence**, **Fibre Detection**, **Gap Analysis** or **Batch Run**, shortcuts Ctrl/Cmd+1 to 6) and **Help** (about, documentation, issue tracker, **Check for Updates** (see [Updating Cabana](installation.md#updating-cabana); on macOS it is in the **Cabana** menu), version, licence).
+1. **Menu bar.** All commands live here: **File** (open or reload an image, open a TMA slide, generate a TMA map template, quit; quitting asks for confirmation only when a job is running or TMA hand edits are unsaved), **Parameters** (import, export, restore defaults), **Analysis** (choose which page the control panel shows: **TMA**, **Birefringence**, **Segmentation**, **Fibre Detection**, **Gap Analysis** or **Batch Run**, shortcuts Ctrl/Cmd+1 to 6) and **Help** (about, documentation, issue tracker, **Check for Updates** (see [Updating Cabana](installation.md#updating-cabana); on macOS it is in the **Cabana** menu), version, licence).
 2. **Open TMA Slide** opens a whole-slide scan on the TMA Dearrayer page.
 3. **Open Image** loads a single image to tune parameters on; the panel switches to Segmentation automatically. You can also drag an image onto the viewer.
 4. **Import Parameters** loads a saved `Parameters.yml` into the controls.
@@ -16,6 +16,24 @@ Once the Cabana GUI is launched, you will see a window split horizontally: the c
 The control panel shows one page at a time. Hover any label or control for a short description; the same hint appears in the status bar at the bottom, which also shows the loaded file, its size and the zoom. The theme selector sits at the bottom right.
 
 To begin, select a representative image from your dataset, then work through the Segmentation, Fibre Detection and Gap Analysis pages in that order to determine the settings for your analysis. For polarised-light (birefringence) images, the Birefringence page separates the red-orange, yellow and green colour bands, one image or a whole folder (**Run Folder**). Its settings are not part of the parameter file. The band images it writes can then be analysed like any other images: tune and export a polarised-light parameter file (segmentation off, **Dark Line** off) and use it on the Batch Run page.
+
+## Birefringence
+
+![Birefringence page](media/birefringence.png)
+
+Under polarised light, Picrosirius Red stained collagen shines red-orange, yellow or green, roughly from thick, densely packed fibres to thin, loosely packed ones. This page classifies the pixels of a polarised-light image into these colour bands as the CMM Lab PR-BRF Analyser ImageJ macro does; with the default settings the band pixel counts equal the macro's. A note appears when the open image looks bright-field, where the bands are meaningless.
+
+The page has two sections: **Bands**, how pixels are assigned to the bands, checked on the open image with **Separate**, and **Folder Run**, which applies them to every image of a folder.
+
+1. **Brightness Threshold** (default 10): darker pixels are background. **Saturation Min** (default 0): less saturated pixels belong to no band; at 0, grey pixels count as red-orange, as in the macro.
+2. **Red-Orange, Yellow and Green Hue.** The hue range of each band on ImageJ's 0 to 255 scale (defaults 0-27, 28-47 and 48-140, those of the macro). The bands stay joined: moving one edge moves the neighbouring band. Drag the red-orange band below 0 to include the deep red hues just below the wrap point (shown as, for example, 230-27); the default band leaves them out and reports them as unclassified.
+3. **View.** *Grid* (the default) shows the original image and the red-orange, yellow and green bands side by side; *Class map* paints each band in its colour and bright pixels in no band in grey, the quickest way to judge the band limits; *Total* and each band show those pixels in their original colour on black, as they are saved.
+4. **Overlay Original** shows the original image.
+5. **Separate** computes the bands of the open image; afterwards every setting updates the view at once. Below the button: each band's share of the birefringent signal, the share of the image in any band and in none (unclassified), and the area in the bands (when the image records its pixel size).
+6. **Run on a folder.** Colour separation of every image in the **Input Folder** with the settings above, without segmentation or fibre analysis. **ROI Masks** (optional) restricts the measurement of each image to its mask, matched by name as in Batch Run; leave it empty to measure whole images (the clear icon in the field empties it). When the input folder is a QuPath export such as `stroma`, its `stroma_mask` folder (or the `Masks` folder next to a TMA export's `Images`) is filled in automatically. Results go to the **Output Folder**; files of the same names are replaced and nothing else is deleted.
+7. **Sort Into Folders** (default on) puts the band images in `Total`, `Red`, `Yellow` and `Green` and the tables in `Stats`. **Save Images** (default on) writes the band images; untick it to write only the tables. **Run Folder** starts the run and turns into **Cancel** while it runs; a progress bar shows the image being separated.
+
+The settings start at the macro's defaults every time Cabana starts and are not saved in the parameter file. The output folder of **Run Folder** holds `Total/<image>_total.tif` (every pixel in a band, in its original colour) and `<image>_original.tif`, `Red/<image>_red_orange.tif`, `Yellow/<image>_yellow.tif`, `Green/<image>_green.tif`, `Stats/<image>_statistics.csv` and `Stats/ResultsBRF.csv` with one row per image (see [Read-outs](readouts.md#birefringence-colour-bands)), and `BRF_Settings.yml`, a record of the settings and folders used. The images are TIFFs carrying the pixel size; large sections are processed in strips, so they need little more memory than the image itself.
 
 ## Segmentation
 
@@ -27,24 +45,6 @@ To begin, select a representative image from your dataset, then work through the
 4. **Patch Size** (1024 px by default): larger images are segmented in overlapping square patches. The network is trained once on the whole image and then labels each patch at a higher resolution, so fine detail survives on images of several thousand pixels such as TMA cores. Off shrinks the whole image to 512 px. **Max Size** (5000 px by default) is the largest image a batch run analyses as one piece: images with more pixels than its square are split into blocks of at most this size, each analysed (and segmented) as a separate image. *No limit* analyses every image whole, and very large images may run out of memory; the smallest value is 2048 px. It is saved with the other parameters by **Parameters > Export**. A note below the two boxes says when the open image would be split in a batch run (the segmentation preview always uses the whole image), and when Patch Size is so large that it cannot apply to the blocks.
 5. **White Background.** Fills the non-ROI area with white (default). Disable it when detecting bright fibres on a dark background. **Overlay Original** blends the segmentation with the original image in the viewer.
 6. **Segment** runs the step; the result replaces the image in the viewer.
-
-## Birefringence
-
-![Birefringence page](media/birefringence.png)
-
-Under polarised light, Picrosirius Red stained collagen shines red-orange, yellow or green, roughly from thick, densely packed fibres to thin, loosely packed ones. This page classifies the pixels of a polarised-light image into these colour bands as the CMM Lab PR-BRF Analyser ImageJ macro does; with the default settings the band pixel counts equal the macro's. A note appears when the open image looks bright-field, where the bands are meaningless.
-
-The page has three sections: **Bands** (how pixels are assigned to the bands, used by both other sections), **Open Image** (the image open in the viewer, to check the settings) and **Folder** (every image of a folder).
-
-1. **Brightness Threshold** (default 10): darker pixels are background. **Saturation Min** (default 0): less saturated pixels belong to no band; at 0, grey pixels count as red-orange, as in the macro.
-2. **Red-Orange, Yellow and Green Hue.** The hue range of each band on ImageJ's 0 to 255 scale (defaults 0-27, 28-47 and 48-140, those of the macro). The bands stay joined: moving one edge moves the neighbouring band. Drag the red-orange band below 0 to include the deep red hues just below the wrap point (shown as, for example, 230-27); the default band leaves them out and reports them as unclassified.
-3. **View.** *Grid* (the default) shows the original image and the red-orange, yellow and green bands side by side; *Class map* paints each band in its colour and bright pixels in no band in grey, the quickest way to judge the band limits; *Total* and each band show those pixels in their original colour on black, as they are saved.
-4. **Overlay Original** shows the original image.
-5. **Separate** computes the bands of the open image; afterwards every setting updates the view at once. Below the button: each band's share of the birefringent signal, the share of the image in any band and in none (unclassified), and the area in the bands (when the image records its pixel size).
-6. **Run on a folder.** Colour separation of every image in the **Input Folder** with the settings above, without segmentation or fibre analysis. Tick **ROI Masks** to measure each image inside its mask, matched by name as in Batch Run (ticking asks for the folder if none is set); unticked, whole images are measured. When the input folder is a QuPath export such as `stroma`, its `stroma_mask` folder (or the `Masks` folder next to a TMA export's `Images`) is filled in and ticked automatically. Results go to the **Output Folder**; files of the same names are replaced and nothing else is deleted.
-7. **Sort Into Folders** (default on) puts the band images in `Total`, `Red`, `Yellow` and `Green` and the tables in `Stats`. **Save Images** (default on) writes the band images; untick it to write only the tables. **Run Folder** starts the run and turns into **Cancel** while it runs; a progress bar shows the image being separated.
-
-The settings start at the macro's defaults every time Cabana starts and are not saved in the parameter file. The output folder of **Run Folder** holds `Total/<image>_total.tif` (every pixel in a band, in its original colour) and `<image>_original.tif`, `Red/<image>_red_orange.tif`, `Yellow/<image>_yellow.tif`, `Green/<image>_green.tif`, `Stats/<image>_statistics.csv` and `Stats/ResultsBRF.csv` with one row per image (see [Read-outs](readouts.md#birefringence-colour-bands)), and `BRF_Settings.yml`, a record of the settings and folders used. The images are TIFFs carrying the pixel size; large sections are processed in strips, so they need little more memory than the image itself.
 
 ## Fibre Detection
 
@@ -78,7 +78,7 @@ Once the settings on the three pages are chosen, use **Parameters > Export Param
 1. **Parameter File.** The exported `Parameters.yml`. Review it first, for example to disable segmentation or gap analysis.
 2. **Input Folder.** The folder of images to quantify (tif, png and jpg are supported).
 3. **Output Folder.** Where the results are written.
-4. **ROI Masks** (optional). A folder of binary masks named like the input images (white = analyse, black = ignore), such as a `BF/Patients/Masks/` or `POL/Patients/Masks/` folder written by the TMA Dearrayer page, restricts every measurement to the masked region. Leave it empty to rely on segmentation alone. The mask folder is a per-run path like the input and output folders; it is not stored in the parameter file, but the folder used is recorded in `version_params.yaml` in the output folder.
+4. **ROI Masks** (optional). A folder of binary masks named like the input images (white = analyse, black = ignore), such as a `BF/Patients/Masks/` or `POL/Patients/Masks/` folder written by the TMA Dearrayer page, restricts every measurement to the masked region. Leave it empty to rely on segmentation alone; the clear icon in the field empties it. The mask folder is a per-run path like the input and output folders; it is not stored in the parameter file, but the folder used is recorded in `version_params.yaml` in the output folder.
 5. **Batch Size.** Images are processed in batches (default 5) so that an interrupted run can be resumed. **Max Size** shows the parameter file's `Configs: Max Size` (see the Segmentation page); it cannot be changed here, so the parameter file kept with the results describes the run. To use another value, set it on the Segmentation page and export the parameters, or edit `Max Size` under `Configs` in the file.
 6. **Stats** and **Scores** add per-patient statistics (`QuantificationResults_MEAN_STD_SEM.csv`) and collagen risk scores (`QuantificationResults_SCORES.csv`) to the output; they require the TMA naming scheme. **Visualisations** (from the parameter file's `Configs: Save Visualisations`, on by default) saves the colour maps and gap overlay images; untick it to keep only the measurements (CSV files, maps and masks), which cuts storage about fivefold for TMA cores.
 7. **Process Batch** starts the run; the button turns into **Cancel** while it runs.
@@ -96,7 +96,7 @@ If a run is cancelled or stops with an error, the completed batches and a checkp
 
 | Field | Rule | Example value |
 |---|---|---|
-| Patient / sample ID | Everything before `.vsi` (or `.czi`). A leading `_` or space is ignored. A channel token (`red`, `green`, `yellow`, `original`) separated by `_`, `-`, `.` or spaces elsewhere in the name, as in `..._1_red_roi.png`, is appended to the ID (`K324_red`) so channels are tabulated separately. | `K324` |
+| Patient / sample ID | Everything before `.vsi` (or `.czi`). A leading `_` or space is ignored. A channel token (`red`, `green`, `yellow`, `original`, `total`) separated by `_`, `-`, `.` or spaces elsewhere in the name, as in `..._1_red_roi.png`, is appended to the ID (`K324_red`) so channels are tabulated separately. | `K324` |
 | Image type | `BF` or `POL` between underscores or spaces anywhere in the name | `BF` |
 | Sample type | The content of the last bracket after `Annotation`. Shape brackets QuPath adds, such as `(Ellipse)`, are skipped. Spaces are kept. | `Stroma FNA` |
 | ROI number | The first number after the last closing bracket | `1` |

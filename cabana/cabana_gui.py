@@ -230,13 +230,6 @@ class MainWindow(QMainWindow):
         self._wheel_guard.guard(self.pages)
         self.show_page(0)
 
-        # Progress status (which batch / stage / image), shown during Batch Run
-        self.progress_label = QLabel("")
-        self.progress_label.setWordWrap(True)
-        self.progress_label.setStyleSheet(self.value_label_style)
-        self.progress_label.setVisible(False)
-        self.dock_inner_layout.addWidget(self.progress_label)
-
         # Add progress bar
         self.progress_bar = PercentageProgressBar()
         self.progress_bar.setRange(0, 100)
@@ -952,6 +945,17 @@ class MainWindow(QMainWindow):
         self.cancel_batch_btn.setStyleSheet(self.btn_style)
         batch_btn_layout.addWidget(self.cancel_batch_btn)
         run.add_footer(batch_btn_layout)
+        # the run's progress, under its button: status (batch / stage / image) and bar
+        self.progress_label = QLabel("")
+        self.progress_label.setWordWrap(True)
+        self.progress_label.setStyleSheet(self.value_label_style)
+        self.progress_label.setVisible(False)
+        run.add_footer(self.progress_label)
+        self.batch_progress_bar = PercentageProgressBar()
+        self.batch_progress_bar.setRange(0, 100)
+        self.batch_progress_bar.setStyleSheet(self.progressbar_style)
+        self.batch_progress_bar.setVisible(False)
+        run.add_footer(self.batch_progress_bar)
         layout.addWidget(run)
 
         layout.addStretch()
@@ -2001,7 +2005,7 @@ class MainWindow(QMainWindow):
         self.stats_cb.setEnabled(False)
         self.scores_cb.setEnabled(False)
         self.visuals_cb.setEnabled(False)
-        self.show_progress_bar()
+        self._show_batch_progress(True)
 
         resume, batch_size, batch_num, ignore_large, kept = self._check_batch_running_status()
 
@@ -2010,7 +2014,7 @@ class MainWindow(QMainWindow):
                 "Process Batch", "The results folder is not empty.",
                 f"{self.output_folder}\n\nA new run deletes everything in it except the Logs folder.",
                 "Delete and Run", "Cancel"):
-            self.hide_progress_bar()
+            self._show_batch_progress(False)
             self._restore_batch_buttons()
             return
 
@@ -2039,7 +2043,7 @@ class MainWindow(QMainWindow):
         )
 
         # Connect signals
-        self.batch_worker.progress_updated.connect(lambda value: self.progress_bar.setValue(value))
+        self.batch_worker.progress_updated.connect(self.batch_progress_bar.setValue)
         self.batch_worker.status_updated.connect(self.progress_label.setText)
         self.progress_label.setText("Starting batch processing…")
         self.progress_label.setVisible(True)
@@ -2049,6 +2053,14 @@ class MainWindow(QMainWindow):
 
         # Start the worker thread
         self.batch_worker.start()
+
+    def _show_batch_progress(self, shown):
+        """The Run card's status line and bar, shown while a batch run is going."""
+        self.batch_progress_bar.setValue(0)
+        self.batch_progress_bar.setVisible(shown)
+        self.progress_label.setVisible(shown)
+        if not shown:
+            self.progress_label.setText("")
 
     @staticmethod
     def _results_folder_in_use(folder):
@@ -2086,7 +2098,7 @@ class MainWindow(QMainWindow):
             self.batch_worker.cancel()
 
     def handle_batch_complete(self):
-        self.hide_progress_bar()
+        self._show_batch_progress(False)
         self._restore_batch_buttons()
 
         output_folder = getattr(self, 'output_folder', '')
@@ -2104,7 +2116,7 @@ class MainWindow(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(output_folder))
 
     def handle_batch_failed(self, message):
-        self.hide_progress_bar()
+        self._show_batch_progress(False)
         self._restore_batch_buttons()
 
         output_folder = getattr(self, 'output_folder', '')
@@ -2127,7 +2139,7 @@ class MainWindow(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(output_folder))
 
     def handle_batch_cancelled(self):
-        self.hide_progress_bar()
+        self._show_batch_progress(False)
         self._restore_batch_buttons()
 
         output_folder = getattr(self, 'output_folder', '')
@@ -4027,8 +4039,9 @@ class MainWindow(QMainWindow):
         self.pages.setStyleSheet(self.page_stack_style)
         self.pages_scroll.setStyleSheet(self.scroll_area_style)
 
-        # Progress bar
+        # Progress bars
         self.progress_bar.setStyleSheet(self.progressbar_style)
+        self.batch_progress_bar.setStyleSheet(self.progressbar_style)
 
         # Spinboxes
         for spin in (self.batch_size_spinner, self.patch_size_spinner, self.seg_max_size_spinner, self.tma_pixel_size_spin,

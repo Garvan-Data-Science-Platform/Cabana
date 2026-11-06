@@ -203,8 +203,8 @@ def main(argv):
         # the status line and bar as they look during a run
         win.progress_label.setText("Batch 2/9: Segmenting 8010718.vsi - TMA4_BF_A3Annotation (Tumor)_1.png (3/5)")
         win.progress_label.setVisible(True)
-        win.progress_bar.setVisible(True)
-        win.progress_bar.setValue(14)
+        win.batch_progress_bar.setVisible(True)
+        win.batch_progress_bar.setValue(14)
         settle(app)
         grab(win, "batch_processing.png", [
             (1, rect_of(win, win.input_folder_path), "right"),
@@ -213,11 +213,11 @@ def main(argv):
             (4, rect_of(win, win.output_folder_path), "right"),
             (5, union(win, (win.batch_size_spinner, win.batch_max_size_label)), "right"),
             (6, union(win, (win.stats_cb, win.scores_cb, win.visuals_cb)), "right"),
-            (7, rect_of(win, win.process_batch_btn), "below"),
-            (8, union(win, (win.progress_label, win.progress_bar)), "above"),
+            (7, rect_of(win, win.process_batch_btn), "above"),
+            (8, union(win, (win.progress_label, win.batch_progress_bar)), "right"),
         ])
         win.progress_label.setVisible(False)
-        win.progress_bar.setVisible(False)
+        win.batch_progress_bar.setVisible(False)
 
     if want("tma"):
         if not os.path.exists(SLIDE):

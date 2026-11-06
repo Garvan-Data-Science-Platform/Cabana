@@ -237,6 +237,14 @@ def test_new_batch_run_asks_before_clearing_the_results_folder(win, tmp_path, mo
     win.param_file, win.input_folder, win.output_folder = str(tmp_path / "p.yml"), str(tmp_path), str(out)
     win.run_batch_processing()                         # only Logs: nothing to lose, no question
     assert asked == [] and _Worker.started == [1]
+    # the run's progress shows in the Run card, under its button
+    from cabana.ui import SectionCard
+    card = win.batch_progress_bar.parent()
+    while not isinstance(card, SectionCard):
+        card = card.parent()
+    assert card.title_label.text() == "Run"
+    assert not win.batch_progress_bar.isHidden() and not win.progress_label.isHidden()
+    win._show_batch_progress(False)
     (out / "QuantificationResults.csv").write_text("x")
     win.run_batch_processing()                         # results there: asked, and Cancel keeps them
     assert len(asked) == 1 and asked[0][1] == "The results folder is not empty."

@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.4.0
+
+- New look for the side panel: each page's settings are grouped in cards
+  that fold away (click a card's title), with the step's main action at the
+  bottom of its card. Path fields show the file or folder name with its
+  location beside it; click the field to choose. Spin boxes have small
+  up/down arrows.
+- An icon bar at the left edge switches pages; clicking the open page's
+  icon folds the panel to give the image the whole window. It replaces the
+  panel toggle button.
+- Help > Take the Tour walks through the analysis one card at a time; it
+  is offered once on the first start. After an upgrade a short What's New
+  note is shown once (Help > What's New shows it again).
+- Starting a new Batch Run asks before deleting a results folder that
+  already holds files. The batch progress is shown in the Run card.
+- TMA Dearrayer page: short settings share rows in two aligned columns;
+  Load Edits and Save Edits are in the Edit card's title bar and the BF and
+  POL channels in the Export card's title bar.
+- Birefringence page: a band edge dragged into the neighbouring band stops
+  there instead of moving that band; bands may leave a gap but never
+  overlap. The rows are named Red-orange, Yellow and Green.
+- Keyboard: Tab reaches every control and shows a focus ring; Enter or
+  Space opens a path field's file dialog, Delete clears the ROI mask
+  folder, Enter or Space folds a card, and the arrow keys move range slider
+  handles (Space switches between them).
+- Easier to read: larger text, higher-contrast secondary text, placeholders
+  and field outlines in both themes. Only the Light and Dark themes remain.
+- Slider handles are no longer cut off at the ends of their track.
+- The licence holder is now the Garvan Institute of Medical Research.
+
 ## 0.3.17
 
 - New Birefringence page for polarised-light images: each pixel is

@@ -7,12 +7,12 @@ of the changelog (docs/source/changelog.md), which holds the full list.
 from .updates import is_newer
 
 NOTES = {
-    "0.3.18": [
-        "A cleaner side panel: settings are grouped in cards that fold away, with each "
-        "step's main action at the bottom of its card.",
-        "Help > Take the Tour walks through the analysis, pointing at each step.",
-        "Only the Light and Dark themes remain.",
-        "Fixed: choosing the Batch Run image folder before the parameter file failed.",
+    "0.4.0": [
+        "A new side panel: settings in cards that fold away, an icon bar to switch pages "
+        "and a more compact TMA Dearrayer page.",
+        "Help > Take the Tour walks through every step of the analysis.",
+        "A new Batch Run asks before clearing a results folder that holds files.",
+        "Birefringence bands no longer move each other: an edge stops at the neighbouring band.",
     ],
 }
 

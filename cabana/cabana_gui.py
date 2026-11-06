@@ -1086,9 +1086,9 @@ class MainWindow(QMainWindow):
                                     "Exclude patient cores with less stained area than this; controls are exempt.")
         self.tma_dmin_spin = _spin(10, 100, 80, 5, " %",
                                    "Exclude cores smaller than this share of Core Ø; lower it to keep partial cores.",
-                                   width=96)
+                                   width=106)
         self.tma_dmax_spin = _spin(100, 300, 120, 5, " %",
-                                   "Exclude cores larger than this share of Core Ø.", width=96)
+                                   "Exclude cores larger than this share of Core Ø.", width=106)
         flt.add_row("Grid offset", self.tma_offset_spin, stretch=False)
         flt.add_row("Min stain", self.tma_stain_spin, stretch=False)
         size_row = QHBoxLayout()

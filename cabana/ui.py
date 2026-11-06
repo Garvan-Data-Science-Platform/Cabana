@@ -42,9 +42,9 @@ def apply_theme(theme_name: str) -> None:
 apply_theme(DEFAULT_THEME)
 
 FONT_SIZES = {
-    'base': 12,
-    'small': 11,
-    'title': 14,
+    'base': 13,
+    'small': 12,
+    'title': 15,
 }
 
 
@@ -67,6 +67,27 @@ def _mix(a: QColor, b: QColor, f: float) -> QColor:
                   round(a.blue() + (b.blue() - a.blue()) * f))
 
 
+def contrast_ratio(a: QColor, b: QColor) -> float:
+    """WCAG contrast ratio of two colours (1 to 21)."""
+    def lum(c):
+        def ch(v):
+            v /= 255
+            return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+        return 0.2126 * ch(c.red()) + 0.7152 * ch(c.green()) + 0.0722 * ch(c.blue())
+    hi, lo = sorted((lum(a), lum(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _with_contrast(color: QColor, backgrounds, target: float, toward: QColor) -> QColor:
+    """``color`` moved toward ``toward`` just far enough to reach ``target``
+    contrast against every one of ``backgrounds``."""
+    for step in range(21):
+        c = _mix(color, toward, step / 20)
+        if all(contrast_ratio(c, bg) >= target for bg in backgrounds):
+            return c
+    return QColor(toward)
+
+
 def panel_colors() -> dict:
     """Colours of the card-style side panel, derived from the current theme:
     cards sit one layer above the panel, inputs are inset (filled) on the
@@ -75,16 +96,26 @@ def panel_colors() -> dict:
     light = is_light_theme()
     panel = c['dock'] if light else c['canvas']
     card = c['elevated'] if light else c['surface']
+    field = c['background']
+    # filled buttons: the accent, darkened where its label would fall below 4.5:1
+    button = _with_contrast(c['highlight'], [c['background']], 4.5, QColor(0, 0, 0) if light else c['highlight'])
+    shade = QColor(0, 0, 0) if light else QColor(255, 255, 255)
     return {
         'panel': panel,
         'card': card,
         'header': _mix(card, c['dock'], 0.7) if light else _mix(card, panel, 0.8),
         'card_border': c['border_subtle'] if light else c['border'],
-        'field': c['background'],
-        'border_hover': _mix(c['border'], c['text_dim'], 0.5),
-        'faint': _mix(c['text_dim'], c['text_muted'], 0.45),
-        'placeholder': c['text_muted'] if light else _mix(c['text_muted'], c['text_dim'], 0.3),
+        'field': field,
+        # outlines of fields, checkboxes and buttons: 3:1 against the card (WCAG 1.4.11)
+        'outline': _with_contrast(c['border'], [card, field], 3.0, c['text_dim']),
+        'border_hover': _with_contrast(_mix(c['border'], c['text_dim'], 0.5), [card, field], 3.5, c['text']),
+        # secondary text (paths, notes) and placeholders: 4.5:1 on cards and fields
+        'faint': _with_contrast(_mix(c['text_dim'], c['text_muted'], 0.45), [card, field], 4.5, c['text']),
+        'placeholder': _with_contrast(c['text_muted'], [field, card], 4.5, c['text']),
         'handle': c['elevated'] if light else c['text'],
+        'button': button,
+        'button_hover': _mix(button, shade, 0.12) if button != c['highlight'] else c['highlight_hover'],
+        'button_pressed': _mix(button, QColor(0, 0, 0), 0.2),
     }
 
 
@@ -154,9 +185,9 @@ def generate_spinner_style():
         QSpinBox, QDoubleSpinBox {{
             background-color: {field};
             color: {text};
-            border: 1px solid {field};
+            border: 1px solid {color_to_stylesheet(pc['outline'])};
             border-radius: 5px;
-            padding: 0px 26px 0px 8px;      /* Qt reserves one button width more */
+            padding: 0px 28px 0px 8px;      /* Qt reserves one button width more */
             min-height: 26px;
             font-size: {FONT_SIZES['base']}px;
             selection-background-color: {color_to_stylesheet(COLORS['highlight'])};
@@ -167,14 +198,14 @@ def generate_spinner_style():
         QSpinBox::down-button, QDoubleSpinBox::down-button {{
             subcontrol-origin: border;
             subcontrol-position: center right;
-            width: 22px;
-            height: 22px;
+            width: 24px;
+            height: 24px;
             border: none;
             border-radius: 4px;
             background: transparent;
         }}
-        QSpinBox::up-button, QDoubleSpinBox::up-button {{ right: 2px; }}
-        QSpinBox::down-button, QDoubleSpinBox::down-button {{ right: 24px; }}
+        QSpinBox::up-button, QDoubleSpinBox::up-button {{ right: 1px; }}
+        QSpinBox::down-button, QDoubleSpinBox::down-button {{ right: 25px; }}
         QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
         QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {{
             background: {color_to_stylesheet(COLORS['border'])};
@@ -198,7 +229,7 @@ def generate_button_style():
         QPushButton {{
             background-color: transparent;
             color: {color_to_stylesheet(COLORS['text'])};
-            border: 1px solid {color_to_stylesheet(COLORS['border'])};
+            border: 1px solid {color_to_stylesheet(pc['outline'])};
             border-radius: 6px;
             padding: 5px 12px;
             min-height: 18px;
@@ -221,9 +252,10 @@ def generate_button_style():
 
 def generate_primary_button_style():
     """The main action of a section: filled with the theme's accent."""
+    pc = panel_colors()
     return f"""
         QPushButton {{
-            background-color: {color_to_stylesheet(COLORS['highlight'])};
+            background-color: {color_to_stylesheet(pc['button'])};
             color: {color_to_stylesheet(COLORS['background'])};
             border: none;
             border-radius: 8px;
@@ -232,10 +264,10 @@ def generate_primary_button_style():
             font-size: {FONT_SIZES['base']}px;
             font-weight: 600;
         }}
-        QPushButton:hover {{ background-color: {color_to_stylesheet(COLORS['highlight_hover'])}; }}
-        QPushButton:pressed {{ background-color: {color_to_stylesheet(COLORS['highlight_dim'])}; }}
+        QPushButton:hover {{ background-color: {color_to_stylesheet(pc['button_hover'])}; }}
+        QPushButton:pressed {{ background-color: {color_to_stylesheet(pc['button_pressed'])}; }}
         QPushButton:disabled {{
-            background-color: {color_to_stylesheet(panel_colors()['field'])};
+            background-color: {color_to_stylesheet(pc['field'])};
             color: {color_to_stylesheet(COLORS['text_muted'])};
         }}
     """
@@ -406,7 +438,7 @@ def generate_checkbox_style():
         QCheckBox::indicator {{
             width: 15px;
             height: 15px;
-            border: 1px solid {color_to_stylesheet(pc['border_hover'])};
+            border: 1px solid {color_to_stylesheet(pc['outline'])};
             border-radius: 4px;
             background-color: {color_to_stylesheet(pc['field'])};
         }}
@@ -489,7 +521,7 @@ def generate_combo_style():
     return (
         f"QComboBox {{ background-color: {color_to_stylesheet(pc['field'])}; "
         f"color: {color_to_stylesheet(COLORS['text'])}; "
-        f"border: 1px solid {color_to_stylesheet(pc['field'])}; "
+        f"border: 1px solid {color_to_stylesheet(pc['outline'])}; "
         f"border-radius: 5px; padding: 0px 8px; min-height: 26px; "
         f"font-size: {FONT_SIZES['base']}px; }}"
         f"QComboBox:hover {{ border-color: {color_to_stylesheet(pc['border_hover'])}; }}"
@@ -509,7 +541,7 @@ def generate_path_edit_style():
     pc = panel_colors()
     return (
         f"QLineEdit {{ background-color: {color_to_stylesheet(pc['field'])}; color: transparent; "
-        f"border: 1px solid {color_to_stylesheet(pc['field'])}; border-radius: 5px; "
+        f"border: 1px solid {color_to_stylesheet(pc['outline'])}; border-radius: 5px; "
         f"padding: 0px 4px; min-height: 26px; font-size: {FONT_SIZES['base']}px; }}"
         f"QLineEdit:hover {{ border-color: {color_to_stylesheet(pc['border_hover'])}; }}"
     )
@@ -778,7 +810,7 @@ class SectionCard(QFrame):
     rows, and a footer (behind a divider) for the section's main action and
     its result. Styled by ``generate_panel_style`` through object names."""
 
-    LABEL_WIDTH = 110
+    LABEL_WIDTH = 118
     VALUE_WIDTH = 58
 
     def __init__(self, title, parent=None):
@@ -2664,7 +2696,7 @@ class ToggleButton(QWidget):
 
         # Fixed size so every toggle renders identically regardless of the
         # surrounding layout (rows previously compressed some instances)
-        self.setFixedSize(34, 20)
+        self.setFixedSize(40, 24)
 
         self.setCheckable(True)
         self._checked = False
@@ -2746,11 +2778,11 @@ class ToggleButton(QWidget):
 
     def sizeHint(self):
         """Provide a reasonable default size"""
-        return QSize(34, 20)
+        return QSize(40, 24)
 
     def minimumSizeHint(self):
         """Provide minimum size"""
-        return QSize(34, 20)
+        return QSize(40, 24)
 
     def heightForWidth(self, width):
         """Calculate height based on width to maintain proportions"""
@@ -2766,7 +2798,7 @@ class ToggleButton(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         w, h = self.width(), self.height()
-        track = QRectF(1, (h - 18) / 2, w - 2, 18)
+        track = QRectF(1, (h - 22) / 2, w - 2, 22)
         on = QColor(COLORS['highlight']) if self._checked else QColor(COLORS['border'])
         knob = QColor(COLORS['background']) if self._checked else QColor(panel_colors()['handle'])
         if not self._enabled:
@@ -2774,8 +2806,8 @@ class ToggleButton(QWidget):
             knob.setAlpha(160)
         painter.setPen(Qt.NoPen)
         painter.setBrush(on)
-        painter.drawRoundedRect(track, 9, 9)
-        d = 14
+        painter.drawRoundedRect(track, 11, 11)
+        d = 18
         x = track.left() + 2 + (track.width() - d - 4) * self._slider_position
         painter.setBrush(knob)
         painter.drawEllipse(QRectF(x, track.top() + 2, d, d))

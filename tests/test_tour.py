@@ -134,8 +134,8 @@ def test_dialogs_use_the_card_style(win, monkeypatch):
     about, news = opened
     assert about.windowTitle() == "About Cabana" and about.objectName() == "cardDialog"
     labels = [w.text() for w in about.findChildren(gui.QLabel)]
-    assert f"Version {__version__}, MIT License" in labels and "—" not in " ".join(labels)
-    assert [b.text() for b in about.findChildren(gui.QPushButton)] == ["License", "Close"]
+    assert f"Version {__version__}, MIT Licence" in labels and "—" not in " ".join(labels)
+    assert [b.text() for b in about.findChildren(gui.QPushButton)] == ["Licence", "Close"]
     version, notes = whats_new.latest() if whats_new.notes_for(__version__) is None else (
         __version__, whats_new.notes_for(__version__))
     assert news.windowTitle() == f"What's new in Cabana {version}"

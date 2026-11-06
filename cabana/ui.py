@@ -243,6 +243,7 @@ def generate_button_style():
         QPushButton:pressed {{
             background-color: {color_to_stylesheet(COLORS['border'])};
         }}
+        QPushButton:focus {{ border: 2px solid {color_to_stylesheet(COLORS['highlight'])}; }}
         QPushButton:disabled {{
             color: {color_to_stylesheet(COLORS['text_muted'])};
             border-color: {color_to_stylesheet(COLORS['border_subtle'])};
@@ -266,6 +267,7 @@ def generate_primary_button_style():
         }}
         QPushButton:hover {{ background-color: {color_to_stylesheet(pc['button_hover'])}; }}
         QPushButton:pressed {{ background-color: {color_to_stylesheet(pc['button_pressed'])}; }}
+        QPushButton:focus {{ border: 2px solid {color_to_stylesheet(COLORS['text'])}; }}
         QPushButton:disabled {{
             background-color: {color_to_stylesheet(pc['field'])};
             color: {color_to_stylesheet(COLORS['text_muted'])};
@@ -443,6 +445,8 @@ def generate_checkbox_style():
             background-color: {color_to_stylesheet(pc['field'])};
         }}
         QCheckBox::indicator:hover {{ border-color: {color_to_stylesheet(COLORS['highlight'])}; }}
+        QCheckBox:focus {{ color: {color_to_stylesheet(COLORS['highlight'])}; }}
+        QCheckBox::indicator:focus {{ border: 2px solid {color_to_stylesheet(COLORS['highlight'])}; }}
         QCheckBox::indicator:checked {{
             background-color: {color_to_stylesheet(COLORS['highlight'])};
             border-color: {color_to_stylesheet(COLORS['highlight'])};
@@ -525,6 +529,7 @@ def generate_combo_style():
         f"border-radius: 5px; padding: 0px 8px; min-height: 26px; "
         f"font-size: {FONT_SIZES['base']}px; }}"
         f"QComboBox:hover {{ border-color: {color_to_stylesheet(pc['border_hover'])}; }}"
+        f"QComboBox:focus {{ border-color: {color_to_stylesheet(COLORS['highlight'])}; }}"
         f"QComboBox:disabled {{ color: {color_to_stylesheet(COLORS['text_muted'])}; }}"
         f"QComboBox::drop-down {{ border: none; width: 26px; }}"
         f"QComboBox::down-arrow {{ image: url({chevron}); width: 12px; height: 12px; }}"
@@ -544,6 +549,7 @@ def generate_path_edit_style():
         f"border: 1px solid {color_to_stylesheet(pc['outline'])}; border-radius: 5px; "
         f"padding: 0px 4px; min-height: 26px; font-size: {FONT_SIZES['base']}px; }}"
         f"QLineEdit:hover {{ border-color: {color_to_stylesheet(pc['border_hover'])}; }}"
+        f"QLineEdit:focus {{ border: 2px solid {color_to_stylesheet(COLORS['highlight'])}; }}"
     )
 
 
@@ -561,6 +567,7 @@ def generate_panel_style():
             border: none; border-bottom: 1px solid {border};
             border-top-left-radius: 9px; border-top-right-radius: 9px;
         }}
+        QFrame#sectionHeader:focus {{ border: 2px solid {color_to_stylesheet(COLORS['highlight'])}; }}
         QFrame#sectionHeader[collapsed="true"] {{
             border-bottom: none; border-bottom-left-radius: 9px; border-bottom-right-radius: 9px;
         }}
@@ -713,6 +720,7 @@ class PathEdit(QLineEdit):
         self._placeholder = ""
         self.pick_action = self.addAction(QIcon(), QLineEdit.TrailingPosition)
         self.setCursor(Qt.PointingHandCursor)
+        self.setFocusPolicy(Qt.TabFocus)       # Tab reaches it; Enter or Space opens the picker
         self.restyle()
 
     def setPlaceholderText(self, text):
@@ -738,6 +746,22 @@ class PathEdit(QLineEdit):
             event.accept()
             return
         super().mousePressEvent(event)
+
+    def focusInEvent(self, event):
+        super().focusInEvent(event)
+        self.deselect()                        # the hidden text must not show a selection
+
+    def keyPressEvent(self, event):
+        key = event.key()
+        if key in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space) and self.isEnabled():
+            self.pick_action.trigger()
+            return
+        clear = getattr(self, '_clear_action', None)
+        if (key in (Qt.Key_Delete, Qt.Key_Backspace) and clear is not None
+                and clear.isVisible() and clear.isEnabled()):
+            clear.trigger()
+            return
+        super().keyPressEvent(event)
 
     def _text_rect(self):
         r = self.rect().adjusted(9, 0, -6, 0)
@@ -823,7 +847,9 @@ class SectionCard(QFrame):
         self.header = QFrame()
         self.header.setObjectName("sectionHeader")
         self.header.setCursor(Qt.PointingHandCursor)
+        self.header.setFocusPolicy(Qt.TabFocus)
         self.header.mousePressEvent = lambda event: self.set_open(not self._open)
+        self.header.keyPressEvent = self._header_key
         head = QHBoxLayout(self.header)
         head.setContentsMargins(10, 10, 12, 10)
         head.setSpacing(6)
@@ -939,6 +965,12 @@ class SectionCard(QFrame):
             self.footer_layout.addWidget(item)
 
     # --- state ---------------------------------------------------------
+    def _header_key(self, event):
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space):
+            self.set_open(not self._open)
+        else:
+            QFrame.keyPressEvent(self.header, event)
+
     def set_open(self, open_):
         self._open = bool(open_)
         self.body.setVisible(self._open)
@@ -1444,6 +1476,15 @@ def parse_args():
     return args
 
 
+def _focus_ring(painter, centre, radius):
+    """Keyboard focus ring around a slider handle."""
+    ring = QColor(COLORS['highlight'])
+    ring.setAlpha(150)
+    painter.setBrush(Qt.NoBrush)
+    painter.setPen(QPen(ring, 2))
+    painter.drawEllipse(centre, radius + 4, radius + 4)
+
+
 class RangeSlider(QWidget):
     """
     Custom Range Slider widget that allows selecting a range between min and max values.
@@ -1466,6 +1507,8 @@ class RangeSlider(QWidget):
         self.handle_radius = SLIDER_HANDLE_RADIUS
         self.hover_handle = None  # 0 for none, 1 for lower, 2 for upper
         self.fill_color = None    # colour of the selected span; None = theme accent
+        self._kbd_focus = False   # focus came from the keyboard: draw the focus ring
+        self._key_handle = 1      # handle the arrow keys move (1 lower, 2 upper); Space switches
 
         # Set focus policy to accept focus and keyboard input
         self.setFocusPolicy(Qt.StrongFocus)
@@ -1572,6 +1615,9 @@ class RangeSlider(QWidget):
                 painter.setBrush(panel_colors()['handle'])
                 painter.setPen(QPen(fill, 2))
             painter.drawEllipse(QPoint(lower_handle_x, handle_y), self.handle_radius, self.handle_radius)
+            if self._kbd_focus and self.hasFocus():
+                cx = lower_handle_x if self._key_handle == 1 else upper_handle_x
+                _focus_ring(painter, QPoint(cx, handle_y), self.handle_radius)
 
         else:  # Vertical orientation
             track_width = 4
@@ -1615,6 +1661,44 @@ class RangeSlider(QWidget):
                 painter.setBrush(panel_colors()['handle'])
                 painter.setPen(QPen(fill, 2))
             painter.drawEllipse(QPoint(handle_x, lower_handle_y), self.handle_radius, self.handle_radius)
+
+    def focusInEvent(self, event):
+        self._kbd_focus = event.reason() in (Qt.TabFocusReason, Qt.BacktabFocusReason, Qt.ShortcutFocusReason)
+        self.update()
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event):
+        self._kbd_focus = False
+        self.update()
+        super().focusOutEvent(event)
+
+    def keyPressEvent(self, event):
+        """Arrows (Page Up/Down for a tenth of the range, Home/End) move the
+        active handle; Space switches between the lower and upper handle."""
+        key, span = event.key(), max(1, (self.max_val - self.min_val) // 10)
+        steps = {Qt.Key_Left: -1, Qt.Key_Down: -1, Qt.Key_Right: 1, Qt.Key_Up: 1,
+                 Qt.Key_PageDown: -span, Qt.Key_PageUp: span}
+        if key == Qt.Key_Space:
+            self._key_handle = 2 if self._key_handle == 1 else 1
+            self._kbd_focus = True
+            self.update()
+            return
+        lower, upper = self.lower_value, self.upper_value
+        if key in steps or key in (Qt.Key_Home, Qt.Key_End):
+            if key == Qt.Key_Home:
+                value = self.min_val
+            elif key == Qt.Key_End:
+                value = self.max_val
+            else:
+                value = (lower if self._key_handle == 1 else upper) + steps[key]
+            if self._key_handle == 1:
+                lower = max(self.min_val, min(value, upper))
+            else:
+                upper = min(self.max_val, max(value, lower))
+            self._kbd_focus = True
+            self.setValues(lower, upper)
+            return
+        super().keyPressEvent(event)
 
     def mousePressEvent(self, event):
         """Handle mouse press events to start dragging handles"""
@@ -1761,6 +1845,7 @@ class CustomSlider(QSlider):
         self.handle_radius = SLIDER_HANDLE_RADIUS
         self.hover = False
         self.fill_color = None    # colour of the filled track; None = theme accent
+        self._kbd_focus = False   # focus came from the keyboard: draw the focus ring
 
         # Set focus policy to accept focus and keyboard input
         self.setFocusPolicy(Qt.StrongFocus)
@@ -1820,6 +1905,8 @@ class CustomSlider(QSlider):
                 painter.setPen(QPen(fill, 2))
 
             painter.drawEllipse(QPoint(handle_x, handle_y), self.handle_radius, self.handle_radius)
+            if self._kbd_focus and self.hasFocus():
+                _focus_ring(painter, QPoint(handle_x, handle_y), self.handle_radius)
 
         else:  # Vertical orientation
             track_width = 4
@@ -1850,6 +1937,20 @@ class CustomSlider(QSlider):
                 painter.setPen(QPen(fill, 2))
 
             painter.drawEllipse(QPoint(handle_x, handle_y), self.handle_radius, self.handle_radius)
+
+    def focusInEvent(self, event):
+        self._kbd_focus = event.reason() in (Qt.TabFocusReason, Qt.BacktabFocusReason, Qt.ShortcutFocusReason)
+        self.update()
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event):
+        self._kbd_focus = False
+        self.update()
+        super().focusOutEvent(event)
+
+    def keyPressEvent(self, event):
+        self._kbd_focus = True
+        super().keyPressEvent(event)
 
     def mousePressEvent(self, event):
         """Handle mouse press events without propagation"""
@@ -2575,11 +2676,13 @@ class ImagePanel(QWidget):
         else:
             # Draw placeholder text
             painter.setPen(COLORS['highlight'])
-            font = QFont("Arial", 20)  # Family and size
-            font.setBold(True)  # Optional: make it bold
+            font = QFont(self.font())
+            font.setPixelSize(22)
+            font.setBold(True)
             painter.setFont(font)
             text = "Drag & Drop an Image Here or Use File > Open Image…"
-            painter.drawText(self.rect(), Qt.AlignCenter, text)
+            # wrapped inside a margin, so a narrow viewer never cuts it off
+            painter.drawText(self.rect().adjusted(32, 0, -32, 0), Qt.AlignCenter | Qt.TextWordWrap, text)
 
         # Draw drag and drop highlight overlay when active
         if self.drag_active:

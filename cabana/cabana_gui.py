@@ -221,6 +221,10 @@ class MainWindow(QMainWindow):
         self.pages_scroll.setWidget(self.pages)
         self.dock_inner_layout.addWidget(self.pages_scroll, 1)
         self._share_hints_with_labels()
+        # buttons and checkboxes take focus from the keyboard (Tab) only, so a
+        # mouse click leaves no focus ring behind
+        for widget in self.dock_contents.findChildren((QPushButton, QCheckBox)):
+            widget.setFocusPolicy(Qt.TabFocus)
         # scrolling the side panel never changes a setting the user has not clicked
         self._wheel_guard = WheelGuard(self)
         self._wheel_guard.guard(self.pages)
@@ -473,7 +477,7 @@ class MainWindow(QMainWindow):
         version_action.setMenuRole(QAction.NoRole)
         version_action.triggered.connect(self._show_about_dialog)
         about_menu.addAction(version_action)
-        license_action = QAction("&License", self)
+        license_action = QAction("&Licence", self)
         license_action.setMenuRole(QAction.NoRole)
         license_action.triggered.connect(self._show_license_dialog)
         about_menu.addAction(license_action)
@@ -1773,7 +1777,7 @@ class MainWindow(QMainWindow):
         channels = [c for c in ("BF", "POL") if os.path.isdir(join_path(out_dir, c))]
         msg.setInformativeText(f"{out_dir}\n\nEach channel ({', '.join(channels)}) has Patients/ and Controls/ folders,\n"
                                f"each holding Images/ and Masks/ usable directly as the input and\n"
-                               f"ROI-mask folders of Batch Run. Analyse BF with Dark Line on and\n"
+                               f"ROI-mask folders of Batch Run. Analyse BF with Dark line on and\n"
                                f"POL with it off.")
         msg.setStyleSheet(self.msgbox_style)
         batch_btns = {msg.addButton(f"Use {c} in Batch Run", QMessageBox.ActionRole): c for c in channels}
@@ -2829,7 +2833,7 @@ class MainWindow(QMainWindow):
         self.overlay_gaps_cb.setToolTip("Show the gaps over the tissue image.")
         gaps.add_widget(self.overlay_gaps_cb)
 
-        self.analyze_btn = self._primary_button("Analyze")
+        self.analyze_btn = self._primary_button("Analyse")
         self.analyze_btn.clicked.connect(self.run_gap_analysis)
         self.analyze_btn.setEnabled(False)
         gaps.add_footer(self.analyze_btn)
@@ -2878,7 +2882,7 @@ class MainWindow(QMainWindow):
         self.yml_data["Detection"]["High Contrast"] = max_val
 
     def select_color(self):
-        """Open color picker dialog"""
+        """Open the colour picker"""
         current_color = QColor(self.color_btn.styleSheet().split("background-color: ")[1].split(";")[0])
         color = QColorDialog.getColor(current_color)
 
@@ -3433,7 +3437,7 @@ class MainWindow(QMainWindow):
         self.detect_btn.setEnabled(self.ori_img is not None or self.seg_img is not None)
         self.detect_btn.setText("Detect")
         self.analyze_btn.setEnabled(self.frb_img is not None and self.toggle_gap_btn.isChecked())
-        self.analyze_btn.setText("Analyze")
+        self.analyze_btn.setText("Analyse")
         QMessageBox.warning(self, f"{stage} failed", f"{stage} did not complete:\n{message}")
 
     def show_progress_bar(self):
@@ -3506,7 +3510,7 @@ class MainWindow(QMainWindow):
         self.detect_btn.setEnabled(False)
         self.segment_btn.setEnabled(False)
         self.load_btn.setEnabled(False)
-        self.analyze_btn.setText("Analyzing...")
+        self.analyze_btn.setText("Analysing…")
         self.analyze_btn.setEnabled(False)
         self.show_progress_bar()
 
@@ -3587,7 +3591,7 @@ class MainWindow(QMainWindow):
         self.analyze_btn.setEnabled(True)
         self.detect_btn.setEnabled(True)
         self.load_btn.setEnabled(True)
-        self.analyze_btn.setText("Analyze")
+        self.analyze_btn.setText("Analyse")
 
     def set_theme(self):
         """Apply Napari-inspired theme to the application"""
@@ -3738,7 +3742,7 @@ class MainWindow(QMainWindow):
         name = QLabel("Cabana")
         name.setObjectName("dialogTitle")
         names.addWidget(name)
-        for line in ("CollAgen FiBre ANAlyzer", f"Version {__version__}, MIT License"):
+        for line in ("CollAgen FiBre ANAlyzer", f"Version {__version__}, MIT Licence"):
             label = QLabel(line)
             label.setObjectName("dialogNote")
             names.addWidget(label)
@@ -3753,13 +3757,13 @@ class MainWindow(QMainWindow):
             for text, url in (("Documentation", "https://cabana.readthedocs.io"),
                               ("Changelog", CHANGELOG_URL),
                               ("PyPI", "https://pypi.org/project/cabana/"))))
-        dlg.add_button("License", slot=self._show_license_dialog)
+        dlg.add_button("Licence", slot=self._show_license_dialog)
         dlg.add_button("Close", primary=True)
         dlg.exec_()
 
     def _show_license_dialog(self) -> None:
-        """Show the license text in a read-only dialog."""
-        dlg = CardDialog(self, "License", width=520)
+        """Show the licence text in a read-only dialog."""
+        dlg = CardDialog(self, "Licence", width=520)
         text = QLabel(self._license_text())
         text.setObjectName("dialogNote")
         text.setTextFormat(Qt.PlainText)
@@ -3840,7 +3844,7 @@ class MainWindow(QMainWindow):
                      "Set the fibre widths and contrast, then Detect to check them on the image.",
                      page(self.det_tab, self.det_detection_card), lambda: self.det_detection_card),
             TourStep("Measure the gaps",
-                     "Analyze fills the spaces between the fibres with circles.",
+                     "Analyse fills the spaces between the fibres with circles.",
                      page(self.gap_tab, self.gap_gaps_card), lambda: self.gap_gaps_card),
             TourStep("Save the settings",
                      "Parameters > Export Parameters writes the settings of these pages to a file "
@@ -3990,22 +3994,6 @@ class MainWindow(QMainWindow):
             pass
         return ("Cabana is released under the MIT License.\n\n"
                 "https://github.com/Garvan-Data-Science-Platform/Cabana/blob/main/LICENSE")
-
-    def _show_license_dialog(self) -> None:
-        """Show the license text in a read-only dialog."""
-        text_color = color_to_stylesheet(COLORS['text'])
-        bg_color = color_to_stylesheet(COLORS['surface'])
-        dlg = QMessageBox(self)
-        dlg.setWindowTitle("License")
-        dlg.setIcon(QMessageBox.NoIcon)
-        dlg.setTextFormat(Qt.PlainText)
-        dlg.setText(self._license_text())
-        dlg.setStyleSheet(
-            f"QMessageBox {{ background-color: {bg_color}; }}"
-            f"QLabel {{ color: {text_color}; font-family: monospace; }}"
-            f"QPushButton {{ min-width: 60px; }}"
-        )
-        dlg.exec_()
 
     def _on_theme_changed(self, theme_name: str) -> None:
         """Handle theme selection from combo box."""

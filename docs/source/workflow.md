@@ -66,8 +66,8 @@ The settings start at the macro's defaults every time Cabana starts and are not 
 
 1. **On/off switch** (next to the page title). Turns the gap analysis step on or off for the GUI and batch runs.
 2. **Min gap diameter.** The smallest gap to report, in pixels.
-3. **Hematoxylin density (HDM).** **Max display HDM** is the maximum intensity value of the high-density matrix; **Saturation** is the share of pixels (%) saturated when the HDM contrast is stretched. Both are used when the analysis runs (Batch Run), not by **Analyze**, and stay active when gap analysis is off.
-4. **Analyze** fills the gaps between the detected fibres with circles: orange for intra-fibre gaps (inside the segmented region) and blue with a dashed outline for the others. Below the button it shows how many gaps were found, how many are intra-fibre, their median diameter and how much of the image they cover. **Overlay gaps** shows the circles over the faded tissue image, with the fibres drawn on top.
+3. **Hematoxylin density (HDM).** **Max display HDM** is the maximum intensity value of the high-density matrix; **Saturation** is the share of pixels (%) saturated when the HDM contrast is stretched. Both are used when the analysis runs (Batch Run), not by **Analyse**, and stay active when gap analysis is off.
+4. **Analyse** fills the gaps between the detected fibres with circles: orange for intra-fibre gaps (inside the segmented region) and blue with a dashed outline for the others. Below the button it shows how many gaps were found, how many are intra-fibre, their median diameter and how much of the image they cover. **Overlay gaps** shows the circles over the faded tissue image, with the fibres drawn on top.
 
 ## Exporting parameters
 

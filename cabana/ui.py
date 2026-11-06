@@ -536,6 +536,10 @@ def generate_menubar_style():
     """
 
 
+# Knob radius (px) of CustomSlider and RangeSlider
+SLIDER_HANDLE_RADIUS = 7
+
+
 def create_separator():
     """Create a thin horizontal separator line."""
     from PyQt5.QtWidgets import QFrame
@@ -952,7 +956,7 @@ class RangeSlider(QWidget):
         self.offset = 0
         self.moving_lower = False
         self.moving_upper = False
-        self.handle_radius = 8
+        self.handle_radius = SLIDER_HANDLE_RADIUS
         self.hover_handle = None  # 0 for none, 1 for lower, 2 for upper
 
         # Set focus policy to accept focus and keyboard input
@@ -1247,7 +1251,7 @@ class CustomSlider(QSlider):
     def __init__(self, orientation=Qt.Horizontal, parent=None):
         super().__init__(orientation, parent)
         self.is_dragging = False
-        self.handle_radius = 8
+        self.handle_radius = SLIDER_HANDLE_RADIUS
         self.hover = False
 
         # Set focus policy to accept focus and keyboard input

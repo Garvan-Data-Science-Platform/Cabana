@@ -245,20 +245,15 @@ class MainWindow(QMainWindow):
         self.image_panel = ImagePanel()
         self.image_panel.imageDropped.connect(self.load_original_image)
 
-        # Panel toggle on a fixed rail at the window's left edge: it stays put
-        # when the panel folds or unfolds (on the image panel's edge it jumped
-        # by the panel width, so the next click missed it)
-        self.toggle_button = PanelToggleButton()
-        self.toggle_button.clicked.connect(self.toggle_panel)
-        self.panel_rail = QWidget()
-        self.panel_rail.setObjectName("panelRail")
-        self.panel_rail.setAttribute(Qt.WA_StyledBackground, True)
-        self.panel_rail.setFixedWidth(28)
-        rail_layout = QVBoxLayout(self.panel_rail)
-        rail_layout.setContentsMargins(2, 8, 2, 8)
-        rail_layout.addWidget(self.toggle_button, 0, Qt.AlignHCenter)
-        rail_layout.addStretch(1)
-        self.panel_rail.setStyleSheet(self._rail_style())
+        # Page rail at the window's left edge: an icon per page; the open
+        # page's icon folds the side panel and any icon unfolds it
+        icons = ['page-start', 'page-tma', 'page-brf', 'page-seg', 'page-fibres', 'page-gaps', 'page-batch']
+        tips = ["Start"] + [f"{title} ({action.shortcut().toString(QKeySequence.NativeText)})"
+                            for title, action in self._page_actions]
+        self.page_rail = PageRail(list(zip(icons, tips)))
+        self.page_rail.page_clicked.connect(self._rail_clicked)
+        self.page_rail.help_clicked.connect(self.start_tour)
+        self.page_rail.set_current(self.pages.currentIndex())
 
         # Add widgets to splitter
         self.splitter.addWidget(self.dock_contents)
@@ -298,7 +293,7 @@ class MainWindow(QMainWindow):
         body = QHBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(0)
-        body.addWidget(self.panel_rail)
+        body.addWidget(self.page_rail)
         body.addWidget(self.splitter, 1)
         self.main_layout.addLayout(body)
 
@@ -495,6 +490,8 @@ class MainWindow(QMainWindow):
         self.page_title.setText(self._page_titles[index])
         for page, switch in self._title_switches.items():
             switch.setVisible(self.pages.widget(index) is page)
+        if hasattr(self, 'page_rail'):
+            self.page_rail.set_current(index)
         if index == 0:
             checked = self._page_group.checkedAction()
             if checked is not None:
@@ -505,15 +502,22 @@ class MainWindow(QMainWindow):
             self.toggle_panel()
 
     def setup_start_tab(self):
-        """Landing page shown at launch: the three ways to begin, then links to
-        the tour and the documentation."""
-        layout = self._page_layout()
-        layout.setContentsMargins(0, 8, 0, 6)
+        """Landing page shown at launch: the three ways to begin."""
+        layout = QVBoxLayout()
+        layout.setContentsMargins(6, 10, 6, 6)
+        layout.setSpacing(10)
+
+        intro = QLabel("Open a TMA slide to cut it into cores, open an image to tune parameters "
+                       "on it, or import a saved parameter file. The analysis pages are on the bar "
+                       "at the left and under the Analysis menu (Ctrl/Cmd+1 to 6).")
+        intro.setWordWrap(True)
+        intro.setStyleSheet(self.value_label_style)
+        layout.addWidget(intro)
 
         self.start_actions = QWidget()          # what the tour's first step points at
         actions = QVBoxLayout(self.start_actions)
         actions.setContentsMargins(0, 0, 0, 0)
-        actions.setSpacing(8)
+        actions.setSpacing(10)
         self.start_slide_btn = self._primary_button("Open TMA Slide…", play=False)
         self.start_slide_btn.setToolTip("Open a whole-slide TMA scan on the TMA Dearrayer page.")
         self.start_slide_btn.clicked.connect(self._open_tma_slide_from_menu)
@@ -529,22 +533,6 @@ class MainWindow(QMainWindow):
         self.start_params_btn.clicked.connect(self.import_parameters)
         actions.addWidget(self.start_params_btn)
         layout.addWidget(self.start_actions)
-
-        links = QHBoxLayout()
-        links.setSpacing(18)
-        self.start_tour_btn = QPushButton("Take the Tour")
-        self.start_tour_btn.setToolTip("Walk through the analysis, one step at a time.")
-        self.start_tour_btn.clicked.connect(self.start_tour)
-        self.start_docs_btn = QPushButton("Documentation")
-        self.start_docs_btn.setToolTip("Open the online documentation.")
-        self.start_docs_btn.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl("https://cabana.readthedocs.io")))
-        for btn in (self.start_tour_btn, self.start_docs_btn):
-            btn.setStyleSheet(self.link_btn_style)
-            btn.setCursor(Qt.PointingHandCursor)
-            links.addWidget(btn)
-        links.addStretch(1)
-        layout.addLayout(links)
 
         layout.addStretch()
         self.start_tab.setLayout(layout)
@@ -750,16 +738,17 @@ class MainWindow(QMainWindow):
         else:
             self.dock_contents.show()
         self.panel_visible = not self.panel_visible
-        self.toggle_button.setChecked(not self.panel_visible)
         if hasattr(self, 'toggle_panel_action'):
             self.toggle_panel_action.setChecked(self.panel_visible)
 
 
-    @staticmethod
-    def _rail_style():
-        pc = panel_colors()
-        return (f"QWidget#panelRail {{ background-color: {color_to_stylesheet(pc['panel'])};"
-                f" border-right: 1px solid {color_to_stylesheet(pc['card_border'])}; }}")
+    def _rail_clicked(self, index):
+        """A page icon on the rail: the open page's icon folds the panel, any
+        other icon (or any icon while folded) shows that page."""
+        if index == self.pages.currentIndex() and self.panel_visible:
+            self.toggle_panel()
+        else:
+            self.show_page(index)
 
     def _setup_styles(self) -> None:
         """Set up all style sheets"""
@@ -795,12 +784,7 @@ class MainWindow(QMainWindow):
 
         # Side panel: section cards, row labels, notes, option lists
         self.panel_style = generate_panel_style()
-        # Text links (Start page)
-        accent = color_to_stylesheet(COLORS['highlight'])
-        self.link_btn_style = (
-            f"QPushButton {{ border: none; background: transparent; color: {accent};"
-            f" padding: 2px 0px; font-size: {FONT_SIZES['base']}px; font-weight: 500; }}"
-            f"QPushButton:hover {{ text-decoration: underline; }}")
+
 
         # Value label style (slider readouts)
         self.value_label_style = (
@@ -4090,9 +4074,7 @@ class MainWindow(QMainWindow):
         dock_palette.setColor(QPalette.Window, panel_colors()['panel'])
         self.dock_contents.setPalette(dock_palette)
         self.dock_contents.setStyleSheet(self.panel_style)
-        self.panel_rail.setStyleSheet(self._rail_style())
-        self.start_tour_btn.setStyleSheet(self.link_btn_style)
-        self.start_docs_btn.setStyleSheet(self.link_btn_style)
+        self.page_rail.restyle()
         for widget in self.dock_contents.findChildren((SectionCard, PathEdit)):
             widget.restyle()
         for btn in self._play_buttons:

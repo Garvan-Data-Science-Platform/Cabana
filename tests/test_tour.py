@@ -142,20 +142,33 @@ def test_dialogs_use_the_card_style(win, monkeypatch):
     assert all(n in [w.text() for w in news.findChildren(gui.QLabel)] for n in notes)
 
 
-def test_start_page_is_three_buttons_and_two_links(win):
+def test_start_page_is_the_intro_and_three_buttons(win):
     from cabana.ui import SectionCard
     assert not win.start_tab.findChildren(SectionCard)
     assert [b.text() for b in (win.start_slide_btn, win.start_open_btn, win.start_params_btn)] == [
         "Open TMA Slide…", "Open Image…", "Import Parameters…"]
-    assert (win.start_tour_btn.text(), win.start_docs_btn.text()) == ("Take the Tour", "Documentation")
 
 
-def test_panel_toggle_stays_put_when_the_panel_folds(win, app):
-    from PyQt5.QtCore import QPoint
+def test_page_rail_opens_pages_and_folds_the_panel(win, app):
     from PyQt5.QtTest import QTest
-    where = win.toggle_button.mapTo(win, QPoint(0, 0))
-    for visible in (False, True, False, True):
-        QTest.mouseClick(win.toggle_button, Qt.LeftButton)
-        settle(app)
-        assert win.panel_visible is visible and win.dock_contents.isVisible() is visible
-        assert win.toggle_button.mapTo(win, QPoint(0, 0)) == where     # the next click lands on it
+    rail = win.page_rail
+    assert len(rail.buttons) == win.pages.count() and rail.buttons[0].isChecked()
+    seg = win.pages.indexOf(win.seg_tab)
+    QTest.mouseClick(rail.buttons[seg], Qt.LeftButton)              # another page: show it
+    settle(app)
+    assert win.pages.currentIndex() == seg and win.panel_visible and rail.buttons[seg].isChecked()
+    QTest.mouseClick(rail.buttons[seg], Qt.LeftButton)              # the open page again: fold
+    settle(app)
+    assert not win.panel_visible and not win.dock_contents.isVisible()
+    QTest.mouseClick(rail.buttons[seg], Qt.LeftButton)              # and unfold
+    settle(app)
+    assert win.panel_visible and win.pages.currentIndex() == seg
+    win.toggle_panel()                                              # folded, then another page
+    QTest.mouseClick(rail.buttons[win.pages.indexOf(win.bat_tab)], Qt.LeftButton)
+    settle(app)
+    assert win.panel_visible and win.pages.currentWidget() is win.bat_tab
+    win.show_page(win.pages.indexOf(win.det_tab))                   # the menu keeps the rail in step
+    assert rail.buttons[win.pages.indexOf(win.det_tab)].isChecked()
+    rail.help_btn.click()
+    assert win._tour is not None
+    win._tour.end()

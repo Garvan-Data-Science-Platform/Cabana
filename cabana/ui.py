@@ -16,7 +16,7 @@ from PyQt5.QtWidgets import (QSlider, QWidget, QSplitter, QSplitterHandle,
                              QProgressBar, QSizePolicy, QPushButton, QSpinBox,
                              QAbstractSpinBox, QAbstractSlider, QComboBox, QScrollBar,
                              QAbstractScrollArea, QApplication, QFrame, QLabel, QLineEdit,
-                             QHBoxLayout, QVBoxLayout, QLayout, QToolButton, QDialog)
+                             QHBoxLayout, QVBoxLayout, QLayout, QToolButton, QDialog, QButtonGroup)
 from PyQt5.QtCore import Qt, QSize, QEvent, QPoint, QRect, QRectF, QPropertyAnimation, QEasingCurve, pyqtProperty
 from PyQt5.QtGui import (QPixmap, QPainter, QPen, QColor, QDragEnterEvent, QDropEvent, QImage, QBrush,
                          QFont, QFontMetrics, QIcon)
@@ -106,6 +106,17 @@ _ICON_SHAPES = {
     'play': '<path d="M3.5 2L12.5 7L3.5 12Z" fill="{c}"/>',
     'clear': '<circle cx="7" cy="7" r="5.5" fill="{c}"/><path d="M5 5L9 9M9 5L5 9" stroke="{c2}" '
              'stroke-width="1.3" stroke-linecap="round"/>',
+    # side-panel pages (the page rail)
+    'page-start': '<path d="M2 6.6L7 2.6L12 6.6V12H8.6V9H5.4V12H2Z"/>',
+    'page-tma': ''.join(f'<circle cx="{x}" cy="{y}" r="1.35"/>' for x in (3.2, 7, 10.8) for y in (3.2, 7, 10.8)),
+    'page-brf': '<circle cx="7" cy="7" r="5.2"/><path d="M7 1.8A5.2 5.2 0 0 1 7 12.2Z" fill="{c}"/>',
+    'page-seg': '<path d="M7 1.8C7 1.8 3 6.4 3 8.9A4 4 0 0 0 11 8.9C11 6.4 7 1.8 7 1.8Z"/>',
+    'page-fibres': '<path d="M1.6 4.2C3.4 2.4 5 5.6 7 3.8S10.6 2.4 12.4 4.2M1.6 7.6C3.4 5.8 5 9 7 7.2'
+                   'S10.6 5.8 12.4 7.6M1.6 11C3.4 9.2 5 12.4 7 10.6S10.6 9.2 12.4 11"/>',
+    'page-gaps': '<rect x="1.8" y="1.8" width="10.4" height="10.4" rx="2.2"/><circle cx="7" cy="7" r="2.9"/>',
+    'page-batch': '<rect x="4" y="1.8" width="8.2" height="7.2" rx="1.4"/><path d="M1.8 4.6V11.2A1 1 0 0 0 2.8 12.2H9.6"/>',
+    'page-help': '<circle cx="7" cy="7" r="5.5"/><path d="M5.3 5.5A1.8 1.8 0 1 1 7.7 7.2C7.2 7.4 7 7.8 7 8.3V8.6"/>'
+                 '<circle cx="7" cy="10.4" r="0.45" fill="{c}"/>',
 }
 
 
@@ -120,6 +131,9 @@ def icon_path(name: str, color: QColor, color2: QColor = None) -> str:
     path = os.path.join(folder, f"{name}_{c[1:]}_{c2[1:]}.svg")
     if not os.path.isfile(path):
         body = _ICON_SHAPES[name].format(c=c, c2=c2)
+        if name.startswith('page-'):          # line icons: one stroke style for the whole set
+            body = (f'<g fill="none" stroke="{c}" stroke-width="1.25" stroke-linecap="round" '
+                    f'stroke-linejoin="round">{body}</g>')
         with open(path, "w") as f:
             f.write(f'<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14">{body}</svg>')
     return path.replace("\\", "/")
@@ -2047,39 +2061,72 @@ class CustomSplitter(QSplitter):
         return CustomSplitterHandle(self.orientation(), self)
 
 
-class PanelToggleButton(QPushButton):
-    """Folds and unfolds the side panel: a guillemet pointing left (panel
-    open) or right (panel folded). It sits on the fixed rail at the window's
-    left edge, so it stays under the pointer whether the panel is open or not."""
+class PageRail(QFrame):
+    """Icon bar at the window's left edge: one icon per side-panel page, the
+    tour at the bottom. A click on a page's icon opens that page; the open
+    page's icon folds the side panel (the window decides, via
+    ``page_clicked``)."""
 
-    def __init__(self, parent=None):
+    page_clicked = pyqtSignal(int)
+    help_clicked = pyqtSignal()
+
+    def __init__(self, pages, parent=None):
+        """``pages``: (icon name, tooltip) per page, in page order."""
         super().__init__(parent)
-        self.setCheckable(True)
-        self.setFixedSize(24, 32)
-        self.setCursor(Qt.PointingHandCursor)
-        self.setToolTip("Fold or unfold the side panel (Ctrl+B)")
+        self.setObjectName("pageRail")
+        self.setFixedWidth(48)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(6, 8, 6, 10)
+        layout.setSpacing(4)
+        self.group = QButtonGroup(self)
+        self.group.setExclusive(True)
+        self.buttons = []
+        for index, (icon, tip) in enumerate(pages):
+            btn = self._button(icon, tip, checkable=True)
+            self.group.addButton(btn, index)
+            btn.clicked.connect(lambda _checked=False, i=index: self.page_clicked.emit(i))
+            layout.addWidget(btn, 0, Qt.AlignHCenter)
+            self.buttons.append(btn)
+            if index == 0:
+                layout.addSpacing(6)          # Start, then the analysis pages
+        layout.addStretch(1)
+        self.help_btn = self._button('page-help', "Take the Tour", checkable=False)
+        self.help_btn.clicked.connect(self.help_clicked.emit)
+        layout.addWidget(self.help_btn, 0, Qt.AlignHCenter)
+        self.restyle()
 
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        hot = self.underMouse()
-        if hot:
-            painter.setBrush(panel_colors()['field'])
-            painter.setPen(Qt.NoPen)
-            painter.drawRoundedRect(QRectF(self.rect()), 6, 6)
-        painter.setPen(QPen(COLORS['highlight'] if hot else COLORS['text_dim'], 1))
-        font = painter.font()
-        font.setPixelSize(15)
-        painter.setFont(font)
-        painter.drawText(self.rect(), Qt.AlignCenter, '\u00bb' if self.isChecked() else '\u00ab')
+    @staticmethod
+    def _button(icon, tip, checkable):
+        btn = QToolButton()
+        btn.setCheckable(checkable)
+        btn.setFixedSize(36, 36)
+        btn.setIconSize(QSize(18, 18))
+        btn.setToolTip(tip)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setFocusPolicy(Qt.NoFocus)        # Ctrl/Cmd+1 to 6 switch pages from the keyboard
+        btn.setProperty('icon_name', icon)
+        return btn
 
-    def enterEvent(self, event):
-        self.update()
-        super().enterEvent(event)
+    def set_current(self, index):
+        self.buttons[index].setChecked(True)
 
-    def leaveEvent(self, event):
-        self.update()
-        super().leaveEvent(event)
+    def restyle(self):
+        """Apply the current theme: icons accent when checked, dim otherwise."""
+        pc = panel_colors()
+        for btn in self.buttons + [self.help_btn]:
+            name = btn.property('icon_name')
+            icon = QIcon()
+            icon.addFile(icon_path(name, COLORS['text_dim']), QSize(), QIcon.Normal, QIcon.Off)
+            icon.addFile(icon_path(name, COLORS['highlight']), QSize(), QIcon.Normal, QIcon.On)
+            icon.addFile(icon_path(name, COLORS['highlight']), QSize(), QIcon.Active, QIcon.Off)
+            btn.setIcon(icon)
+        self.setStyleSheet(
+            f"QFrame#pageRail {{ background-color: {color_to_stylesheet(pc['panel'])};"
+            f" border: none; border-right: 1px solid {color_to_stylesheet(pc['card_border'])}; }}"
+            f"QToolButton {{ border: none; border-radius: 8px; background: transparent; }}"
+            f"QToolButton:hover {{ background-color: {color_to_stylesheet(pc['field'])}; }}"
+            f"QToolButton:checked {{ background-color:"
+            f" {color_to_stylesheet(_mix(pc['card'], COLORS['highlight'], 0.18))}; }}")
 
 
 class ImagePanel(QWidget):

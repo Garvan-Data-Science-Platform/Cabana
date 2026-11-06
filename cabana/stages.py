@@ -300,22 +300,10 @@ BRF_STATS_DIR = "Stats"
 # (image key of brf.channel_images, folder when sorted, file-name suffix)
 BRF_IMAGES = (("Total", "Total", "total"), ("Red-Orange", "Red", "red_orange"),
               ("Yellow", "Yellow", "yellow"), ("Green", "Green", "green"))
-# BRF columns copied into QuantificationResults.csv
-BRF_SUMMARY_COLUMNS = tuple(
-    f"BRF {band} {metric}" for band in brf.BANDS
-    for metric in ("Area (µm²)", "(% Region)", "(% Signal)", "(% Intensity)")
-) + ("BRF Total Area (µm²)", "BRF Total (% Region)", "BRF Unclassified (% Region)")
-
-
-def brf_enabled(args):
-    """Whether ``Configs: Birefringence`` is on (off when the key is absent)."""
-    return bool(((args or {}).get("Configs") or {}).get("Birefringence", False))
-
-
-def brf_folder(args, brf_dir, folder):
+def brf_folder(settings, brf_dir, folder):
     """Folder of one kind of BRF output: ``brf_dir/<folder>`` when ``Sort Into
     Folders`` is on, else ``brf_dir`` itself."""
-    return join_path(brf_dir, folder) if brf.settings(args)["Sort Into Folders"] else brf_dir
+    return join_path(brf_dir, folder) if settings["Sort Into Folders"] else brf_dir
 
 
 def write_calibrated_tiff(path, rgb, pixel_size_um):
@@ -326,52 +314,28 @@ def write_calibrated_tiff(path, rgb, pixel_size_um):
                      metadata={"unit": "um"}, compression="zlib")
 
 
-def run_brf(args, image_path, stem, brf_dir, roi_mask_path=None, pixel_size_um=1.0,
-            visuals=True, image_name=None):
-    """Birefringence colour bands of one image (``Configs: Birefringence``).
-
-    The region measured is the ROI mask (``roi_mask_path``, e.g. a TMA core or
-    a stroma mask, resized to the image when needed) or the whole image; the
-    segmentation mask is not used, the hue bands being the collagen
-    classifier. Writes the statistics ``Stats/<stem>_statistics.csv`` and,
-    when ``visuals``, the images ``Total/<stem>_total.tif`` (all bands) and
-    ``<stem>_original.tif``, ``Red/<stem>_red_orange.tif``,
-    ``Yellow/<stem>_yellow.tif`` and ``Green/<stem>_green.tif``; with ``Sort
-    Into Folders`` off they all go in ``brf_dir`` itself. Returns the results
-    row: ``Image`` (``image_name``, default ``<stem>_roi.png`` as in
-    QuantificationResults.csv) and the :func:`cabana.brf.band_stats` columns.
-    """
-    from .segmenter import load_roi_mask
-    rgb = cv2.imread(image_path, cv2.IMREAD_COLOR)
-    cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB, dst=rgb)                  # in place: no second copy
-    mask = load_roi_mask(roi_mask_path, rgb.shape)
-    region = None if mask is None else mask > 0
-    return _brf_outputs(args, rgb, region, stem, brf_dir, pixel_size_um, visuals,
-                        image_name or stem + "_roi.png")
-
-
-def _brf_outputs(args, rgb, region, stem, brf_dir, pixel_size_um, visuals, image_name):
+def _brf_outputs(params, rgb, region, stem, brf_dir, pixel_size_um, visuals, image_name):
     """Measure one RGB image and write its BRF table and images, in strips
     (cabana.brf.measure / band_image) so that whole sections fit in memory:
     besides the image, only one output image is held at a time."""
-    params = brf.settings(args)
     stats = brf.measure(rgb, params, region=region, pixel_size_um=pixel_size_um)
-    stats_dir = brf_folder(args, brf_dir, BRF_STATS_DIR)
+    stats_dir = brf_folder(params, brf_dir, BRF_STATS_DIR)
     os.makedirs(stats_dir, exist_ok=True)
     write_brf_image_stats(join_path(stats_dir, f"{stem}_statistics.csv"), stats, params,
                           pixel_size_um, region is not None)
     if visuals:
         for key, folder, suffix in BRF_IMAGES:
-            out_dir = brf_folder(args, brf_dir, folder)
+            out_dir = brf_folder(params, brf_dir, folder)
             os.makedirs(out_dir, exist_ok=True)
             write_calibrated_tiff(join_path(out_dir, f"{stem}_{suffix}.tif"),
                                   brf.band_image(rgb, params, key), pixel_size_um)
-        write_calibrated_tiff(join_path(brf_folder(args, brf_dir, "Total"), f"{stem}_original.tif"),
+        write_calibrated_tiff(join_path(brf_folder(params, brf_dir, "Total"), f"{stem}_original.tif"),
                               rgb, pixel_size_um)
     return {"Image": image_name, **stats}
 
 
-BRF_PARAMETERS_FILE = "BRF_Parameters.yml"
+# Record of a Run Folder's settings and folders (not a Cabana parameter file)
+BRF_SETTINGS_FILE = "BRF_Settings.yml"
 
 
 def read_rgb8(path):
@@ -395,17 +359,21 @@ def read_rgb8(path):
     return cv2.cvtColor(img, cv2.COLOR_BGR2RGB, dst=img)           # in place: no second copy
 
 
-def run_brf_folder(args, input_dir, out_dir, mask_dir=None, visuals=True, progress=None, cancel=None):
+def run_brf_folder(settings, input_dir, out_dir, mask_dir=None, visuals=True, progress=None, cancel=None):
     """Birefringence colour bands of every image in ``input_dir`` (the
     Birefringence page's Run Folder): no segmentation or fibre analysis.
 
-    Each image is measured inside its ROI mask from ``mask_dir`` (matched by
-    name, as in Batch Run) or whole, at the pixel size in its metadata (1 µm
-    when absent), and written by :func:`run_brf`'s rules into ``out_dir``
-    (``Total``, ``Red``, ``Yellow``, ``Green``, ``Stats``; flat when ``Sort
-    Into Folders`` is off), with ``Stats/ResultsBRF.csv`` for all images and
-    the parameters used in ``BRF_Parameters.yml``. Existing files of the same
-    names are replaced; nothing else is deleted.
+    ``settings`` are the band settings (:data:`cabana.brf.DEFAULTS` keys;
+    missing keys take the macro defaults). Each image is measured inside its
+    ROI mask from ``mask_dir`` (matched by name, as in Batch Run) or whole, at
+    the pixel size in its metadata (1 µm when absent). ``out_dir`` receives
+    ``Total/<stem>_total.tif`` and ``<stem>_original.tif``,
+    ``Red/<stem>_red_orange.tif``, ``Yellow/<stem>_yellow.tif``,
+    ``Green/<stem>_green.tif`` (when ``visuals``), ``Stats/<stem>_statistics.csv``
+    and ``Stats/ResultsBRF.csv`` for all images (all in ``out_dir`` itself
+    when ``Sort Into Folders`` is off), and the settings and folders used in
+    ``BRF_Settings.yml``. Existing files of the same names are replaced;
+    nothing else is deleted.
 
     ``progress(done, total, name)`` is called before each image and
     ``cancel()`` checked between images. Returns ``{'done', 'total',
@@ -426,10 +394,11 @@ def run_brf_folder(args, input_dir, out_dir, mask_dir=None, visuals=True, progre
     paths = sorted(get_img_paths(input_dir))
     if not paths:
         raise ValueError(f"No supported images in {input_dir}.")
+    params = brf.settings(settings)
     os.makedirs(out_dir, exist_ok=True)
-    with open(join_path(out_dir, BRF_PARAMETERS_FILE), "w") as f:
-        yaml.safe_dump({"Configs": {"Birefringence": True}, "Birefringence": brf.settings(args),
-                        "Input Folder": input_dir, "ROI Mask Folder": mask_dir or ""}, f, sort_keys=False)
+    with open(join_path(out_dir, BRF_SETTINGS_FILE), "w") as f:
+        yaml.safe_dump({"Birefringence": params, "Input Folder": input_dir,
+                        "ROI Mask Folder": mask_dir or "", "Save Images": bool(visuals)}, f, sort_keys=False)
 
     rows, skipped, no_size, cancelled = [], [], 0, False
     for k, path in enumerate(paths):
@@ -455,9 +424,9 @@ def run_brf_folder(args, input_dir, out_dir, mask_dir=None, visuals=True, progre
             px, no_size = 1.0, no_size + 1
         stem = os.path.splitext(name)[0]
         mask = load_roi_mask(find_external_mask(mask_dir, stem), rgb.shape) if mask_dir else None
-        rows.append(_brf_outputs(args, rgb, None if mask is None else mask > 0, stem, out_dir, px,
+        rows.append(_brf_outputs(params, rgb, None if mask is None else mask > 0, stem, out_dir, px,
                                  visuals, name))
-    results = join_path(brf_folder(args, out_dir, BRF_STATS_DIR), BRF_RESULTS)
+    results = join_path(brf_folder(params, out_dir, BRF_STATS_DIR), BRF_RESULTS)
     if rows:
         write_brf_results(rows, results)
     if no_size:
@@ -511,15 +480,6 @@ def write_brf_results(rows, path):
     """``ResultsBRF.csv``: one row per image (``run_brf`` rows)."""
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     pd.DataFrame(rows).to_csv(path, index=False, float_format="%.4f")
-
-
-def merge_brf_columns(df, rows):
-    """``df`` (a QuantificationResults frame) with the BRF summary columns of
-    ``rows`` joined on ``Image``."""
-    if not rows:
-        return df
-    brf_df = pd.DataFrame(rows)[["Image", *BRF_SUMMARY_COLUMNS]]
-    return df.merge(brf_df, on="Image", how="left")
 
 
 def _range_from_params(section, min_key, max_key, step_key, cast=float):

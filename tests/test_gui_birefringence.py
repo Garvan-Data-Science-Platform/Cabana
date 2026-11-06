@@ -16,7 +16,7 @@ from PyQt5.QtCore import QEventLoop, QTimer  # noqa: E402
 from PyQt5.QtWidgets import QApplication  # noqa: E402
 
 from cabana import brf  # noqa: E402
-from tests.test_brf_pipeline import pol_image  # noqa: E402
+from tests.test_brf_folder import pol_image  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -55,29 +55,16 @@ def _separate(win, monkeypatch):
     return shown
 
 
-def test_page_sits_after_segmentation_and_is_left_out_of_batch_run(win):
+def test_page_sits_after_segmentation_and_starts_at_the_macro_defaults(win):
     titles = win._page_titles
     assert titles.index("Birefringence") == titles.index("Segmentation") + 1
     assert win.pages.indexOf(win.brf_tab) == titles.index("Birefringence")
-    assert not win.toggle_brf_btn.isChecked() and not win.brf_btn.isEnabled()      # no image yet
-    assert "Include in Batch Run" in win.toggle_brf_label.text() and "No" in win.toggle_brf_label.text()
-    assert win.brf_brightness_slider.isEnabled() and win.brf_view_combo.currentText() == "Grid"
-    assert win.yml_data["Configs"]["Birefringence"] is False
-    assert win.yml_data["Birefringence"] == brf.DEFAULTS
-
-
-def test_toggle_only_decides_whether_batch_run_includes_the_step(win, tmp_path):
-    win.toggle_brf_btn.setChecked(True)
-    assert win.yml_data["Configs"]["Birefringence"] is True and "Yes" in win.toggle_brf_label.text()
-    _open(win, tmp_path, pol_image())
-    assert win.brf_btn.isEnabled() and not win.brf_note.isVisible()
-    win.toggle_brf_btn.setChecked(False)
-    assert win.yml_data["Configs"]["Birefringence"] is False and "No" in win.toggle_brf_label.text()
-    assert win.brf_btn.isEnabled() and win.brf_brightness_slider.isEnabled()
+    assert not win.brf_btn.isEnabled() and win.brf_view_combo.currentText() == "Grid"   # no image yet
+    assert win._brf_settings == brf.DEFAULTS
+    assert win.brf_brightness_slider.value() == 10 and win.brf_band_values[2].text() == "(48, 140)"
 
 
 def test_separate_shows_the_class_map_and_a_summary(win, tmp_path, monkeypatch, app):
-    win.toggle_brf_btn.setChecked(True)
     _open(win, tmp_path, pol_image())
     shown = _separate(win, monkeypatch)
     masks, gate = brf.separate(win.ori_img, brf.settings({}))
@@ -103,52 +90,41 @@ def test_separate_shows_the_class_map_and_a_summary(win, tmp_path, monkeypatch, 
 
 
 def test_bands_stay_joined(win):
-    win.toggle_brf_btn.setChecked(True)
     red, yellow, green = win.brf_band_sliders
     red.setValues(0, 35)
     assert (yellow.lower_value, yellow.upper_value) == (36, 47)
     yellow.setValues(20, 60)
     assert (red.lower_value, red.upper_value) == (0, 19)
     assert (green.lower_value, green.upper_value) == (61, 140)
-    params = win.yml_data["Birefringence"]
+    params = win._brf_settings
     assert [params[k] for k in ("Red-Orange Max", "Yellow Min", "Yellow Max", "Green Min")] == [19, 20, 60, 61]
     assert win.brf_band_values[1].text() == "(20, 60)"
 
 
-def test_red_orange_wraps_below_zero(win, tmp_path):
-    win.toggle_brf_btn.setChecked(True)
+def test_red_orange_wraps_below_zero(win):
     win.brf_band_sliders[0].setValues(-26, 27)
-    params = win.yml_data["Birefringence"]
+    params = win._brf_settings
     assert (params["Red-Orange Min"], params["Red-Orange Max"]) == (230, 27)
     assert win.brf_band_values[0].text() == "(230, 27)"
-    # a parameter file with a wrapping range sets the slider below zero
-    data = yaml.safe_load(open(os.path.join(os.path.dirname(__file__), "..", "cabana", "default_params.yml")))
-    data["Birefringence"].update({"Red-Orange Min": 240, "Brightness Threshold": 20, "Saturation Min": 3,
-                                  "Sort Into Folders": False})
-    data["Configs"]["Birefringence"] = True
-    win.yml_data = data
-    win.apply_params_to_widgets()
-    assert win.brf_band_sliders[0].lower_value == -16 and win.brf_band_values[0].text() == "(240, 27)"
-    assert win.brf_brightness_slider.value() == 20 and win.brf_saturation_slider.value() == 3
-    assert not win.brf_sort_cb.isChecked() and win.toggle_brf_btn.isChecked()
-    assert win.yml_data["Birefringence"]["Red-Orange Min"] == 240
+    hue = np.array([[229, 230, 255, 0, 27]], np.uint8)
+    on = np.full(hue.shape, 255, np.uint8)
+    masks, _ = brf.band_masks(hue, on, on, brf.band_ranges(params))
+    assert masks[0].tolist() == [[False, True, True, True, True]]
 
-
-def test_old_parameter_file_without_the_section_keeps_brf_off(win):
-    data = yaml.safe_load(open(os.path.join(os.path.dirname(__file__), "..", "cabana", "default_params.yml")))
-    del data["Birefringence"]
-    del data["Configs"]["Birefringence"]
-    win.toggle_brf_btn.setChecked(True)
-    win.yml_data = data
-    win.apply_params_to_widgets()
-    assert not win.toggle_brf_btn.isChecked()
-    assert brf.settings(win.yml_data) == brf.DEFAULTS
-
-
-def test_sort_checkbox_writes_the_parameter(win):
-    win.toggle_brf_btn.setChecked(True)
+def test_page_settings_stay_out_of_the_parameter_file(win, tmp_path, monkeypatch):
+    import yaml
+    from PyQt5.QtWidgets import QFileDialog
     win.brf_sort_cb.setChecked(False)
-    assert win.yml_data["Birefringence"]["Sort Into Folders"] is False
+    win.brf_brightness_slider.setValue(30)
+    assert win._brf_settings["Sort Into Folders"] is False and win._brf_settings["Brightness Threshold"] == 30
+    out = tmp_path / "exported.yml"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (str(out), "")))
+    win.export_parameters()
+    exported = yaml.safe_load(open(out))
+    assert "Birefringence" not in exported and "Birefringence" not in exported["Configs"]
+    # importing or restoring parameters leaves the page alone
+    win.restore_default_parameters()
+    assert win.brf_brightness_slider.value() == 30
 
 
 def test_brightfield_image_shows_the_note(win, tmp_path):
@@ -159,7 +135,6 @@ def test_brightfield_image_shows_the_note(win, tmp_path):
 
 
 def test_opening_an_image_drops_the_previous_separation(win, tmp_path, monkeypatch):
-    win.toggle_brf_btn.setChecked(True)
     _open(win, tmp_path, pol_image())
     _separate(win, monkeypatch)
     assert win._brf_hsb is not None and win.brf_summary_label.text()
@@ -178,7 +153,6 @@ def test_theme_switch_restyles_the_page(win):
 
 
 def test_separate_button_runs_the_worker(win, tmp_path, app):
-    win.toggle_brf_btn.setChecked(True)
     _open(win, tmp_path, pol_image())
     win.brf_btn.click()
     assert win.brf_btn.text() == "Separating..." and not win.brf_btn.isEnabled()
@@ -188,26 +162,6 @@ def test_separate_button_runs_the_worker(win, tmp_path, app):
         settle(app, 50)
     assert win._brf_hsb is not None and win.brf_btn.text() == "Separate" and win.brf_btn.isEnabled()
     assert "of the signal" in win.brf_summary_label.text()
-
-
-def test_combine_bf_and_pol_results_from_the_file_menu(win, tmp_path, monkeypatch):
-    import pandas as pd
-    bf, pol, out = tmp_path / "bf.csv", tmp_path / "pol.csv", tmp_path / "combined.csv"
-    pd.DataFrame({"Image": ["A.vsi_BF_S01_roi.png", "A.vsi_BF_S02_roi.png"], "X": [1, 2]}).to_csv(bf, index=False)
-    pd.DataFrame({"Image": ["A.vsi_POL_S01_roi.png"], "BRF Total (% Region)": [50.0]}).to_csv(pol, index=False)
-    messages = []
-    monkeypatch.setattr(win, "_ask_combine_paths", lambda: (str(bf), str(pol), str(out)))
-    monkeypatch.setattr(win, "_notify", lambda *a, **k: messages.append((a, k)))
-    assert "Combine BF and POL" in win.combine_results_action.text()
-    win.combine_results_action.trigger()
-    combined = pd.read_csv(out)
-    assert combined["POL: BRF Total (% Region)"].tolist()[0] == 50.0 and len(combined) == 2
-    (title, text, info), kwargs = messages[-1]
-    assert text.startswith("1 sample has") and "1 BF and 0 POL" in info and not kwargs
-
-    pd.DataFrame({"Image": ["no_token_roi.png"], "X": [1]}).to_csv(bf, index=False)
-    win.combine_results_action.trigger()
-    assert messages[-1][1] == {"warning": True} and "no BF/POL" in messages[-1][0][2]
 
 
 def _wait(app, condition, steps=200):
@@ -221,7 +175,7 @@ def _wait(app, condition, steps=200):
 def test_run_folder_separates_a_folder(win, tmp_path, monkeypatch, app):
     import pandas as pd
     from cabana.stages import BRF_RESULTS
-    from tests.test_brf_pipeline import _write_inputs
+    from tests.test_brf_folder import _write_inputs
     img_dir, mask_dir = _write_inputs(tmp_path, names=("sec1", "sec2"))
     # QuPath layout: stroma/ next to stroma_mask/ is found automatically
     stroma = tmp_path / "stroma"
@@ -248,7 +202,7 @@ def test_run_folder_separates_a_folder(win, tmp_path, monkeypatch, app):
 
 
 def test_run_folder_asks_before_writing_into_a_non_empty_folder(win, tmp_path, monkeypatch):
-    from tests.test_brf_pipeline import _write_inputs
+    from tests.test_brf_folder import _write_inputs
     img_dir, _ = _write_inputs(tmp_path)
     out = tmp_path / "out"
     out.mkdir()
@@ -262,7 +216,7 @@ def test_run_folder_asks_before_writing_into_a_non_empty_folder(win, tmp_path, m
 
 
 def test_run_folder_reports_an_output_folder_holding_the_input(win, tmp_path, monkeypatch, app):
-    from tests.test_brf_pipeline import _write_inputs
+    from tests.test_brf_folder import _write_inputs
     img_dir, _ = _write_inputs(tmp_path)
     win.set_brf_input_folder(img_dir)
     win.set_brf_output_folder(str(tmp_path))                     # the input's parent

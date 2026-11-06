@@ -93,9 +93,6 @@ class BatchCabana:
         self.color_dir = join_path(self.output_folder, 'Colors', "")
         self.eligible_dir = join_path(self.output_folder, 'Eligible')
         self.roimask_dir = join_path(self.output_folder, 'ROIMasks', "")
-        # Birefringence results (made only when Configs: Birefringence is on)
-        self.brf_dir = join_path(self.output_folder, 'BRF', "")
-        self.brf_rows = []
 
         create_folder(self.eligible_dir)
         create_folder(self.roimask_dir)
@@ -387,24 +384,6 @@ class BatchCabana:
 
         df_skel = pd.DataFrame(rows)
         self.df_stats = self.df_stats.merge(df_skel, on="Image")
-
-    def quantify_brf(self):
-        """Birefringence colour bands of every eligible image (Configs: Birefringence)."""
-        from .stages import brf_enabled, brf_folder, run_brf, write_brf_results, BRF_RESULTS, BRF_STATS_DIR
-        self.brf_rows = []
-        if not brf_enabled(self.args):
-            return
-        img_paths = sorted(list_files(self.eligible_dir, '*.png'))
-        Log.logger.debug(f'Measuring birefringence colour bands of {len(img_paths)} images.')
-        for img_path in img_paths:
-            stem = os.path.basename(img_path)[:-4]
-            self._status(f"Birefringence: {stem}")
-            self.brf_rows.append(run_brf(self.args, img_path, stem, self.brf_dir,
-                                         roi_mask_path=self._roi_mask_path(img_path),
-                                         pixel_size_um=self.ims_res, visuals=self._visuals()))
-            self._tick()
-        write_brf_results(self.brf_rows,
-                          join_path(brf_folder(self.args, self.brf_dir, BRF_STATS_DIR), BRF_RESULTS))
 
     def quantify_hdm(self):
         from .stages import run_hdm
@@ -952,11 +931,6 @@ class BatchCabana:
                 "No segmentation results available. Dropping columns with 'ROI'.")
             df_results.drop(list(df_results.filter(regex="ROI")), axis=1, inplace=True)
 
-        # Birefringence columns (named "% Region", so the drop above keeps them)
-        if self.brf_rows:
-            from .stages import merge_brf_columns
-            df_results = merge_brf_columns(df_results, self.brf_rows)
-
         # save to new csv file
         final_csv = join_path(self.output_folder, 'QuantificationResults.csv')
         df_results.to_csv(final_csv, index=False, float_format='%.3f')
@@ -995,7 +969,6 @@ class BatchCabana:
             Log.logger.warning("No eligible images found. No further analysis will be conducted.")
         else:
             self.generate_rois()
-            self.quantify_brf()
             if self.args["Configs"]["Quantification"]:
                 self.quantify_images()
                 self.calc_fibre_areas()
@@ -1031,9 +1004,6 @@ class BatchCabana:
             ticks += sum(self._seg_weight(p) for p in get_img_paths(self.input_folder))
         else:
             ticks += n_input
-        from .stages import brf_enabled
-        if brf_enabled(self.args):
-            ticks += n_eligible          # quantify_brf
         if self.args["Configs"]["Quantification"]:
             ticks += n_eligible          # quantify_hdm (coarse)
             ticks += n_eligible          # detect_fibres
@@ -1520,31 +1490,6 @@ class BatchProcessor():
                 os.remove(dst)
             shutil.move(src, dst)
 
-    def _consolidate_brf(self):
-        """Move the birefringence images and per-image tables of every batch into
-        ``<output>/BRF`` (same sub-folders) and merge the batches'
-        ``ResultsBRF.csv``. Those stay in the batch folders, like
-        ``ResultsHDM.csv``, so an interrupted consolidation can be repeated."""
-        from .stages import BRF_RESULTS
-        tables = {}
-        for batch_idx in range(self.batch_num + 1):
-            src = join_path(self.output_folder, 'Batches', "batch_" + str(batch_idx), 'BRF')
-            if not os.path.isdir(src):
-                continue
-            for root, _, files in os.walk(src):
-                rel = os.path.relpath(root, src)
-                dst_dir = os.path.normpath(join_path(self.output_folder, 'BRF', rel))
-                for name in sorted(files):
-                    if name == BRF_RESULTS:
-                        tables.setdefault(dst_dir, []).append(pd.read_csv(join_path(root, name)))
-                    else:
-                        os.makedirs(dst_dir, exist_ok=True)
-                        self._move_into(join_path(root, name), join_path(dst_dir, name))
-        for dst_dir, frames in tables.items():
-            os.makedirs(dst_dir, exist_ok=True)
-            pd.concat(frames, ignore_index=True).to_csv(join_path(dst_dir, BRF_RESULTS), index=False,
-                                                        float_format="%.4f")
-
     def post_process(self):
         """
         Consolidate batch results after processing is complete.
@@ -1635,7 +1580,6 @@ class BatchProcessor():
                 for folder in [f.name for f in os.scandir(src_parent) if f.is_dir()]:
                     self._move_into(join_path(src_parent, folder),
                                     join_path(self.output_folder, parent, folder))
-        self._consolidate_brf()
         current_step += 1
         self.update_progress(post_span_start + (current_step / total_steps) * post_span)
 

@@ -59,10 +59,11 @@ def test_hsb_rejects_non_8bit_rgb():
 
 
 def test_settings_fill_missing_keys_with_the_macro_defaults():
-    params = brf.settings({"Birefringence": {"Green Max": 150}})
+    params = brf.settings({"Green Max": 150})
     assert params["Green Max"] == 150 and params["Brightness Threshold"] == 10
     assert brf.band_ranges(params) == [(0, 27), (28, 47), (48, 150)]
-    assert brf.band_ranges(brf.settings({})) == [(0, 27), (28, 47), (48, 140)]
+    assert brf.band_ranges(brf.settings()) == [(0, 27), (28, 47), (48, 140)]
+    assert brf.settings() == brf.DEFAULTS and brf.settings() is not brf.DEFAULTS
 
 
 def test_band_edges_are_inclusive_and_the_gate_applies():
@@ -81,7 +82,7 @@ def test_saturation_min_drops_grey_pixels():
     rgb = _image((60, 60, 60), (200, 40, 10))
     masks, _ = brf.separate(rgb, brf.settings({}))
     assert masks[0].tolist() == [[True, True]]
-    masks, _ = brf.separate(rgb, brf.settings({"Birefringence": {"Saturation Min": 1}}))
+    masks, _ = brf.separate(rgb, brf.settings({"Saturation Min": 1}))
     assert masks[0].tolist() == [[False, True]]
 
 

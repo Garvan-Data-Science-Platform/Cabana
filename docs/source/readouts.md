@@ -8,9 +8,9 @@ Values referring to *WIDTH*, *ROI* and *HDM* are based on the following outputs:
 
 ## Compact results
 
-`QuantificationResults_Compact.csv` (and `<image>_QuantificationResults_Compact.csv` for a single-image run) holds the same rows as the full file with the following columns, in this order: Image, Total Image Area, % HDM Area, Avg Thickness (HDM), Mean Fibre Intensity (HDM), % ROI Area, Avg Thickness (ROI), Mean Fibre Intensity (ROI), % WIDTH Area, Fibre Coverage (WIDTH/ROI), Avg Thickness (WIDTH), Mean Fibre Intensity (WIDTH), Lacunarity, Total Length, Avg Length, Endpoints Density, Branchpoints Density, Box-Counting Fractal Dimension, Curvature (every window), Orient. Alignment and Variance (ROI and WIDTH), the Mean, Std, Median, Count and density of the gap radii (All and ROI), the birefringence % Region of each band and of all bands and % Signal of each band, and Image Res.
+`QuantificationResults_Compact.csv` (and `<image>_QuantificationResults_Compact.csv` for a single-image run) holds the same rows as the full file with the following columns, in this order: Image, Total Image Area, % HDM Area, Avg Thickness (HDM), Mean Fibre Intensity (HDM), % ROI Area, Avg Thickness (ROI), Mean Fibre Intensity (ROI), % WIDTH Area, Fibre Coverage (WIDTH/ROI), Avg Thickness (WIDTH), Mean Fibre Intensity (WIDTH), Lacunarity, Total Length, Avg Length, Endpoints Density, Branchpoints Density, Box-Counting Fractal Dimension, Curvature (every window), Orient. Alignment and Variance (ROI and WIDTH), the Mean, Std, Median, Count and density of the gap radii (All and ROI), and Image Res.
 
-Every column left out restates one that is kept: absolute fibre areas follow from the percentages and the total image area, raw endpoint and branchpoint counts from their densities, gap areas from gap radii, the percentile and normalized gap statistics from the mean, standard deviation and median, and the whole-image and HDM orientation pairs rarely differ from the ROI and WIDTH ones. With **Stats** ticked, `QuantificationResults_Compact_MEAN_STD_SEM.csv` gives the per-patient mean, STD and SEM of these columns; with **Scores** ticked, `QuantificationResults_Compact_SCORES.csv` gives the per-patient means of these columns with the Rigidity and Bundling scores, which are identical to those in the full scores file (the scores use only compact columns). The full `QuantificationResults_MEAN_STD_SEM.csv` and `QuantificationResults_SCORES.csv` are unchanged and remain the input for any modelling: columns left out of the compact files (for example normalized lacunarity, gap areas or the absolute HDM area) are still legitimate features, the compact files are for reading, not a reduced feature set. Columns a run did not produce (segmentation, HDM, gap analysis or birefringence off) are left out.
+Every column left out restates one that is kept: absolute fibre areas follow from the percentages and the total image area, raw endpoint and branchpoint counts from their densities, gap areas from gap radii, the percentile and normalized gap statistics from the mean, standard deviation and median, and the whole-image and HDM orientation pairs rarely differ from the ROI and WIDTH ones. With **Stats** ticked, `QuantificationResults_Compact_MEAN_STD_SEM.csv` gives the per-patient mean, STD and SEM of these columns; with **Scores** ticked, `QuantificationResults_Compact_SCORES.csv` gives the per-patient means of these columns with the Rigidity and Bundling scores, which are identical to those in the full scores file (the scores use only compact columns). The full `QuantificationResults_MEAN_STD_SEM.csv` and `QuantificationResults_SCORES.csv` are unchanged and remain the input for any modelling: columns left out of the compact files (for example normalized lacunarity, gap areas or the absolute HDM area) are still legitimate features, the compact files are for reading, not a reduced feature set. Columns a run did not produce (segmentation, HDM or gap analysis off) are left out.
 
 ## Statistics Interpretations
 
@@ -100,20 +100,18 @@ Gap sizes come from the maximum inscribed circles fitted between fibres; *All ga
 | Gap Circles Count (ROI) | Total number of Max Inscribed Circles in ROI |  |
 | Gap density (ROI, number/µm²) | Number of Max Inscribed Circles per µm² in ROI |  |
 
-## Birefringence (BRF) Results
+## Birefringence colour bands
 
-With `Configs: Birefringence` on, every image gets the columns below, for each band (Red-Orange, Yellow, Green). The **region** is the image's ROI mask (a TMA core or a stroma mask exported from QuPath), or the whole image when there is none. It is called the region rather than the ROI because Cabana's ROI columns refer to the segmented fibre area.
+**Run Folder** on the Birefringence page writes `Stats/ResultsBRF.csv` with one row per image (the Image column is the file name), and `Stats/<image>_statistics.csv` with one row per band and a short legend. For each band (Red-Orange, Yellow, Green) the **region** is the image's ROI mask (a TMA core or a stroma mask exported from QuPath), or the whole image when there is none.
 
 | Result | Meaning | Calculation method |
 |---|---|---|
-| BRF \<band\> Area (µm²) | Area of the band in the region | Band pixels in the region × (Image Resolution (µm/pp))² |
+| BRF \<band\> Pixels | Pixels of the band in the region | A pixel belongs to a band when its hue is in the band's range, its brightness is at least the Brightness Threshold and its saturation at least the Saturation Min |
+| BRF \<band\> Area (µm²) | Area of the band in the region | Band pixels × (pixel size (µm))², the pixel size read from the image |
 | BRF \<band\> (% Region) | Share of the region in the band | Band pixels / region pixels × 100 |
+| BRF \<band\> (% Image) | Share of the whole image in the band | Band pixels in the image / image pixels × 100 (the macro's measure for an image without a mask) |
 | BRF \<band\> (% Signal) | Share of the birefringent signal in the band; the three bands sum to 100 | Band pixels / pixels in all bands × 100 (the macro's "% Area") |
-| BRF \<band\> (% Intensity) | Share of the signal's brightness in the band | Summed grey level of the band / summed grey level of all bands × 100 |
-| BRF Total Area (µm²) | Area of all bands together | Pixels in any band × (Image Resolution (µm/pp))² |
-| BRF Total (% Region) | Share of the region that is birefringent | Pixels in any band / region pixels × 100 |
-| BRF Unclassified (% Region) | Bright, saturated enough pixels in no band, e.g. deep red just below the hue wrap | Such pixels / region pixels × 100 |
-
-A pixel belongs to a band when its hue is in the band's range, its brightness is at least the Brightness Threshold and its saturation at least the Saturation Min (see [Birefringence Parameters](parameters.md#birefringence-parameters)).
-
-`BRF/Stats/ResultsBRF.csv` (or `Stats/ResultsBRF.csv` in the output folder of the Birefringence page's **Run Folder**, where the Image column is the image's file name) holds one row per image with these columns and, in addition, the pixel count, the summed intensity and the % Image of each band (band pixels over the whole image, the macro's measure for an image without a mask), and the pixel counts of the region and the image. `BRF/Stats/<image>_statistics.csv` gives the same numbers for one image, one row per band, with a short legend.
+| BRF \<band\> Sum Intensity, (% Intensity) | Summed grey level of the band, and its share of all bands' | |
+| BRF Total Pixels, Area (µm²), (% Region) | All bands together | |
+| BRF Unclassified Pixels, (% Region) | Pixels bright and saturated enough but in no band, e.g. deep red just below the hue wrap | |
+| Region Pixels, Image Pixels | Size of the region and of the image | |

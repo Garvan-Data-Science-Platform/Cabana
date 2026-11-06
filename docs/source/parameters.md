@@ -11,7 +11,6 @@ All parameters live in the YAML parameter file (`Parameters.yml`, exported from 
 | Configs | Gap Analysis | true | on/off | Gap Analysis page toggle |
 | Configs | Max Size | 5000 (0 = no limit) | px (side) | Segmentation page |
 | Configs | Save Visualisations | true | on/off | Batch Run page (per run) |
-| Configs | Birefringence | false | on/off | Birefringence page (Include in Batch Run) |
 | Segmentation | Number of Labels | 32 | count | slider |
 | Segmentation | Max Iterations | 30 | count | slider |
 | Segmentation | Normalized Hue Value | 0.96 | 0 to 1 | colour picker |
@@ -30,10 +29,6 @@ All parameters live in the YAML parameter file (`Parameters.yml`, exported from 
 | Quantification | Minimum Branch Length | 5 | px | Fibre Detection page slider |
 | Quantification | Minimum / Maximum Curvature Window, Curvature Window Step | 10 / 30 / 10 | px | Fibre Detection page range slider and slider |
 | Gap Analysis | Minimum Gap Diameter | 20 | px | slider |
-| Birefringence | Brightness Threshold | 10 | grey level (0-255) | slider |
-| Birefringence | Saturation Min | 0 | 0-255 | slider |
-| Birefringence | Red-Orange / Yellow / Green Min and Max | 0-27 / 28-47 / 48-140 | hue (0-255) | range sliders |
-| Birefringence | Sort Into Folders | true | on/off | Birefringence page checkbox |
 
 The folders of a run (parameter file, input, output and the optional ROI mask folder) are chosen on the Batch Run page and are not part of the parameter file; the folders used are recorded in `version_params.yaml` in the output folder.
 
@@ -164,23 +159,3 @@ if the `Dark Line` is set to `true` (for Picrosirius Red), the low contrast and 
 1. **Minimum Gap Diameter**
 
    The minimal gap diameter for gap analysis.
-
-## Birefringence Parameters
-
-Under polarised light, Picrosirius Red stained collagen shines red-orange, yellow or green, roughly from thick, densely packed fibres to thin, loosely packed ones. With `Configs: Birefringence` set to `true` (**Include in Batch Run** on the Birefringence page), a Batch Run classifies each pixel of a polarised-light (POL) image into these colour bands, as the CMM Lab PR-BRF Analyser ImageJ macro does. Hue, saturation and brightness are computed exactly as ImageJ's HSB stack, so with the default settings the band pixel counts equal those of the macro. The step runs on the original image, inside the ROI mask when one is given; the segmentation mask is not used. The settings are on the Birefringence page. It runs with segmentation and quantification on or off. **Run Folder** on the Birefringence page applies the same settings to a folder of images without the rest of the pipeline. Use it on polarised-light images only: on a bright-field image the bands are meaningless.
-
-1. **Brightness Threshold**
-
-   Pixels darker than this (the brightest of R, G and B, 0 to 255) are background and belong to no band. The default value is 10, as in the macro.
-
-2. **Saturation Min**
-
-   Pixels less saturated than this (0 to 255) belong to no band. The default value 0 keeps every pixel, as in the macro; grey pixels then count as red-orange, because a grey pixel's hue is 0. Raise it to 1 or more to leave grey pixels out.
-
-3. **Red-Orange, Yellow and Green Min / Max**
-
-   The hue range of each band on ImageJ's 0 to 255 hue scale, inclusive. The defaults are those of the macro: red-orange 0 to 27, yellow 28 to 47 and green 48 to 140. A range whose minimum is above its maximum wraps past 255: for example 230 to 27 also counts the deep red pixels with hues 230 to 255, which the default red-orange band leaves out (they are reported as unclassified).
-
-4. **Sort Into Folders**
-
-   Sorts the band images into `Total`, `Red`, `Yellow` and `Green` folders and the tables into `Stats`, inside the `BRF` folder of a Batch Run or the output folder of the Birefringence page's **Run Folder**. When off, all files go in one folder.

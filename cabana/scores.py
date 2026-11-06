@@ -6,7 +6,6 @@ Provides:
 - generate_mean_std_sem(): aggregate ROI-level results to per-patient stats
 - compute_scores(): compute Rigidity and Bundling collagen risk scores
 - compact_results(): the short column set of QuantificationResults_Compact.csv
-- combine_modalities(): one row per sample from a bright-field and a polarised-light run
 """
 
 import re
@@ -58,13 +57,6 @@ COMPACT_COLUMNS = (
     'Median (ROI gaps radius in µm)',
     'Gap Circles Count (ROI)',
     'Gap density (ROI, µm⁻²)',
-    'BRF Red-Orange (% Region)',
-    'BRF Yellow (% Region)',
-    'BRF Green (% Region)',
-    'BRF Total (% Region)',
-    'BRF Red-Orange (% Signal)',
-    'BRF Yellow (% Signal)',
-    'BRF Green (% Signal)',
     'Image Res. (µm/pixel)',
 )
 COMPACT_SUFFIX = '_Compact'
@@ -302,62 +294,3 @@ def compute_scores(agg_df, output_path):
 
     out_df.to_csv(output_path, index=False, float_format="%.3f")
     logger.info(f"Collagen risk scores written to {output_path}")
-
-
-# Modality token of an image name (bright-field or polarised light), as in
-# parse_image_name; XPL (cross-polarised) counts as polarised light.
-_MODALITY_TOKEN = re.compile(r'(?<=[_\s])(BF|POL|XPL)(?=[_\s])', re.IGNORECASE)
-
-
-def modality_key(image_name):
-    """The name shared by the bright-field and polarised-light images of one
-    sample: ``image_name`` without its BF/POL/XPL token and the ``_roi.png``
-    suffix Cabana adds, e.g. ``A1420.vsi_POL_S01_roi.png`` -> ``A1420.vsi_S01``
-    and ``1734.vsi - TMA1_BF_A4Annotation (Tumor)_1_roi.png`` ->
-    ``1734.vsi - TMA1_A4Annotation (Tumor)_1``. None without a token."""
-    stem = re.sub(r'(_roi)?\.(png|tif|tiff|jpg|jpeg)$', '', str(image_name), flags=re.IGNORECASE)
-    m = _MODALITY_TOKEN.search(stem)
-    if m is None:
-        return None
-    key = stem[:m.start()] + stem[m.end():]
-    return re.sub(r'([_\s])\1+', r'\1', key).strip(' _')
-
-
-def combine_modalities(bf_csv, pol_csv, output_path=None):
-    """Join the results of a bright-field run and a polarised-light run of the
-    same samples into one row per sample.
-
-    Rows are matched on :func:`modality_key` of their ``Image``; the columns
-    of each run are prefixed ``BF: `` and ``POL: ``. Images without a partner
-    keep a row with the other side empty. Returns ``(combined, counts)`` with
-    counts of ``matched``, ``bf_only`` and ``pol_only`` rows; writes
-    ``output_path`` when given. Raises ValueError when an image name has no
-    BF/POL token or two images of one run share a sample name.
-    """
-    sides = []
-    for path, prefix in ((bf_csv, 'BF'), (pol_csv, 'POL')):
-        df = pd.read_csv(path)
-        keys = df['Image'].map(modality_key)
-        if keys.isna().any():
-            bad = df.loc[keys.isna(), 'Image'].tolist()
-            raise ValueError(f"{prefix} results: no BF/POL in the image name of {', '.join(bad[:3])}"
-                             + (" ..." if len(bad) > 3 else ""))
-        dup = keys[keys.duplicated()].unique().tolist()
-        if dup:
-            raise ValueError(f"{prefix} results: several images of sample {', '.join(dup[:3])}"
-                             + (" ..." if len(dup) > 3 else ""))
-        df = df.add_prefix(f'{prefix}: ')
-        df.insert(0, 'Sample', keys.values)
-        sides.append(df)
-    combined = sides[0].merge(sides[1], on='Sample', how='outer', indicator=True)
-    counts = {'matched': int((combined['_merge'] == 'both').sum()),
-              'bf_only': int((combined['_merge'] == 'left_only').sum()),
-              'pol_only': int((combined['_merge'] == 'right_only').sum())}
-    combined = combined.drop(columns='_merge')
-    combined.insert(1, 'Patient', combined['Sample'].map(lambda s: parse_image_name(s)['patient_id']))
-    if output_path:
-        combined.to_csv(output_path, index=False, float_format='%.3f')
-    if counts['bf_only'] or counts['pol_only']:
-        logger.warning(f"{counts['bf_only']} BF and {counts['pol_only']} POL images have no partner "
-                       f"in the other run.")
-    return combined, counts

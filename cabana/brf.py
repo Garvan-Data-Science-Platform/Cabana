@@ -43,15 +43,13 @@ BRIGHTFIELD_MEAN = 100
 _CHUNK = 1 << 21          # pixels per chunk of the HSB conversion
 
 
-def settings(args):
-    """The ``Birefringence`` section of a parameter dict over the defaults."""
-    params = dict(DEFAULTS)
-    params.update((args or {}).get("Birefringence") or {})
-    return params
+def settings(overrides=None):
+    """The macro defaults (:data:`DEFAULTS`) with ``overrides`` applied."""
+    return dict(DEFAULTS, **(overrides or {}))
 
 
 def band_ranges(params):
-    """``[(min, max), ...]`` hue ranges of :data:`BANDS` from :func:`settings`."""
+    """``[(min, max), ...]`` hue ranges of :data:`BANDS` from settings."""
     return [(int(params[f"{band} Min"]), int(params[f"{band} Max"])) for band in BANDS]
 
 

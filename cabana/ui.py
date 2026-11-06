@@ -774,9 +774,9 @@ class BRFFolderWorker(QThread):
     run_complete = pyqtSignal(object)                 # the run_brf_folder summary
     failed = pyqtSignal(str)
 
-    def __init__(self, args, input_dir, output_dir, mask_dir=None, visuals=True):
+    def __init__(self, settings, input_dir, output_dir, mask_dir=None, visuals=True):
         super().__init__()
-        self.args, self.input_dir, self.output_dir = args, input_dir, output_dir
+        self.settings, self.input_dir, self.output_dir = settings, input_dir, output_dir
         self.mask_dir, self.visuals = mask_dir, visuals
         self._cancel = False
 
@@ -786,7 +786,7 @@ class BRFFolderWorker(QThread):
     def run(self):
         try:
             from .stages import run_brf_folder
-            summary = run_brf_folder(self.args, self.input_dir, self.output_dir, mask_dir=self.mask_dir,
+            summary = run_brf_folder(self.settings, self.input_dir, self.output_dir, mask_dir=self.mask_dir,
                                      visuals=self.visuals, cancel=lambda: self._cancel,
                                      progress=lambda done, total, name: self.progress_updated.emit(done, total, name))
             self.run_complete.emit(summary)

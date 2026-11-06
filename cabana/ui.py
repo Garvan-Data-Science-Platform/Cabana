@@ -716,36 +716,26 @@ class PathEdit(QLineEdit):
                              QFontMetrics(folder_font).elidedText(folder, Qt.ElideLeft, rest.width()))
 
 
-class RailNode(QWidget):
-    """One node of a data-flow rail: a dot (filled when its field holds a
-    path, hollow when empty) on a line joining it to its neighbours."""
+class PathDot(QWidget):
+    """The dot before a path row: filled when its field holds a path, hollow
+    when it is empty."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedWidth(22)
         self.filled = True
-        self.first = self.last = False
 
     def set_filled(self, filled):
         self.filled = bool(filled)
         self.update()
 
     def paintEvent(self, event):
-        pc = panel_colors()
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        accent = QColor(COLORS['highlight'])
-        line = QColor(accent)
-        line.setAlpha(140)
+        accent = COLORS['highlight']
         cy = self.height() / 2
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(line)
-        top = cy + 6 if self.first else 0
-        bottom = cy - 6 if self.last else self.height()
-        painter.drawRect(QRectF(6, top, 2, cy - 6 - top))
-        painter.drawRect(QRectF(6, cy + 6, 2, bottom - cy - 6))
-        painter.setBrush(accent if self.filled else pc['card'])
-        painter.setPen(QPen(accent if self.filled else pc['faint'], 1.5))
+        painter.setBrush(accent if self.filled else panel_colors()['card'])
+        painter.setPen(QPen(accent if self.filled else panel_colors()['faint'], 1.5))
         painter.drawEllipse(QRectF(2.5, cy - 4.5, 9, 9))
 
 
@@ -803,8 +793,7 @@ class SectionCard(QFrame):
         self.footer.setVisible(False)
         outer.addWidget(self.footer)
 
-        self._flow = None
-        self._rail = []
+        self._paths = None
         self._open = True
         self.restyle()
 
@@ -841,15 +830,14 @@ class SectionCard(QFrame):
         if not stretch:
             row.addStretch(1)
 
-    def add_flow_row(self, label, edit):
-        """A path row on the data-flow rail: the node is filled while ``edit``
-        holds a path. Consecutive flow rows share one rail."""
-        if self._flow is None:
-            self._flow = QVBoxLayout()
-            self._flow.setContentsMargins(0, 0, 0, 0)
-            self._flow.setSpacing(0)
-            self.body_layout.addLayout(self._flow)
-        node = RailNode()
+    def add_path_row(self, label, edit):
+        """A path row with a dot that is filled while ``edit`` holds a path."""
+        if self._paths is None:
+            self._paths = QVBoxLayout()
+            self._paths.setContentsMargins(0, 0, 0, 0)
+            self._paths.setSpacing(0)
+            self.body_layout.addLayout(self._paths)
+        node = PathDot()
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(0)
@@ -861,13 +849,10 @@ class SectionCard(QFrame):
         inner.addWidget(lab)
         inner.addWidget(edit, 1)
         row.addLayout(inner, 1)
-        self._flow.addLayout(row)
+        self._paths.addLayout(row)
         filled = lambda text: bool(text) and text != "Not selected"
         node.set_filled(filled(edit.text()))
         edit.textChanged.connect(lambda text: node.set_filled(filled(text)))
-        self._rail.append(node)
-        for i, n in enumerate(self._rail):
-            n.first, n.last = i == 0, i == len(self._rail) - 1
         return lab
 
     def add_widget(self, widget, alignment=None):

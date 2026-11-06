@@ -809,17 +809,18 @@ class MainWindow(QMainWindow):
         return btn
 
     def setup_batch_processing_tab(self):
-        """Set up the Batch Run page: a Data flow card from the inputs to the
-        results, and a Run card with this run's settings and the action."""
+        """Set up the Batch Run page: a Files card (the image, mask and results
+        folders and the parameter file) and a Run card with this run's
+        settings and the action."""
         layout = self._page_layout()
 
-        flow = SectionCard("Data flow")
+        flow = SectionCard("Files")
         self.input_folder_path = PathEdit("Not selected")
         self.input_folder_path.setToolTip("Images to analyse (TIFF/PNG/JPEG); the pixel size is read from their metadata.")
         self.input_btn = self.input_folder_path.pick_action
         self.input_btn.setToolTip("Choose the image folder")
         self.input_btn.triggered.connect(self.select_input_folder)
-        flow.add_flow_row("Images", self.input_folder_path)
+        flow.add_path_row("Images", self.input_folder_path)
 
         # Optional ROI mask folder (e.g. TMA core circles); empty = no masks
         self.mask_folder_path = PathEdit("")
@@ -832,7 +833,7 @@ class MainWindow(QMainWindow):
         self.mask_btn.triggered.connect(self.select_mask_folder)
         self.mask_clear_action = add_clear_action(self.mask_folder_path, self.clear_mask_folder,
                                                   "Clear the ROI mask folder (no masks)")
-        flow.add_flow_row("ROI masks", self.mask_folder_path)
+        flow.add_path_row("ROI masks", self.mask_folder_path)
         self.mask_folder = None
 
         self.param_file_path = PathEdit("Not selected", icon="file")
@@ -840,14 +841,14 @@ class MainWindow(QMainWindow):
         self.param_btn = self.param_file_path.pick_action
         self.param_btn.setToolTip("Choose the parameter file")
         self.param_btn.triggered.connect(self.select_param_file)
-        flow.add_flow_row("Parameters", self.param_file_path)
+        flow.add_path_row("Parameters", self.param_file_path)
 
         self.output_folder_path = PathEdit("Not selected")
         self.output_folder_path.setToolTip("Where the results go; also holds the checkpoint for resuming a run.")
         self.output_btn = self.output_folder_path.pick_action
         self.output_btn.setToolTip("Choose the results folder")
         self.output_btn.triggered.connect(self.select_output_folder)
-        flow.add_flow_row("Results", self.output_folder_path)
+        flow.add_path_row("Results", self.output_folder_path)
         layout.addWidget(flow)
 
         run = SectionCard("Run")
@@ -2345,7 +2346,7 @@ class MainWindow(QMainWindow):
             edit.setPlaceholderText(placeholder)
             edit.setToolTip(tip)
             edit.pick_action.triggered.connect(select)
-            folder.add_flow_row(label, edit)
+            folder.add_path_row(label, edit)
             return edit, edit.pick_action
 
         self.brf_input_path, self.brf_input_btn = folder_row(

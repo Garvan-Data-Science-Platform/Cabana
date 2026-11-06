@@ -75,7 +75,7 @@ Once the settings on the three pages are chosen, use **Parameters > Export Param
 
 ![Batch Run page](media/batch_processing.png)
 
-The **Data flow** card lists what goes into the run and where the results go; click a field or its folder (or file) icon to choose it, in any order.
+The **Files** card holds the folders and the parameter file of the run; click a field or its folder (or file) icon to choose it, in any order. The dot before each row fills once it is set.
 
 1. **Images.** The folder of images to quantify (tif, png and jpg are supported).
 2. **ROI masks** (optional). A folder of binary masks named like the input images (white = analyse, black = ignore), such as a `BF/Patients/Masks/` or `POL/Patients/Masks/` folder written by the TMA Dearrayer page, restricts every measurement to the masked region. Leave it empty to rely on segmentation alone; the clear icon in the field empties it. The mask folder is a per-run path like the input and output folders; it is not stored in the parameter file, but the folder used is recorded in `version_params.yaml` in the output folder.

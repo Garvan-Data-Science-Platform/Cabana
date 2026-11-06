@@ -142,7 +142,7 @@ def generate_spinner_style():
             color: {text};
             border: 1px solid {field};
             border-radius: 5px;
-            padding: 0px 48px 0px 8px;
+            padding: 0px 26px 0px 8px;      /* Qt reserves one button width more */
             min-height: 26px;
             font-size: {FONT_SIZES['base']}px;
             selection-background-color: {color_to_stylesheet(COLORS['highlight'])};
@@ -754,7 +754,7 @@ class SectionCard(QFrame):
     rows, and a footer (behind a divider) for the section's main action and
     its result. Styled by ``generate_panel_style`` through object names."""
 
-    LABEL_WIDTH = 118
+    LABEL_WIDTH = 110
     VALUE_WIDTH = 58
 
     def __init__(self, title, parent=None):
@@ -784,7 +784,7 @@ class SectionCard(QFrame):
 
         self.body = QWidget()
         self.body_layout = QVBoxLayout(self.body)
-        self.body_layout.setContentsMargins(14, 14, 14, 16)
+        self.body_layout.setContentsMargins(12, 14, 12, 16)
         self.body_layout.setSpacing(14)
         outer.addWidget(self.body)
 
@@ -797,7 +797,7 @@ class SectionCard(QFrame):
         divider.setFixedHeight(1)
         footer_outer.addWidget(divider)
         self.footer_layout = QVBoxLayout()
-        self.footer_layout.setContentsMargins(14, 14, 14, 16)
+        self.footer_layout.setContentsMargins(12, 14, 12, 16)
         self.footer_layout.setSpacing(8)
         footer_outer.addLayout(self.footer_layout)
         self.footer.setVisible(False)

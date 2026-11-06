@@ -26,7 +26,7 @@ visible across gaps. Circles can be corrected by hand (see
    [Editing cores by hand](#editing-cores-by-hand)).
 3. **Export cores**: for every core and selected channel a square crop is
    written to `<channel>/<group>/Images/` and a circular mask (white inside the
-   fitted circle, shrunk by *Mask Shrink*, black in the corners) to
+   fitted circle, shrunk by *Mask shrink*, black in the corners) to
    `<channel>/<group>/Masks/`. Channels are `BF` and `POL`; groups are
    `Patients`, `Controls` (Liver, Brain, … from the map) and `Unmapped` (cores
    without a map entry, e.g. when no array map is chosen, and cores the map
@@ -41,9 +41,10 @@ before exporting, and exporting can be repeated into a different folder.
 
 ![TMA Dearrayer page after fitting APGI TMA 4](media/tma.png)
 
-1. **Open** the slide (`.vsi`, or a whole-slide TIFF/PNG, in which case enter the
-   pixel size). A preview appears in the viewer.
-2. **Array Map.** Choose the printed ICGC/APGI array (1 to 8) for patient IDs,
+1. **Slide.** Click the field (or its file icon) and choose the slide (`.vsi`, or a
+   whole-slide TIFF/PNG, in which case enter the pixel size). A preview appears
+   in the viewer.
+2. **Array map.** Choose the printed ICGC/APGI array (1 to 8) for patient IDs,
    *Load map file…* for your own map (see [Array maps](#array-maps)), or *None*
    to name cores by grid position only. Leave **Orientation** on
    *Auto* unless you need to force one (see [Orientation](#orientation)).
@@ -55,19 +56,20 @@ before exporting, and exporting can be repeated into a different folder.
    tissue threshold; *Recover faint* looks for pale cores at empty grid
    positions.
 4. **Fit Cores** fits the circles and matches the map. The overlay shows every
-   core with its number and map position; the status line below the settings
+   core with its number and map position; the status line above **Export Cores**
    summarises the fit and any warnings.
-5. **Filter.** Quality gates applied after fitting; they update the overlay
+5. **Filter.** Quality gates applied after fitting (*Grid offset*, *Min stain* and
+   the *Core size* range); they update the overlay
    instantly without a refit (see [Quality filters](#quality-filters)).
 6. **Edit.** *Edit cores* turns on hand correction of the circles on the
    overlay, *Grid lines* shows or hides the lattice and *Undo* reverts the
    last edit; **Load Edits…** and **Save Edits…** reinstate or keep hand
    edits without exporting (see [Editing cores by hand](#editing-cores-by-hand)).
-7. **Export settings.** *Margin* around each circle, *Mask Shrink*, and the
+7. **Export settings.** *Margin* around each circle, *Mask shrink*, and the
    channels (BF, POL) to write.
-8. **Output Folder** for the export. Opening a slide always sets it to
+8. **Output folder** for the export. Opening a slide always sets it to
    `<slide>_cores`, placed in the folder that held the output folder you last
-   chose with **Select** (remembered between sessions), or beside the slide
+   chose with its folder icon (remembered between sessions), or beside the slide
    until you have chosen one. One output folder holds one slide's export:
    Export asks before writing into a folder that already holds another
    slide's export.
@@ -141,9 +143,9 @@ exported. Filters update instantly; no refit is needed.
 
 | Setting | Excludes a core when | Default |
 |---|---|---|
-| Grid Offset | its centre is further than this from its grid position, in core spacings | 0.35 |
-| Min Ø / Max Ø | its fitted diameter is outside this range, as % of Core Ø | 80 % / 120 % |
-| Min Stain | less than this fraction of the circle has HSV saturation above 40, i.e. the core is empty or unstained (control cores exempt) | 2 % |
+| Grid offset | its centre is further than this from its grid position, in core spacings | 0.35 |
+| Core size | its fitted diameter is outside this range, as % of Core Ø | 80 % to 120 % |
+| Min stain | less than this fraction of the circle has HSV saturation above 40, i.e. the core is empty or unstained (control cores exempt) | 2 % |
 
 Filters never change patient IDs. The orientation match ignores only objects
 more than half a core spacing from any grid position, a fixed rule, and all
@@ -158,7 +160,7 @@ area and the Brain and Muscle controls about 0 to 1 %, which is why the stain
 default is 2 %. The diameter range is only meaningful when Core Ø matches the
 array, which *Auto* takes care of (the APGI cores measure 1130 to 1300 µm, the
 neuroblastoma array about 700 µm). Partial or torn cores fit a smaller circle;
-lower Min Ø (for example to 70 %) to keep them.
+lower the *Core size* minimum (for example to 70 %) to keep them.
 
 CLI: `--max-grid-offset`, `--diameter-range MIN MAX`, `--min-stain`, and
 `--stain-sat` (the saturation threshold, 40, not exposed in the GUI).
@@ -319,7 +321,7 @@ with the other edits. **Clear map position** in the same menu, choosing
 
 The map tells Cabana which patient or control tissue sits at each position of
 the array. The eight ICGC/APGI arrays are built in. For any other TMA, write
-the map into the template and choose **Load map file…** under **Array Map**.
+the map into the template and choose **Load map file…** under **Array map**.
 
 ### Filling in the template
 
@@ -418,13 +420,13 @@ slide's controls in one `<channel>/Controls/`, select the same output folder
 for each slide and confirm Export's warning; `cores.csv`, `overlay.png` and
 `cores_edits.json` then describe only the last slide exported there. Controls are exempt from the stain filter but not from
 the grid-offset and diameter filters. Run the channels separately: bright-field with
-Dark Line on, polarised with Dark Line off. With a mask, the corners of each
+Dark line on, polarised with Dark line off. With a mask, the corners of each
 crop are excluded from segmentation, fibre detection, HDM, fibre-area and gap
 metrics, and the percentage metrics are relative to the circle area. The
 masks are honoured whether segmentation is enabled or not.
 
 Cores scanned at 20x are about 4000 to 5000 pixels across. With the default
-Max Size (5000 px, on the Batch Run page) each core is analysed as one
+Max Size (5000 px, set on the Segmentation page) each core is analysed as one
 image; lower Max Size to split cores into blocks on a machine with little
 memory. The default Patch
 Size (1024 px) lets the segmentation network see the tissue at a useful

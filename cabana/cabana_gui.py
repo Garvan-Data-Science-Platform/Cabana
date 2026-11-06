@@ -752,15 +752,6 @@ class MainWindow(QMainWindow):
         # Side panel: section cards, row labels, notes, option lists
         self.panel_style = generate_panel_style()
 
-        # Read-only path line edit style
-        self.path_edit_style = (
-            f"QLineEdit {{ background-color: {color_to_stylesheet(COLORS['background'])}; "
-            f"color: {color_to_stylesheet(COLORS['text_dim'])}; "
-            f"border: 1px solid {color_to_stylesheet(COLORS['border'])}; "
-            f"border-radius: 3px; padding: 8px 6px; "
-            f"font-size: {FONT_SIZES['small']}px; }}"
-        )
-
         # Value label style (slider readouts)
         self.value_label_style = (
             f"color: {color_to_stylesheet(COLORS['text_dim'])}; font-size: {FONT_SIZES['small']}px;"
@@ -930,40 +921,29 @@ class MainWindow(QMainWindow):
     # TMA page
     # ------------------------------------------------------------------
     def setup_tma_tab(self):
-        """Set up the TMA preprocessing page: load slide -> fit cores -> export."""
-        layout = QVBoxLayout()
-        layout.setContentsMargins(6, 10, 6, 6)
-        layout.setSpacing(10)
+        """Set up the TMA preprocessing page: Fit, Filter, Edit and Export cards
+        (load slide -> fit cores -> correct -> export)."""
+        layout = self._page_layout()
 
-        fit_title = QLabel("Fit")
-        fit_title.setStyleSheet(self.value_label_style + " font-weight: 600;")
-        fit_title.setToolTip("Settings for Fit Cores; fit again after changing them.")
-        layout.addWidget(fit_title)
+        def spin_row(*widgets):
+            row = QHBoxLayout()
+            row.setSpacing(12)
+            for w in widgets:
+                row.addWidget(w)
+            return row
 
-        # --- Slide -------------------------------------------------------
-        slide_layout = QHBoxLayout()
-        slide_label = QLabel("Slide:")
-        slide_label.setFixedWidth(95)
-        slide_layout.addWidget(slide_label)
-        self.tma_slide_path = QLineEdit("")
-        self.tma_slide_path.setReadOnly(True)
-        self.tma_slide_path.setPlaceholderText("Olympus .vsi or whole-slide TIFF/PNG")
-        self.tma_slide_path.setStyleSheet(self.path_edit_style)
+        # --- Fit -------------------------------------------------------------
+        fit = SectionCard("Fit")
+        fit.title_label.setToolTip("Settings for Fit Cores; fit again after changing them.")
+        self.tma_slide_path = PathEdit("", icon="file")
+        self.tma_slide_path.setPlaceholderText("Olympus .vsi, TIFF or PNG")
         self.tma_slide_path.setToolTip(
             "Whole-slide TMA scan: Olympus .vsi (with its _<name>_ folder), TIFF or PNG.")
-        slide_layout.addWidget(self.tma_slide_path, 1)
-        self.tma_slide_btn = QPushButton("Open")
-        self.tma_slide_btn.setStyleSheet(self.btn_style)
+        self.tma_slide_btn = self.tma_slide_path.pick_action
         self.tma_slide_btn.setToolTip("Choose the slide file.")
-        self.tma_slide_btn.clicked.connect(self.select_tma_slide)
-        slide_layout.addWidget(self.tma_slide_btn)
-        layout.addLayout(slide_layout)
+        self.tma_slide_btn.triggered.connect(self.select_tma_slide)
+        fit.add_row("Slide", self.tma_slide_path)
 
-        # --- Array / orientation ------------------------------------------
-        map_layout = QHBoxLayout()
-        array_label = QLabel("Array Map:")
-        array_label.setFixedWidth(95)
-        map_layout.addWidget(array_label)
         self.tma_array_combo = QComboBox()
         self.tma_array_combo.addItem("None (grid position only)", None)
         for n in available_arrays():
@@ -974,13 +954,8 @@ class MainWindow(QMainWindow):
         self.tma_array_combo.setToolTip(
             "Map that names the cores by patient: a built-in ICGC/APGI array or your own\n"
             "(Load map file…; File > Generate TMA Map Template… makes a template).")
-        map_layout.addWidget(self.tma_array_combo, 1)
-        layout.addLayout(map_layout)
+        fit.add_row("Array map", self.tma_array_combo)
 
-        orient_layout = QHBoxLayout()
-        orient_label = QLabel("Orientation:")
-        orient_label.setFixedWidth(95)
-        orient_layout.addWidget(orient_label)
         self.tma_orientation_combo = QComboBox()
         for o in ORIENTATIONS:
             self.tma_orientation_combo.addItem("Auto" if o == "auto" else o, o)
@@ -990,28 +965,19 @@ class MainWindow(QMainWindow):
             "can mistake a rotation for its mirror, so check the control cores. Relabels at once.")
         self.tma_orientation_combo.currentIndexChanged.connect(self._tma_map_changed)
         self.tma_array_combo.currentIndexChanged.connect(self._tma_array_selected)
-        orient_layout.addWidget(self.tma_orientation_combo, 1)
-        layout.addLayout(orient_layout)
+        fit.add_row("Orientation", self.tma_orientation_combo)
 
-        # --- Geometry ------------------------------------------------------
-        geo = QGridLayout()
-        geo.setHorizontalSpacing(8)
-        geo.setVerticalSpacing(8)
-        geo.setColumnStretch(1, 1)
-        geo.setColumnStretch(3, 1)
-
-        geo.addWidget(QLabel("Pixel Size:"), 0, 0)
         self.tma_pixel_size_spin = QDoubleSpinBox()
         self.tma_pixel_size_spin.setRange(0.01, 50.0)
         self.tma_pixel_size_spin.setDecimals(4)
         self.tma_pixel_size_spin.setSingleStep(0.01)
         self.tma_pixel_size_spin.setValue(0.2738)
         self.tma_pixel_size_spin.setSuffix(" µm")
+        self.tma_pixel_size_spin.setFixedWidth(140)
         self.tma_pixel_size_spin.setStyleSheet(self.spinner_style)
         self.tma_pixel_size_spin.setToolTip("Filled from the slide metadata when available.")
-        geo.addWidget(self.tma_pixel_size_spin, 0, 1)
+        fit.add_row("Pixel size", self.tma_pixel_size_spin, stretch=False)
 
-        geo.addWidget(QLabel("Core Ø:"), 0, 2)
         self.tma_core_auto_cb = QCheckBox("Auto")
         self.tma_core_auto_cb.setChecked(True)
         self.tma_core_auto_cb.setStyleSheet(self.checkbox_style)
@@ -1023,51 +989,46 @@ class MainWindow(QMainWindow):
         self.tma_core_diameter_spin.setSingleStep(50)
         self.tma_core_diameter_spin.setValue(0)
         self.tma_core_diameter_spin.setSuffix(" µm")
+        self.tma_core_diameter_spin.setFixedWidth(120)
         self.tma_core_diameter_spin.setStyleSheet(self.spinner_style)
         self.tma_core_diameter_spin.setEnabled(False)
         self._set_tma_core_tooltip()
         self.tma_core_auto_cb.toggled.connect(self._tma_core_auto_toggled)
-        core_layout = QHBoxLayout()
-        core_layout.setContentsMargins(0, 0, 0, 0)
-        core_layout.setSpacing(6)
-        core_layout.addWidget(self.tma_core_auto_cb)
-        core_layout.addWidget(self.tma_core_diameter_spin, 1)
-        geo.addLayout(core_layout, 0, 3)
+        fit.add_row("Core Ø", spin_row(self.tma_core_diameter_spin, self.tma_core_auto_cb), stretch=False)
 
-        geo.addWidget(QLabel("Sensitivity:"), 1, 0)
         self.tma_sat_spin = QSpinBox()
         self.tma_sat_spin.setRange(2, 60)
         self.tma_sat_spin.setValue(15)
+        self.tma_sat_spin.setFixedWidth(96)
         self.tma_sat_spin.setStyleSheet(self.spinner_style)
         self.tma_sat_spin.setToolTip(
             "Saturation above which a pixel is tissue (default 15). Lower it for pale cores,\n"
             "raise it if debris is picked up.")
-        geo.addWidget(self.tma_sat_spin, 1, 1)
-
         self.tma_recover_cb = QCheckBox("Recover faint")
         self.tma_recover_cb.setChecked(True)
         self.tma_recover_cb.setStyleSheet(self.checkbox_style)
         self.tma_recover_cb.setToolTip(
             "Look for pale cores at empty grid positions and add them (purple).")
-        geo.addWidget(self.tma_recover_cb, 1, 2, 1, 2)
-        layout.addLayout(geo)
+        fit.add_row("Sensitivity", spin_row(self.tma_sat_spin, self.tma_recover_cb), stretch=False)
 
-        # --- Filter ------------------------------------------------------
+        self.tma_fit_btn = self._primary_button("Fit Cores")
+        self.tma_fit_btn.setEnabled(False)
+        self.tma_fit_btn.setToolTip("Find the cores and draw the overlay; run again after changing settings.")
+        self.tma_fit_btn.clicked.connect(self.run_tma_fit)
+        self._tma_fit_row = QHBoxLayout()
+        self._tma_fit_row.setSpacing(8)
+        self._tma_fit_row.addWidget(self.tma_fit_btn, 1)
+        fit.add_footer(self._tma_fit_row)
+        layout.addWidget(fit)
+
+        # --- Filter ----------------------------------------------------------
         # QC filters re-evaluate instantly on the fitted cores (no refit).
-        layout.addWidget(create_separator())
-        filter_title = QLabel("Filter")
-        filter_title.setStyleSheet(self.value_label_style + " font-weight: 600;")
-        filter_title.setToolTip(
+        flt = SectionCard("Filter")
+        flt.title_label.setToolTip(
             "Quality filters; changes update the overlay at once. Excluded cores are grey with\n"
             "a cross and not exported. Filters never change patient IDs.")
-        layout.addWidget(filter_title)
-        flt = QGridLayout()
-        flt.setHorizontalSpacing(8)
-        flt.setVerticalSpacing(8)
-        flt.setColumnStretch(1, 1)
-        flt.setColumnStretch(3, 1)
 
-        def _spin(lo, hi, val, step, suffix, tip, decimals=None):
+        def _spin(lo, hi, val, step, suffix, tip, decimals=None, width=140):
             w = QDoubleSpinBox() if decimals is not None else QSpinBox()
             if decimals is not None:
                 w.setDecimals(decimals)
@@ -1075,6 +1036,7 @@ class MainWindow(QMainWindow):
             w.setSingleStep(step)
             w.setValue(val)
             w.setSuffix(suffix)
+            w.setFixedWidth(width)
             w.setStyleSheet(self.spinner_style)
             w.setToolTip(tip)
             w.valueChanged.connect(self._tma_filters_changed)
@@ -1083,34 +1045,33 @@ class MainWindow(QMainWindow):
         self.tma_offset_spin = _spin(0.05, 1.0, 0.35, 0.05, " pitch",
                                      "Exclude cores this far from their grid position (fraction of the core spacing);\n"
                                      "catches debris.", decimals=2)
-        self.tma_dmin_spin = _spin(10, 100, 80, 5, " %",
-                                   "Exclude cores smaller than this share of Core Ø; lower it to keep partial cores.")
-        self.tma_dmax_spin = _spin(100, 300, 120, 5, " %",
-                                   "Exclude cores larger than this share of Core Ø.")
         self.tma_stain_spin = _spin(0, 100, 2, 1, " %",
                                     "Exclude patient cores with less stained area than this; controls are exempt.")
+        self.tma_dmin_spin = _spin(10, 100, 80, 5, " %",
+                                   "Exclude cores smaller than this share of Core Ø; lower it to keep partial cores.",
+                                   width=96)
+        self.tma_dmax_spin = _spin(100, 300, 120, 5, " %",
+                                   "Exclude cores larger than this share of Core Ø.", width=96)
+        flt.add_row("Grid offset", self.tma_offset_spin, stretch=False)
+        flt.add_row("Min stain", self.tma_stain_spin, stretch=False)
+        size_row = QHBoxLayout()
+        size_row.setSpacing(6)
+        size_row.addWidget(self.tma_dmin_spin)
+        to = QLabel("to")
+        to.setObjectName("rowLabel")
+        size_row.addWidget(to)
+        size_row.addWidget(self.tma_dmax_spin)
+        flt.add_row("Core size", size_row, stretch=False)
+        layout.addWidget(flt)
 
-        flt.addWidget(QLabel("Grid Offset:"), 0, 0)
-        flt.addWidget(self.tma_offset_spin, 0, 1)
-        flt.addWidget(QLabel("Min Stain:"), 0, 2)
-        flt.addWidget(self.tma_stain_spin, 0, 3)
-        flt.addWidget(QLabel("Min Ø:"), 1, 0)
-        flt.addWidget(self.tma_dmin_spin, 1, 1)
-        flt.addWidget(QLabel("Max Ø:"), 1, 2)
-        flt.addWidget(self.tma_dmax_spin, 1, 3)
-        layout.addLayout(flt)
-
-        # --- Edit --------------------------------------------------------
+        # --- Edit ------------------------------------------------------------
         # Hand corrections of the fitted circles; every edit re-snaps to the grid.
-        layout.addWidget(create_separator())
-        edit_title = QLabel("Edit")
-        edit_title.setStyleSheet(self.value_label_style + " font-weight: 600;")
-        edit_title.setToolTip(
+        edit = SectionCard("Edit")
+        edit.title_label.setToolTip(
             "Correct the fit by hand; a moved or added core takes the patient ID of its grid cell.\n"
             "Edits are saved with the export and offered back after refitting.")
-        layout.addWidget(edit_title)
         edit_layout = QHBoxLayout()
-        edit_layout.setSpacing(12)
+        edit_layout.setSpacing(18)
         self.tma_edit_cb = QCheckBox("Edit cores")
         self.tma_edit_cb.setStyleSheet(self.checkbox_style)
         self.tma_edit_cb.setEnabled(False)
@@ -1132,9 +1093,10 @@ class MainWindow(QMainWindow):
         self.tma_undo_btn.setToolTip("Undo the last edit (Ctrl+Z).")
         self.tma_undo_btn.clicked.connect(lambda: self.tma_editor.undo())
         edit_layout.addWidget(self.tma_undo_btn)
-        layout.addLayout(edit_layout)
+        edit.add_layout(edit_layout)
 
         edits_file_layout = QHBoxLayout()
+        edits_file_layout.setSpacing(8)
         self.tma_load_edits_btn = QPushButton("Load Edits…")
         self.tma_load_edits_btn.setStyleSheet(self.btn_style)
         self.tma_load_edits_btn.setEnabled(False)
@@ -1150,51 +1112,38 @@ class MainWindow(QMainWindow):
             "they are offered back after the next fit.")
         self.tma_save_edits_btn.clicked.connect(self.save_tma_edits)
         edits_file_layout.addWidget(self.tma_save_edits_btn)
-        layout.addLayout(edits_file_layout)
+        edit.add_layout(edits_file_layout)
+        layout.addWidget(edit)
 
-        # --- Export ------------------------------------------------------
+        # --- Export ----------------------------------------------------------
         # Settings below only affect Export Cores; changing them needs no refit.
-        layout.addWidget(create_separator())
-        export_title = QLabel("Export")
-        export_title.setStyleSheet(self.value_label_style + " font-weight: 600;")
-        export_title.setToolTip("Settings for Export Cores; no refit needed.")
-        layout.addWidget(export_title)
-        exp = QGridLayout()
-        exp.setHorizontalSpacing(8)
-        exp.setVerticalSpacing(8)
-        exp.setColumnStretch(1, 1)
-        exp.setColumnStretch(3, 1)
-        exp.addWidget(QLabel("Margin:"), 0, 0)
+        export = SectionCard("Export")
+        export.title_label.setToolTip("Settings for Export Cores; no refit needed.")
         self.tma_margin_spin = QSpinBox()
         self.tma_margin_spin.setRange(0, 1000)
         self.tma_margin_spin.setSingleStep(10)
         self.tma_margin_spin.setValue(30)
         self.tma_margin_spin.setSuffix(" µm")
+        self.tma_margin_spin.setFixedWidth(140)
         self.tma_margin_spin.setStyleSheet(self.spinner_style)
         self.tma_margin_spin.setToolTip("Extra border around the fitted circle in each crop.")
-        exp.addWidget(self.tma_margin_spin, 0, 1)
+        export.add_row("Margin", self.tma_margin_spin, stretch=False)
 
-        exp.addWidget(QLabel("Mask Shrink:"), 0, 2)
         self.tma_erode_spin = QSpinBox()
         self.tma_erode_spin.setRange(0, 200)
         self.tma_erode_spin.setValue(8)
         self.tma_erode_spin.setSuffix(" px")
+        self.tma_erode_spin.setFixedWidth(140)
         self.tma_erode_spin.setStyleSheet(self.spinner_style)
         self.tma_erode_spin.setToolTip("Shrinks the core mask so the core edge is left out.")
-        exp.addWidget(self.tma_erode_spin, 0, 3)
-
-        layout.addLayout(exp)
+        export.add_row("Mask shrink", self.tma_erode_spin, stretch=False)
 
         ch_layout = QHBoxLayout()
-        ch_layout.setSpacing(16)
-        ch_label = QLabel("Channels:")
-        ch_label.setFixedWidth(95)
-        ch_layout.addWidget(ch_label)
+        ch_layout.setSpacing(18)
         self.tma_channel_cbs = {}
-        ch_hints = {"BF": "Bright-field layer; analyse it with Dark Line on.",
+        ch_hints = {"BF": "Bright-field layer; analyse it with Dark line on.",
                     "POL": "Polarised-light layer; separate its bands on the Birefringence page,\n"
-                           "or analyse it with Dark Line off."}
-        ch_label.setToolTip("Slide layers to export, one image per core each. Available after Fit Cores.")
+                           "or analyse it with Dark line off."}
         for name in ("BF", "POL"):
             cb = QCheckBox(name)
             cb.setChecked(True)
@@ -1203,30 +1152,20 @@ class MainWindow(QMainWindow):
             cb.setToolTip(ch_hints[name])
             self.tma_channel_cbs[name] = cb
             ch_layout.addWidget(cb)
-        ch_layout.addStretch()
-        layout.addLayout(ch_layout)
+        ch_label = export.add_row("Channels", ch_layout, stretch=False)
+        ch_label.setToolTip("Slide layers to export, one image per core each. Available after Fit Cores.")
 
-        # --- Output --------------------------------------------------------
-        out_layout = QHBoxLayout()
-        out_label = QLabel("Output Folder:")
-        out_label.setFixedWidth(95)
-        out_layout.addWidget(out_label)
-        self.tma_output_path = QLineEdit("")
-        self.tma_output_path.setReadOnly(True)
-        self.tma_output_path.setPlaceholderText("BF/, POL/ (Patients, Controls), cores.csv, overlay.png")
-        self.tma_output_path.setStyleSheet(self.path_edit_style)
+        self.tma_output_path = PathEdit("")
+        self.tma_output_path.setPlaceholderText("Defaults to <slide>_cores")
         self.tma_output_path.setToolTip(
             "Gets BF/ and POL/ folders (Patients, Controls), each with Images/ and Masks/,\n"
             "plus cores.csv and overlay.png. Defaults to <slide>_cores.")
-        out_layout.addWidget(self.tma_output_path, 1)
-        self.tma_output_btn = QPushButton("Select")
-        self.tma_output_btn.setStyleSheet(self.btn_style)
+        self.tma_output_btn = self.tma_output_path.pick_action
         self.tma_output_btn.setToolTip("Choose the output folder.")
-        self.tma_output_btn.clicked.connect(self.select_tma_output)
-        out_layout.addWidget(self.tma_output_btn)
-        layout.addLayout(out_layout)
+        self.tma_output_btn.triggered.connect(self.select_tma_output)
+        export.add_row("Output folder", self.tma_output_path)
 
-        # --- Status + actions ----------------------------------------------
+        # Status of the fit and export, then the export action
         self.tma_status_label = QLabel("No slide loaded")
         self.tma_status_label.setWordWrap(True)
         self.tma_status_label.setMinimumHeight(40)
@@ -1235,28 +1174,25 @@ class MainWindow(QMainWindow):
         self.tma_status_label.setToolTip(
             "Fit summary. Overlay: green = exported, purple = recovered, grey with a cross =\n"
             "excluded, grey = outside the map, dashed = no core, orange dot = hand-edited.")
-        layout.addWidget(self.tma_status_label)
+        export.add_footer(self.tma_status_label)
 
-        btn_layout = QHBoxLayout()
-        self.tma_fit_btn = QPushButton("Fit Cores")
-        self.tma_fit_btn.setStyleSheet(self.primary_btn_style)
-        self.tma_fit_btn.setEnabled(False)
-        self.tma_fit_btn.setToolTip("Find the cores and draw the overlay; run again after changing settings.")
-        self.tma_fit_btn.clicked.connect(self.run_tma_fit)
-        btn_layout.addWidget(self.tma_fit_btn)
-        self.tma_export_btn = QPushButton("Export Cores")
-        self.tma_export_btn.setStyleSheet(self.primary_btn_style)
+        self.tma_export_btn = self._primary_button("Export Cores", play=False)
         self.tma_export_btn.setEnabled(False)
         self.tma_export_btn.setToolTip("Write one image and one mask per core and channel.")
         self.tma_export_btn.clicked.connect(self.run_tma_export)
-        btn_layout.addWidget(self.tma_export_btn)
+        self._tma_export_row = QHBoxLayout()
+        self._tma_export_row.setSpacing(8)
+        self._tma_export_row.addWidget(self.tma_export_btn, 1)
+        export.add_footer(self._tma_export_row)
+        layout.addWidget(export)
+
+        # Cancel is shown next to the action that is running (fit or export)
         self.tma_cancel_btn = QPushButton("Cancel")
         self.tma_cancel_btn.setStyleSheet(self.btn_style)
         self.tma_cancel_btn.setToolTip("Stop after the current core; files written so far are kept.")
         self.tma_cancel_btn.setVisible(False)
         self.tma_cancel_btn.clicked.connect(self.cancel_tma)
-        btn_layout.addWidget(self.tma_cancel_btn)
-        layout.addLayout(btn_layout)
+        self._tma_fit_row.addWidget(self.tma_cancel_btn)
 
         layout.addStretch()
         self.tma_tab.setLayout(layout)
@@ -1627,6 +1563,7 @@ class MainWindow(QMainWindow):
         # reuse the reader opened for the preview so the slide is read once
         options["reader"] = self.tma_reader
         self.tma_reader = None
+        self._tma_fit_row.addWidget(self.tma_cancel_btn)      # Cancel beside the running action
         self._tma_set_busy(True)
         self.tma_fit_btn.setText("Fitting…")
         self.tma_status_label.setText("Fitting cores…")
@@ -1732,6 +1669,7 @@ class MainWindow(QMainWindow):
         # settings that only affect the crop can be changed without refitting
         self.tma_pre.margin_um = float(self.tma_margin_spin.value())
         self.tma_pre.erode_px = int(self.tma_erode_spin.value())
+        self._tma_export_row.addWidget(self.tma_cancel_btn)   # Cancel beside the running action
         self._tma_set_busy(True)
         self.tma_export_btn.setText("Exporting…")
         self.tma_worker = TMAWorker('export', preprocessor=self.tma_pre, out_dir=self.tma_output,
@@ -2150,193 +2088,147 @@ class MainWindow(QMainWindow):
         if msg.clickedButton() == open_btn:
             QDesktopServices.openUrl(QUrl.fromLocalFile(output_folder))
 
+    def _title_switch(self, page, label, button):
+        """Put a page's on/off switch beside the page title (shown on that page only)."""
+        box = QWidget()
+        row = QHBoxLayout(box)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+        row.addWidget(label)
+        row.addWidget(button)
+        box.setVisible(False)
+        self.page_title_right.addWidget(box)
+        self._title_switches[page] = box
+
+    @staticmethod
+    def _set_switch_label(label, on):
+        label.setText("On" if on else "Off")
+        color = COLORS['highlight'] if on else panel_colors()['faint']
+        label.setStyleSheet(f"color: {color_to_stylesheet(color)}; font-size: {FONT_SIZES['small']}px;")
+
+    def _slider_value_label(self, text):
+        label = QLabel(text)
+        label.setStyleSheet(self.value_label_style)
+        return label
+
     def setup_segmentation_tab(self):
-        """Set up the segmentation tab UI"""
-        layout = QVBoxLayout()
-        layout.setContentsMargins(6, 10, 6, 6)
-        layout.setSpacing(12)
+        """Set up the Segmentation page: Colour, Training and Large images cards;
+        the on/off switch sits beside the page title."""
+        layout = self._page_layout()
 
-        color_group_layout = QVBoxLayout()
-
-        color_toggle_layout = QHBoxLayout()
-        color_label = QLabel("Color of Interest:")
-        color_label.setToolTip("Colour of the structures to keep, e.g. Picrosirius Red collagen; click the swatch.")
         self.toggle_seg_label = QLabel()
-        self.toggle_seg_label.setText(
-            f"Segmentation <b><span style='color: {COLORS['highlight'].name()};'>Enabled</span></b>")
-        color_toggle_layout.addWidget(color_label)
-        color_toggle_layout.addStretch()
-        color_toggle_layout.addWidget(self.toggle_seg_label)
-        color_group_layout.addLayout(color_toggle_layout)
-
-        color_layout = QHBoxLayout()
-        self.color_btn = QPushButton("")
-        self.color_btn.setStyleSheet(
-            f"background-color: #f53282; border: 1px solid {color_to_stylesheet(COLORS['border'])}; border-radius: 4px;")
-        self.color_btn.setFixedSize(QSize(30, 30))
-        self.color_btn.clicked.connect(self.select_color)
-        self.color_btn.setToolTip("Pick the colour to keep.")
-        color_layout.addWidget(self.color_btn)
-
-        self.hue_label = QLabel("Normalized hue: 0.96")
-        self.hue_label.setStyleSheet(f"font-weight: bold")
-        self.hue_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        color_layout.addWidget(self.hue_label)
-
-        # Toggle segmentation button
+        self._set_switch_label(self.toggle_seg_label, True)
         self.toggle_seg_btn = ToggleButton()
         self.toggle_seg_btn.setChecked(True)
         self.toggle_seg_btn.toggled.connect(self.toggle_segmentation)
         self.toggle_seg_btn.setToolTip("Turn segmentation on or off.")
-        color_layout.addStretch()
-        color_layout.addWidget(self.toggle_seg_btn)
-        color_group_layout.addLayout(color_layout)
+        self._title_switch(self.seg_tab, self.toggle_seg_label, self.toggle_seg_btn)
 
-        layout.addLayout(color_group_layout)
+        colour = SectionCard("Colour")
+        swatch = QHBoxLayout()
+        swatch.setSpacing(10)
+        self.color_btn = QPushButton("")
+        self.color_btn.setStyleSheet(
+            f"background-color: #f53282; border: 1px solid {color_to_stylesheet(COLORS['border'])}; border-radius: 5px;")
+        self.color_btn.setFixedSize(QSize(24, 24))
+        self.color_btn.clicked.connect(self.select_color)
+        self.color_btn.setToolTip("Colour of the structures to keep, e.g. Picrosirius Red collagen; click to pick.")
+        swatch.addWidget(self.color_btn)
+        self.hue_label = QLabel("Hue 0.96")
+        self.hue_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        swatch.addWidget(self.hue_label)
+        colour.add_row("Colour of interest", swatch)
 
-        # Color threshold slider
-        threshold_layout = QHBoxLayout()
-        threshold_label = QLabel("Color Threshold:")
-        threshold_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        threshold_label.setMinimumWidth(50)
-        threshold_layout.addWidget(threshold_label)
         self.color_thresh_slider = CustomSlider(Qt.Horizontal)
         self.color_thresh_slider.setRange(0, 100)
         self.color_thresh_slider.setValue(20)  # Default 0.2
         self.color_thresh_slider.valueChanged.connect(self.update_color_threshold)
-        self.color_thresh_slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.color_thresh_slider.setToolTip(
             "Minimum colour score of a region (1 = exactly the chosen colour). Lower it for paler\n"
             "tissue; below about 0.12 glass starts to count. Updates the result at once.")
-        threshold_layout.addWidget(self.color_thresh_slider, 3)
-        self.color_thresh_value = QLabel("0.2")
-        self.color_thresh_value.setFixedWidth(35)
-        self.color_thresh_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-        self.color_thresh_value.setStyleSheet(
-            self.value_label_style)
-        threshold_layout.addWidget(self.color_thresh_value)
-        layout.addLayout(threshold_layout)
+        self.color_thresh_value = self._slider_value_label("0.2")
+        colour.add_row("Colour threshold", self.color_thresh_slider, self.color_thresh_value)
+        layout.addWidget(colour)
 
-        # Number of labels slider
-        num_labels_layout = QHBoxLayout()
-        num_labels_label = QLabel("No. of Labels:")
-        num_labels_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        num_labels_label.setMinimumWidth(50)
-        num_labels_layout.addWidget(num_labels_label)
+        training = SectionCard("Training")
         self.num_labels_slider = CustomSlider(Qt.Horizontal)
         self.num_labels_slider.setRange(8, 96)
         self.num_labels_slider.setValue(32)  # Default
         self.num_labels_slider.valueChanged.connect(self.update_num_labels)
-        self.num_labels_slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.num_labels_slider.setToolTip("Higher = finer segmentation.")
-        num_labels_layout.addWidget(self.num_labels_slider, 3)
-        self.num_labels_value = QLabel("32")
-        self.num_labels_value.setFixedWidth(30)
-        self.num_labels_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-        self.num_labels_value.setStyleSheet(
-            self.value_label_style)
-        num_labels_layout.addWidget(self.num_labels_value)
-        layout.addLayout(num_labels_layout)
+        self.num_labels_value = self._slider_value_label("32")
+        training.add_row("Labels", self.num_labels_slider, self.num_labels_value)
 
-        # Max iterations slider
-        max_iters_layout = QHBoxLayout()
-        max_iters_label = QLabel("Max Iterations:")
-        max_iters_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        max_iters_label.setMinimumWidth(50)
-        max_iters_layout.addWidget(max_iters_label)
         self.max_iters_slider = CustomSlider(Qt.Horizontal)
         self.max_iters_slider.setRange(10, 100)
         self.max_iters_slider.setValue(30)  # Default
         self.max_iters_slider.valueChanged.connect(self.update_max_iters)
-        self.max_iters_slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.max_iters_slider.setToolTip("Lower = finer segmentation.")
-        max_iters_layout.addWidget(self.max_iters_slider, 3)
-        self.max_iters_value = QLabel("30")
-        self.max_iters_value.setFixedWidth(30)
-        self.max_iters_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-        self.max_iters_value.setStyleSheet(
-            self.value_label_style)
-        max_iters_layout.addWidget(self.max_iters_value)
-        layout.addLayout(max_iters_layout)
+        self.max_iters_value = self._slider_value_label("30")
+        training.add_row("Max iterations", self.max_iters_slider, self.max_iters_value)
+        layout.addWidget(training)
 
+        large = SectionCard("Large images")
         # Patch size (0 = segment the whole image at once)
-        patch_layout = QHBoxLayout()
-        patch_label = QLabel("Patch Size:")
-        patch_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        patch_label.setMinimumWidth(50)
-        patch_layout.addWidget(patch_label)
-        patch_layout.addStretch()
         self.patch_size_spinner = QSpinBox()
         self.patch_size_spinner.setRange(0, 8192)
         self.patch_size_spinner.setSingleStep(256)
         self.patch_size_spinner.setSpecialValueText("Off")
         self.patch_size_spinner.setSuffix(" px")
         self.patch_size_spinner.setValue(1024)
-        self.patch_size_spinner.setFixedWidth(90)
+        self.patch_size_spinner.setFixedWidth(130)
         self.patch_size_spinner.setStyleSheet(self.spinner_style)
         self.patch_size_spinner.valueChanged.connect(self.update_patch_size)
         self.patch_size_spinner.setToolTip(
             "Large images are segmented in patches of this size to keep fine fibres;\n"
             "smaller is finer but slower. Off: whole image at 512 px.")
-        patch_layout.addWidget(self.patch_size_spinner)
-        layout.addLayout(patch_layout)
+        large.add_row("Patch size", self.patch_size_spinner, stretch=False)
 
         # Max Size (Configs: Max Size, 0 = no limit): batch runs split larger
         # images into blocks, each segmented as a separate image. Saved by
         # Parameters > Export; the Batch Run page only shows it.
-        max_size_layout = QHBoxLayout()
-        max_size_label = QLabel("Max Size:")
-        max_size_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        max_size_layout.addWidget(max_size_label)
-        max_size_layout.addStretch()
         self.seg_max_size_spinner = MaxSizeSpinBox()
         self.seg_max_size_spinner.setSingleStep(1000)
         self.seg_max_size_spinner.setSuffix(" px")
         self.seg_max_size_spinner.setValue(DEFAULT_MAX_SIZE)
-        self.seg_max_size_spinner.setFixedWidth(90)
+        self.seg_max_size_spinner.setFixedWidth(130)
         self.seg_max_size_spinner.setStyleSheet(self.spinner_style)
         self.seg_max_size_spinner.valueChanged.connect(self.update_max_size)
         self.seg_max_size_spinner.setToolTip(
             "Batch runs split larger images into blocks of this size; lower it if memory\n"
             "runs out. No limit: never split.")
-        max_size_layout.addWidget(self.seg_max_size_spinner)
-        layout.addLayout(max_size_layout)
+        large.add_row("Max size", self.seg_max_size_spinner, stretch=False)
 
         # How Max Size and Patch Size apply (the open image, patches of blocks)
         self.seg_size_note = QLabel("")
         self.seg_size_note.setWordWrap(True)
         self.seg_size_note.setStyleSheet(self.value_label_style)
         self.seg_size_note.setVisible(False)
-        layout.addWidget(self.seg_size_note)
+        large.add_widget(self.seg_size_note)
 
-
-        # White background checkbox
-        layout.addWidget(create_separator())
-        h_layout = QHBoxLayout()
-        self.white_bg_cb = QCheckBox("White Background")
+        # Display options and the action share the footer
+        view_row = QHBoxLayout()
+        self.white_bg_cb = QCheckBox("White background")
         self.white_bg_cb.setChecked(True)
         self.white_bg_cb.setStyleSheet(self.checkbox_style)
         self.white_bg_cb.stateChanged.connect(self.update_white_bg)
         self.white_bg_cb.setToolTip("Fill the area outside the region with white; untick for bright fibres on dark.")
-        h_layout.addWidget(self.white_bg_cb)
-
-        # Add toggle checkbox for comparing with the original image
-        self.toggle_img_cb = QCheckBox("Overlay Original")
+        view_row.addWidget(self.white_bg_cb)
+        view_row.addStretch()
+        # Toggle checkbox for comparing with the original image
+        self.toggle_img_cb = QCheckBox("Overlay original")
         self.toggle_img_cb.setChecked(False)
         self.toggle_img_cb.setStyleSheet(self.checkbox_style)
         self.toggle_img_cb.clicked.connect(self.compare_image)
         self.toggle_img_cb.setToolTip("Show the original image.")
-        h_layout.addStretch()
-        h_layout.addWidget(self.toggle_img_cb)
+        view_row.addWidget(self.toggle_img_cb)
+        large.add_footer(view_row)
 
-        layout.addLayout(h_layout)
-
-        # Segmentation button
-        self.segment_btn = QPushButton("Segment")
+        self.segment_btn = self._primary_button("Segment")
         self.segment_btn.clicked.connect(self.run_segmentation)
         self.segment_btn.setEnabled(False)
-        self.segment_btn.setStyleSheet(self.primary_btn_style)
-        layout.addWidget(self.segment_btn)
+        large.add_footer(self.segment_btn)
+        layout.addWidget(large)
 
         layout.addStretch()
         self.seg_tab.setLayout(layout)
@@ -2346,66 +2238,42 @@ class MainWindow(QMainWindow):
     # (stored in the parameter file as Min > Max, a wrapping range)
     BRF_HUE_AXIS = (-64, 191)
 
+    # Fill colour of each band's hue slider
+    BRF_BAND_COLOURS = {"Red-Orange": "#E0533D", "Yellow": "#E3B931", "Green": "#3FAF5A"}
+
     def setup_birefringence_tab(self):
         """Set up the Birefringence page: colour bands of polarised-light images
-        (PR-BRF Analyser classification, see cabana.brf)."""
-        layout = QVBoxLayout()
-        layout.setContentsMargins(6, 10, 6, 6)
-        layout.setSpacing(10)
+        (PR-BRF Analyser classification, see cabana.brf). A Bands card (used by
+        the open image and the folder run) and a Folder run card."""
+        layout = self._page_layout()
 
         # The page's own settings: the macro defaults at every start, not part of
         # the parameter file (Batch Run analyses the separated images like any other)
         self._brf_settings = dict(BRF_DEFAULTS)
 
-        def value_label(text, width=30):
-            label = QLabel(text)
-            label.setFixedWidth(width)
-            label.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-            label.setStyleSheet(self.value_label_style)
-            return label
-
-        # Section titles as on the TMA page
-        self.brf_section_titles = []
-
-        def section(title, tip):
-            label = QLabel(title)
-            label.setStyleSheet(self.value_label_style + " font-weight: 600;")
-            label.setToolTip(tip)
-            layout.addWidget(label)
-            self.brf_section_titles.append(label)
-
         # --- Bands: used by both the open image and the folder run ---
-        section("Bands", "How pixels are sorted into bands; check them on the open image with Separate.")
+        bands = SectionCard("Bands")
+        bands.title_label.setToolTip("How pixels are sorted into bands; check them on the open image with Separate.")
 
-        # Brightness threshold
-        bright_layout = QHBoxLayout()
-        bright_layout.addWidget(QLabel("Brightness Threshold:"))
         self.brf_brightness_slider = CustomSlider(Qt.Horizontal)
         self.brf_brightness_slider.setRange(0, 255)
         self.brf_brightness_slider.setValue(10)  # Default (as in the macro)
         self.brf_brightness_slider.valueChanged.connect(self.update_brf_brightness)
         self.brf_brightness_slider.setToolTip(
             "Darker pixels are background (default 10, as in the macro).")
-        bright_layout.addWidget(self.brf_brightness_slider)
-        self.brf_brightness_value = value_label("10")
-        bright_layout.addWidget(self.brf_brightness_value)
-        layout.addLayout(bright_layout)
+        self.brf_brightness_value = self._slider_value_label("10")
+        bands.add_row("Min brightness", self.brf_brightness_slider, self.brf_brightness_value)
 
-        # Saturation minimum
-        sat_layout = QHBoxLayout()
-        sat_layout.addWidget(QLabel("Saturation Min:"))
         self.brf_saturation_slider = CustomSlider(Qt.Horizontal)
         self.brf_saturation_slider.setRange(0, 255)
         self.brf_saturation_slider.setValue(0)  # Default (as in the macro)
         self.brf_saturation_slider.valueChanged.connect(self.update_brf_saturation)
         self.brf_saturation_slider.setToolTip(
             "Less saturated pixels belong to no band (default 0: grey pixels count as red-orange).")
-        sat_layout.addWidget(self.brf_saturation_slider)
-        self.brf_saturation_value = value_label("0")
-        sat_layout.addWidget(self.brf_saturation_value)
-        layout.addLayout(sat_layout)
+        self.brf_saturation_value = self._slider_value_label("0")
+        bands.add_row("Min saturation", self.brf_saturation_slider, self.brf_saturation_value)
 
-        # Hue bands: joined range sliders on one hue axis
+        # Hue bands: joined range sliders on one hue axis, filled in the band's colour
         self._brf_syncing = False
         self.brf_band_sliders, self.brf_band_values = [], []
         tips = {
@@ -2414,32 +2282,23 @@ class MainWindow(QMainWindow):
             "Yellow": "Hue range of yellow, default 28-47.",
             "Green": "Hue range of green (thin fibres), default 48-140.",
         }
-        band_labels = [QLabel(f"{band} Hue:") for band in brf.BANDS]
-        label_width = max(label.sizeHint().width() for label in band_labels)
         for index, band in enumerate(brf.BANDS):
-            band_layout = QHBoxLayout()
-            label = band_labels[index]
-            label.setFixedWidth(label_width)        # the three sliders share one hue axis: align them
-            band_layout.addWidget(label)
             slider = RangeSlider(Qt.Horizontal)
+            slider.fill_color = QColor(self.BRF_BAND_COLOURS[band])
             slider.setRange(*self.BRF_HUE_AXIS)
             lo, hi = brf.band_ranges(BRF_DEFAULTS)[index]
             slider.setValues(lo, hi)
             slider.valueChanged.connect(lambda lo, hi, i=index: self.update_brf_band(i, lo, hi))
-            slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             slider.setToolTip(tips[band] + "\n"
                                            "The bands stay joined.")
-            band_layout.addWidget(slider, 3)
-            value = value_label(f"({lo}, {hi})", 70)
-            band_layout.addWidget(value)
-            layout.addLayout(band_layout)
+            value = self._slider_value_label(f"{lo}, {hi}")
+            bands.add_row(f"{band.capitalize()} hue", slider, value)
             self.brf_band_sliders.append(slider)
             self.brf_band_values.append(value)
 
-        # View
-        view_layout = QHBoxLayout()
-        view_layout.addWidget(QLabel("View:"))
-        view_layout.addStretch()
+        # View, with the overlay checkbox on the same row
+        view_row = QHBoxLayout()
+        view_row.setSpacing(12)
         self.brf_view_combo = QComboBox()
         self.brf_view_combo.addItems(["Grid", "Total", *brf.BANDS, "Class map"])
         self.brf_view_combo.setStyleSheet(self.combo_style)
@@ -2447,8 +2306,14 @@ class MainWindow(QMainWindow):
         self.brf_view_combo.setToolTip(
             "Grid: original and the three bands. Total or a band: those pixels, as saved.\n"
             "Class map: one colour per band, grey for bright pixels in no band.")
-        view_layout.addWidget(self.brf_view_combo)
-        layout.addLayout(view_layout)
+        view_row.addWidget(self.brf_view_combo, 1)
+        self.brf_original_cb = QCheckBox("Overlay")
+        self.brf_original_cb.setChecked(False)
+        self.brf_original_cb.setStyleSheet(self.checkbox_style)
+        self.brf_original_cb.clicked.connect(self._show_brf_view)
+        self.brf_original_cb.setToolTip("Overlay the original image.")
+        view_row.addWidget(self.brf_original_cb)
+        bands.add_row("View", view_row)
 
         # Note shown for bright-field images
         self.brf_note = QLabel("This looks like a bright-field image; birefringence bands need a "
@@ -2456,104 +2321,81 @@ class MainWindow(QMainWindow):
         self.brf_note.setWordWrap(True)
         self.brf_note.setStyleSheet(self.value_label_style)
         self.brf_note.setVisible(False)
-        layout.addWidget(self.brf_note)
+        bands.add_widget(self.brf_note)
 
-        # Overlay checkbox
-        cb_layout = QHBoxLayout()
-        self.brf_original_cb = QCheckBox("Overlay Original")
-        self.brf_original_cb.setChecked(False)
-        self.brf_original_cb.setStyleSheet(self.checkbox_style)
-        self.brf_original_cb.clicked.connect(self._show_brf_view)
-        self.brf_original_cb.setToolTip("Show the original image.")
-        cb_layout.addStretch()
-        cb_layout.addWidget(self.brf_original_cb)
-        layout.addLayout(cb_layout)
-
-        # Separate button
-        self.brf_btn = QPushButton("Separate")
+        self.brf_btn = self._primary_button("Separate")
         self.brf_btn.clicked.connect(self.run_birefringence)
         self.brf_btn.setEnabled(False)
-        self.brf_btn.setStyleSheet(self.primary_btn_style)
-        layout.addWidget(self.brf_btn)
-
+        bands.add_footer(self.brf_btn)
         # Summary of the current separation
         self.brf_summary_label = QLabel("")
         self.brf_summary_label.setWordWrap(True)
         self.brf_summary_label.setStyleSheet(self.value_label_style)
         self.brf_summary_label.setToolTip("Signal per band, share of the image in a band or in none, and band area.")
-        layout.addWidget(self.brf_summary_label)
+        bands.add_footer(self.brf_summary_label)
+        layout.addWidget(bands)
 
         # --- Folder: colour separation only, no segmentation or fibre analysis ---
-        layout.addWidget(create_separator())
-        section("Folder Run", "Separate every image of a folder (no segmentation or fibre analysis);\n"
-                              "analyse the band images afterwards with Batch Run.")
-
-        folder_labels = []
+        folder = SectionCard("Folder run")
+        folder.title_label.setToolTip("Separate every image of a folder (no segmentation or fibre analysis);\n"
+                                      "analyse the band images afterwards with Batch Run.")
 
         def folder_row(label, tip, select, placeholder="Not selected"):
-            row = QHBoxLayout()
-            if isinstance(label, str):
-                label = QLabel(label)
-            folder_labels.append(label)
-            row.addWidget(label)
-            edit = QLineEdit("")
-            edit.setReadOnly(True)
+            edit = PathEdit("")
             edit.setPlaceholderText(placeholder)
-            edit.setStyleSheet(self.path_edit_style)
             edit.setToolTip(tip)
-            row.addWidget(edit, 1)
-            btn = QPushButton("Select")
-            btn.clicked.connect(select)
-            btn.setStyleSheet(self.btn_style)
-            row.addWidget(btn)
-            layout.addLayout(row)
-            return row, edit, btn
+            edit.pick_action.triggered.connect(select)
+            folder.add_flow_row(label, edit)
+            return edit, edit.pick_action
 
-        _, self.brf_input_path, self.brf_input_btn = folder_row(
-            "Input Folder:", "Polarised-light images (TIFF/PNG/JPEG); the pixel size is read from their metadata.", self.select_brf_input_folder)
-        _, self.brf_mask_path, self.brf_mask_btn = folder_row(
-            "ROI Masks:", "Optional masks named like the images (white = measure). Empty: whole images.",
-            self.select_brf_mask_folder, placeholder="Optional: leave empty to measure whole images")
+        self.brf_input_path, self.brf_input_btn = folder_row(
+            "Input folder", "Polarised-light images (TIFF/PNG/JPEG); the pixel size is read from their metadata.",
+            self.select_brf_input_folder)
+        self.brf_input_btn.setToolTip("Choose the input folder")
+        self.brf_mask_path, self.brf_mask_btn = folder_row(
+            "ROI masks", "Optional masks named like the images (white = measure). Empty: whole images.",
+            self.select_brf_mask_folder, placeholder="Optional")
+        self.brf_mask_btn.setToolTip("Choose the ROI mask folder")
         self.brf_mask_clear_action = add_clear_action(self.brf_mask_path, lambda: self.set_brf_mask_folder(None),
                                                       "Clear the ROI mask folder (whole images)")
-        _, self.brf_output_path, self.brf_output_btn = folder_row(
-            "Output Folder:", "Where the band images and tables go; files of the same names are replaced.", self.select_brf_output_folder)
+        self.brf_output_path, self.brf_output_btn = folder_row(
+            "Output folder", "Where the band images and tables go; files of the same names are replaced.",
+            self.select_brf_output_folder)
+        self.brf_output_btn.setToolTip("Choose the output folder")
         self.brf_input_folder = self.brf_mask_folder = self.brf_output_folder = None
-        # one width for the three row labels
-        label_width = max(label.sizeHint().width() for label in folder_labels)
-        for label in folder_labels:
-            label.setFixedWidth(label_width)
 
         out_cb_layout = QHBoxLayout()
-        self.brf_sort_cb = QCheckBox("Sort Into Folders")
+        self.brf_sort_cb = QCheckBox("Sort into folders")
         self.brf_sort_cb.setChecked(True)
         self.brf_sort_cb.setStyleSheet(self.checkbox_style)
         self.brf_sort_cb.stateChanged.connect(self.update_brf_sort)
         self.brf_sort_cb.setToolTip("Band images in Total, Red, Yellow and Green; tables in Stats.")
         out_cb_layout.addWidget(self.brf_sort_cb)
-        self.brf_images_cb = QCheckBox("Save Images")
+        self.brf_images_cb = QCheckBox("Save images")
         self.brf_images_cb.setChecked(True)
         self.brf_images_cb.setStyleSheet(self.checkbox_style)
         self.brf_images_cb.setToolTip("Write the band images; untick to write only the tables.")
         out_cb_layout.addStretch()
         out_cb_layout.addWidget(self.brf_images_cb)
-        layout.addLayout(out_cb_layout)
+        folder.add_layout(out_cb_layout)
 
-        self.brf_run_btn = QPushButton("Run Folder")
+        self.brf_run_btn = self._primary_button("Run Folder")
         self.brf_run_btn.clicked.connect(self.run_brf_folder)
         self.brf_run_btn.setEnabled(False)
-        self.brf_run_btn.setStyleSheet(self.primary_btn_style)
-        layout.addWidget(self.brf_run_btn)
-
+        folder.add_footer(self.brf_run_btn)
         self.brf_progress_bar = PercentageProgressBar()
         self.brf_progress_bar.setStyleSheet(self.progressbar_style)
         self.brf_progress_bar.setVisible(False)
-        layout.addWidget(self.brf_progress_bar)
+        folder.add_footer(self.brf_progress_bar)
         self.brf_folder_label = QLabel("")
         self.brf_folder_label.setWordWrap(True)
         self.brf_folder_label.setStyleSheet(self.value_label_style)
-        layout.addWidget(self.brf_folder_label)
+        folder.add_footer(self.brf_folder_label)
         self.brf_folder_worker = None
+        layout.addWidget(folder)
+
+        # the card titles (kept for tests and theme switching)
+        self.brf_section_titles = [bands.title_label, folder.title_label]
 
         layout.addStretch()
         self.brf_tab.setLayout(layout)
@@ -2599,7 +2441,7 @@ class MainWindow(QMainWindow):
             a, b = slider.lower_value, slider.upper_value
             a = a + 256 if a < 0 else a                        # below 0: wraps past 255
             params[f"{band} Min"], params[f"{band} Max"] = a, b
-            value.setText(f"({a}, {b})")
+            value.setText(f"{a}, {b}")
         self._schedule_brf_refresh()
 
     def select_brf_input_folder(self):
@@ -2668,6 +2510,7 @@ class MainWindow(QMainWindow):
         self.brf_folder_worker.run_complete.connect(self.handle_brf_folder_complete)
         self.brf_folder_worker.failed.connect(self.handle_brf_folder_failed)
         self.brf_run_btn.setText("Cancel")
+        self.brf_run_btn.setIcon(QIcon())
         self.brf_progress_bar.setValue(0)
         self.brf_progress_bar.setVisible(True)
         self.brf_folder_label.setText("Starting...")
@@ -2680,6 +2523,7 @@ class MainWindow(QMainWindow):
 
     def _brf_folder_finished(self):
         self.brf_run_btn.setText("Run Folder")
+        self._set_play_icon(self.brf_run_btn)
         self.brf_progress_bar.setVisible(False)
         self.brf_folder_label.setText("")
         self._check_brf_folder_ready()
@@ -2797,305 +2641,181 @@ class MainWindow(QMainWindow):
         self.brf_btn.setEnabled(self.ori_img is not None)
 
     def setup_detection_tab(self):
-        """Set up the detection tab UI with range sliders"""
-        layout = QVBoxLayout()
-        layout.setContentsMargins(6, 10, 6, 6)
-        layout.setSpacing(12)
+        """Set up the Fibre Detection page: a Detection card (ridge detection,
+        the Detect preview) and a Measurements card (used by Batch Run)."""
+        layout = self._page_layout()
 
-        # Line width range slider
-        line_width_layout = QHBoxLayout()
-        line_width_label = QLabel("Line Width (px):")
-        line_width_layout.addWidget(line_width_label)
-
-        # Create range slider for line width
+        detection = SectionCard("Detection")
         self.line_width_range = RangeSlider(Qt.Horizontal)
         self.line_width_range.setRange(1, 15)
         self.line_width_range.setValues(5, 7)  # Default values
         self.line_width_range.valueChanged.connect(self.update_line_width_range)
-        self.line_width_range.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.line_width_range.setToolTip("Widths of the fibres to detect; raise them for thicker fibres.")
-        line_width_layout.addWidget(self.line_width_range, 3)
+        self.line_width_value = self._slider_value_label("5, 7 px")
+        detection.add_row("Line width", self.line_width_range, self.line_width_value)
 
-        self.line_width_value = QLabel("(5, 7)")
-        self.line_width_value.setFixedWidth(55)
-        self.line_width_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-        self.line_width_value.setStyleSheet(
-            self.value_label_style)
-        line_width_layout.addWidget(self.line_width_value)
-        layout.addLayout(line_width_layout)
-
-        # Line step slider
-        line_step_layout = QHBoxLayout()
-        line_step_label = QLabel("Line Step (px):")
-        line_step_layout.addWidget(line_step_label)
         self.line_step_slider = CustomSlider(Qt.Horizontal)
         self.line_step_slider.setRange(1, 5)
         self.line_step_slider.setValue(2)  # Default
         self.line_step_slider.valueChanged.connect(self.update_line_step)
         self.line_step_slider.setToolTip("Step between line widths; lower finds more fibres.")
-        line_step_layout.addWidget(self.line_step_slider)
-        self.line_step_value = QLabel("2")
-        self.line_step_value.setFixedWidth(30)
-        self.line_step_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-        self.line_step_value.setStyleSheet(
-            self.value_label_style)
-        line_step_layout.addWidget(self.line_step_value)
-        layout.addLayout(line_step_layout)
+        self.line_step_value = self._slider_value_label("2 px")
+        detection.add_row("Line step", self.line_step_slider, self.line_step_value)
 
-        # Contrast range slider
-        contrast_layout = QHBoxLayout()
-        contrast_label = QLabel("Contrast:")
-        contrast_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        contrast_layout.addWidget(contrast_label)
-
-        # Create range slider for contrast
         self.contrast_range = RangeSlider(Qt.Horizontal)
         self.contrast_range.setRange(0, 255)
         self.contrast_range.setValues(100, 200)  # Default values
         self.contrast_range.valueChanged.connect(self.update_contrast_range)
-        self.contrast_range.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.contrast_range.setToolTip("Lower it for faint fibres.")
-        contrast_layout.addWidget(self.contrast_range, 3)
+        self.contrast_value = self._slider_value_label("100, 200")
+        detection.add_row("Contrast", self.contrast_range, self.contrast_value)
 
-        self.contrast_value = QLabel("(100, 200)")
-        self.contrast_value.setFixedWidth(70)
-        self.contrast_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-        self.contrast_value.setStyleSheet(
-            self.value_label_style)
-        contrast_layout.addWidget(self.contrast_value)
-        layout.addLayout(contrast_layout)
-
-        # Minimum line length slider
-        min_length_layout = QHBoxLayout()
-        min_length_label = QLabel("Minimum Line Length:")
-        min_length_layout.addWidget(min_length_label)
         self.min_length_slider = CustomSlider(Qt.Horizontal)
         self.min_length_slider.setRange(1, 50)
         self.min_length_slider.setValue(5)  # Default
         self.min_length_slider.valueChanged.connect(self.update_min_length)
         self.min_length_slider.setToolTip("Shorter fibres are ignored.")
-        min_length_layout.addWidget(self.min_length_slider)
-        self.min_length_value = QLabel("5")
-        self.min_length_value.setFixedWidth(30)
-        self.min_length_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-        self.min_length_value.setStyleSheet(
-            self.value_label_style)
-        min_length_layout.addWidget(self.min_length_value)
-        layout.addLayout(min_length_layout)
+        self.min_length_value = self._slider_value_label("5 px")
+        detection.add_row("Min line length", self.min_length_slider, self.min_length_value)
 
-        # Checkboxes
-        layout.addWidget(create_separator())
         checkbox_layout = QHBoxLayout()
-        self.dark_line_cb = QCheckBox("Dark Line")
+        self.dark_line_cb = QCheckBox("Dark line")
         self.dark_line_cb.setChecked(True)
-        self.dark_line_cb.setStyleSheet(self.checkbox_style)
         self.dark_line_cb.stateChanged.connect(self.update_dark_line)
         self.dark_line_cb.setToolTip("Dark fibres on a light background (Picrosirius Red); untick for bright fibres.")
-        checkbox_layout.addWidget(self.dark_line_cb)
-
-        self.extend_line_cb = QCheckBox("Extend Line")
+        self.extend_line_cb = QCheckBox("Extend line")
         self.extend_line_cb.setChecked(False)
-        self.extend_line_cb.setStyleSheet(self.checkbox_style)
         self.extend_line_cb.stateChanged.connect(self.update_extend_line)
         self.extend_line_cb.setToolTip("Also detect fibres near junctions (may add artefacts).")
-        checkbox_layout.addWidget(self.extend_line_cb)
-
-        self.overlay_fibres_cb = QCheckBox("Overlay Fibres")
+        self.overlay_fibres_cb = QCheckBox("Overlay fibres")
         self.overlay_fibres_cb.setChecked(True)
-        self.overlay_fibres_cb.setStyleSheet(self.checkbox_style)
         self.overlay_fibres_cb.stateChanged.connect(self.update_overlay_fibres)
         self.overlay_fibres_cb.setToolTip("Show the detected fibres on the image.")
-        checkbox_layout.addWidget(self.overlay_fibres_cb)
+        for cb in (self.dark_line_cb, self.extend_line_cb, self.overlay_fibres_cb):
+            cb.setStyleSheet(self.checkbox_style)
+            checkbox_layout.addWidget(cb)
+            checkbox_layout.addStretch()
+        detection.add_layout(checkbox_layout)
 
-        layout.addLayout(checkbox_layout)
-
-        # Detection button
-        self.detect_btn = QPushButton("Detect")
+        self.detect_btn = self._primary_button("Detect")
         self.detect_btn.clicked.connect(self.run_detection)
         self.detect_btn.setEnabled(False)
-        self.detect_btn.setStyleSheet(self.primary_btn_style)
-        layout.addWidget(self.detect_btn)
+        detection.add_footer(self.detect_btn)
+        layout.addWidget(detection)
 
         # Fibre measurements: used by the skeleton analysis of a full run
         # (Batch Run), not by the Detect preview above
-        layout.addWidget(create_separator())
-        measure_label = QLabel("Fibre measurements (used when the analysis runs):")
-        measure_label.setToolTip("Used by Batch Run, not by Detect.")
-        layout.addWidget(measure_label)
+        measurements = SectionCard("Measurements")
+        measurements.setToolTip("Used by Batch Run, not by Detect.")
+        note = QLabel("Used by Batch Run, not by Detect.")
+        note.setObjectName("note")
+        measurements.add_widget(note)
 
-        min_branch_layout = QHBoxLayout()
-        min_branch_label = QLabel("Min Branch Length (px):")
-        min_branch_layout.addWidget(min_branch_label)
         self.min_branch_slider = CustomSlider(Qt.Horizontal)
         self.min_branch_slider.setRange(1, 100)
         self.min_branch_slider.setValue(5)  # Default
         self.min_branch_slider.valueChanged.connect(self.update_min_branch)
         self.min_branch_slider.setToolTip(
             "Shorter side branches are pruned before length, branching and curvature are measured.")
-        min_branch_layout.addWidget(self.min_branch_slider)
-        self.min_branch_value = QLabel("5")
-        self.min_branch_value.setFixedWidth(30)
-        self.min_branch_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-        self.min_branch_value.setStyleSheet(
-            self.value_label_style)
-        min_branch_layout.addWidget(self.min_branch_value)
-        layout.addLayout(min_branch_layout)
+        self.min_branch_value = self._slider_value_label("5 px")
+        measurements.add_row("Min branch length", self.min_branch_slider, self.min_branch_value)
 
-        curve_window_layout = QHBoxLayout()
-        curve_window_label = QLabel("Curvature Window (px):")
-        curve_window_layout.addWidget(curve_window_label)
         self.curve_window_range = RangeSlider(Qt.Horizontal)
         self.curve_window_range.setRange(2, 100)
         self.curve_window_range.setValues(10, 30)  # Default values
         self.curve_window_range.valueChanged.connect(self.update_curve_window_range)
-        self.curve_window_range.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.curve_window_range.setToolTip(
-            "Curvature window sizes, from smaller to larger in steps of Window Step;\n"
+            "Curvature window sizes, from smaller to larger in steps of Window step;\n"
             "one Curvature column per window.")
-        curve_window_layout.addWidget(self.curve_window_range, 3)
-        self.curve_window_value = QLabel("(10, 30)")
-        self.curve_window_value.setFixedWidth(70)
-        self.curve_window_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-        self.curve_window_value.setStyleSheet(
-            self.value_label_style)
-        curve_window_layout.addWidget(self.curve_window_value)
-        layout.addLayout(curve_window_layout)
+        self.curve_window_value = self._slider_value_label("10, 30 px")
+        measurements.add_row("Curvature window", self.curve_window_range, self.curve_window_value)
 
-        curve_step_layout = QHBoxLayout()
-        curve_step_label = QLabel("Window Step (px):")
-        curve_step_layout.addWidget(curve_step_label)
         self.curve_step_slider = CustomSlider(Qt.Horizontal)
         self.curve_step_slider.setRange(1, 100)
         self.curve_step_slider.setValue(10)  # Default
         self.curve_step_slider.valueChanged.connect(self.update_curve_step)
         self.curve_step_slider.setToolTip("Spacing between the curvature window sizes.")
-        curve_step_layout.addWidget(self.curve_step_slider)
-        self.curve_step_value = QLabel("10")
-        self.curve_step_value.setFixedWidth(30)
-        self.curve_step_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-        self.curve_step_value.setStyleSheet(
-            self.value_label_style)
-        curve_step_layout.addWidget(self.curve_step_value)
-        layout.addLayout(curve_step_layout)
+        self.curve_step_value = self._slider_value_label("10 px")
+        measurements.add_row("Window step", self.curve_step_slider, self.curve_step_value)
+        layout.addWidget(measurements)
 
         layout.addStretch()
         self.det_tab.setLayout(layout)
 
     def setup_gap_analysis_tab(self):
-        """Set up the gap analysis tab UI"""
-        layout = QVBoxLayout()
-        layout.setContentsMargins(6, 10, 6, 6)
-        layout.setSpacing(12)
+        """Set up the Gap Analysis page: a Gaps card and an HDM card (the HDM
+        settings stay active when gap analysis is off); the on/off switch sits
+        beside the page title."""
+        layout = self._page_layout()
 
         self.toggle_gap_label = QLabel()
-        self.toggle_gap_label.setText(
-            f"Gap Analysis <b><span style='color: {COLORS['highlight'].name()};'>Enabled</span></b>")
-        # layout.addWidget(self.toggle_gap_label, 0, Qt.AlignRight)
-        toggle_layout = QHBoxLayout()
-
+        self._set_switch_label(self.toggle_gap_label, True)
         self.toggle_gap_btn = ToggleButton()
         self.toggle_gap_btn.setChecked(True)
         self.toggle_gap_btn.toggled.connect(self.toggle_gap_analysis)
         self.toggle_gap_btn.setToolTip("Turn gap analysis on or off.")
-        # layout.addWidget(self.toggle_gap_btn, 0, Qt.AlignRight)
-        toggle_layout.addStretch()
-        toggle_layout.addWidget(self.toggle_gap_label)
-        toggle_layout.addWidget(self.toggle_gap_btn)
-        layout.addLayout(toggle_layout)
+        self._title_switch(self.gap_tab, self.toggle_gap_label, self.toggle_gap_btn)
 
-        # Minimum gap diameter slider
-        min_gap_layout = QHBoxLayout()
-        min_gap_label = QLabel("Min Gap Diameter (px):")
-        min_gap_layout.addWidget(min_gap_label)
+        gaps = SectionCard("Gaps")
         self.min_gap_slider = CustomSlider(Qt.Horizontal)
         self.min_gap_slider.setRange(5, 100)
         self.min_gap_slider.setValue(20)  # Default
         self.min_gap_slider.valueChanged.connect(self.update_min_gap)
         self.min_gap_slider.setToolTip("Smallest gap to report; lower finds smaller gaps.")
-        min_gap_layout.addWidget(self.min_gap_slider)
-        self.min_gap_value = QLabel("20")
-        self.min_gap_value.setFixedWidth(30)
-        self.min_gap_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-        self.min_gap_value.setStyleSheet(
-            self.value_label_style)
-        min_gap_layout.addWidget(self.min_gap_value)
-        layout.addLayout(min_gap_layout)
+        self.min_gap_value = self._slider_value_label("20 px")
+        gaps.add_row("Min gap diameter", self.min_gap_slider, self.min_gap_value)
 
-        # Max display HDM slider
-        max_hdm_layout = QHBoxLayout()
-        max_hdm_label = QLabel("Max Display HDM:")
-        max_hdm_layout.addWidget(max_hdm_label)
+        self.overlay_gaps_cb = QCheckBox("Overlay gaps")
+        self.overlay_gaps_cb.setChecked(False)
+        self.overlay_gaps_cb.setStyleSheet(self.checkbox_style)
+        self.overlay_gaps_cb.stateChanged.connect(self.update_overlay_gaps)
+        self.overlay_gaps_cb.setToolTip("Show the gaps over the tissue image.")
+        gaps.add_widget(self.overlay_gaps_cb)
+
+        self.analyze_btn = self._primary_button("Analyze")
+        self.analyze_btn.clicked.connect(self.run_gap_analysis)
+        self.analyze_btn.setEnabled(False)
+        gaps.add_footer(self.analyze_btn)
+        # Summary of the last gap analysis
+        self.gap_summary_label = QLabel("")
+        self.gap_summary_label.setWordWrap(True)
+        self.gap_summary_label.setStyleSheet(self.value_label_style)
+        self.gap_summary_label.setToolTip("Last analysis: gap count, median diameter and share of the image covered.")
+        gaps.add_footer(self.gap_summary_label)
+        layout.addWidget(gaps)
+
+        hdm = SectionCard("Hematoxylin density (HDM)")
         self.max_hdm_slider = CustomSlider(Qt.Horizontal)
         self.max_hdm_slider.setRange(100, 255)
         self.max_hdm_slider.setValue(230)  # Default
         self.max_hdm_slider.valueChanged.connect(self.update_max_hdm)
         self.max_hdm_slider.setToolTip("Highest grey level counted in the HDM; lower it to narrow the HDM area.")
-        max_hdm_layout.addWidget(self.max_hdm_slider)
-        self.max_hdm_value = QLabel("230")
-        self.max_hdm_value.setFixedWidth(30)
-        self.max_hdm_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-        self.max_hdm_value.setStyleSheet(
-            self.value_label_style)
-        max_hdm_layout.addWidget(self.max_hdm_value)
-        layout.addLayout(max_hdm_layout)
+        self.max_hdm_value = self._slider_value_label("230")
+        hdm.add_row("Max display HDM", self.max_hdm_slider, self.max_hdm_value)
 
         # HDM saturation (Quantification: Contrast Enhancement, a fraction)
-        hdm_sat_layout = QHBoxLayout()
-        hdm_sat_label = QLabel("HDM Saturation (%):")
-        hdm_sat_layout.addWidget(hdm_sat_label)
         self.hdm_saturation_slider = CustomSlider(Qt.Horizontal)
         self.hdm_saturation_slider.setRange(0, 50)
         self.hdm_saturation_slider.setValue(10)  # Default 0.1
         self.hdm_saturation_slider.valueChanged.connect(self.update_hdm_saturation)
         self.hdm_saturation_slider.setToolTip(
             "Share of pixels saturated when stretching the HDM contrast; used by Batch Run.")
-        hdm_sat_layout.addWidget(self.hdm_saturation_slider)
-        self.hdm_saturation_value = QLabel("10")
-        self.hdm_saturation_value.setFixedWidth(30)
-        self.hdm_saturation_value.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-        self.hdm_saturation_value.setStyleSheet(
-            self.value_label_style)
-        hdm_sat_layout.addWidget(self.hdm_saturation_value)
-        layout.addLayout(hdm_sat_layout)
-
-        # Overlay checkbox
-        layout.addWidget(create_separator())
-        self.overlay_gaps_cb = QCheckBox("Overlay Gaps")
-        self.overlay_gaps_cb.setChecked(False)
-        self.overlay_gaps_cb.setStyleSheet(self.checkbox_style)
-        self.overlay_gaps_cb.stateChanged.connect(self.update_overlay_gaps)
-        self.overlay_gaps_cb.setToolTip("Show the gaps over the tissue image.")
-        overlay_layout = QHBoxLayout()
-        overlay_layout.addStretch()
-        overlay_layout.addWidget(self.overlay_gaps_cb)
-        layout.addLayout(overlay_layout)
-
-        # Analysis button
-        self.analyze_btn = QPushButton("Analyze")
-        self.analyze_btn.clicked.connect(self.run_gap_analysis)
-        self.analyze_btn.setEnabled(False)
-        self.analyze_btn.setStyleSheet(self.primary_btn_style)
-        layout.addWidget(self.analyze_btn)
-
-        # Summary of the last gap analysis
-        self.gap_summary_label = QLabel("")
-        self.gap_summary_label.setWordWrap(True)
-        self.gap_summary_label.setStyleSheet(self.value_label_style)
-        self.gap_summary_label.setToolTip("Last analysis: gap count, median diameter and share of the image covered.")
-        layout.addWidget(self.gap_summary_label)
+        self.hdm_saturation_value = self._slider_value_label("10 %")
+        hdm.add_row("Saturation", self.hdm_saturation_slider, self.hdm_saturation_value)
+        layout.addWidget(hdm)
 
         layout.addStretch()
         self.gap_tab.setLayout(layout)
 
     def update_line_width_range(self, min_val, max_val):
         """Update line width range values"""
-        self.line_width_value.setText(f"({min_val}, {max_val})")
+        self.line_width_value.setText(f"{min_val}, {max_val} px")
         self.yml_data["Detection"]["Min Line Width"] = min_val
         self.yml_data["Detection"]["Max Line Width"] = max_val
 
     def update_contrast_range(self, min_val, max_val):
         """Update contrast range values"""
-        self.contrast_value.setText(f"({min_val}, {max_val})")
+        self.contrast_value.setText(f"{min_val}, {max_val}")
         self.yml_data["Detection"]["Low Contrast"] = min_val
         self.yml_data["Detection"]["High Contrast"] = max_val
 
@@ -3111,7 +2831,7 @@ class MainWindow(QMainWindow):
 
             # Calculate hue
             hue = hex_to_hue(hex_color)
-            self.hue_label.setText(f"Normalized hue: {hue:.2f}")
+            self.hue_label.setText(f"Hue {hue:.2f}")
             # self.hue_label.setStyleSheet(f"color: {hex_color}")
 
             # Update YAML data
@@ -3197,13 +2917,13 @@ class MainWindow(QMainWindow):
     def update_line_step(self):
         """Update line step value"""
         value = self.line_step_slider.value()
-        self.line_step_value.setText(str(value))
+        self.line_step_value.setText(f"{value} px")
         self.yml_data["Detection"]["Line Width Step"] = value
 
     def update_min_length(self):
         """Update minimum line length value"""
         value = self.min_length_slider.value()
-        self.min_length_value.setText(str(value))
+        self.min_length_value.setText(f"{value} px")
         self.yml_data["Detection"]["Minimum Line Length"] = value
 
     def update_dark_line(self):
@@ -3217,7 +2937,7 @@ class MainWindow(QMainWindow):
     def update_min_gap(self):
         """Update minimum gap diameter value"""
         value = self.min_gap_slider.value()
-        self.min_gap_value.setText(str(value))
+        self.min_gap_value.setText(f"{value} px")
         self.yml_data["Gap Analysis"]["Minimum Gap Diameter"] = value
 
     def update_max_hdm(self):
@@ -3229,12 +2949,12 @@ class MainWindow(QMainWindow):
     def update_min_branch(self):
         """Update Quantification: Minimum Branch Length"""
         value = self.min_branch_slider.value()
-        self.min_branch_value.setText(str(value))
+        self.min_branch_value.setText(f"{value} px")
         self.yml_data.setdefault("Quantification", {})["Minimum Branch Length"] = value
 
     def update_curve_window_range(self, min_val, max_val):
         """Update Quantification: Minimum/Maximum Curvature Window"""
-        self.curve_window_value.setText(f"({min_val}, {max_val})")
+        self.curve_window_value.setText(f"{min_val}, {max_val} px")
         quant = self.yml_data.setdefault("Quantification", {})
         quant["Minimum Curvature Window"] = min_val
         quant["Maximum Curvature Window"] = max_val
@@ -3242,13 +2962,13 @@ class MainWindow(QMainWindow):
     def update_curve_step(self):
         """Update Quantification: Curvature Window Step"""
         value = self.curve_step_slider.value()
-        self.curve_step_value.setText(str(value))
+        self.curve_step_value.setText(f"{value} px")
         self.yml_data.setdefault("Quantification", {})["Curvature Window Step"] = value
 
     def update_hdm_saturation(self):
         """Update Quantification: Contrast Enhancement (slider in percent)"""
         value = self.hdm_saturation_slider.value()
-        self.hdm_saturation_value.setText(str(value))
+        self.hdm_saturation_value.setText(f"{value} %")
         quant = self.yml_data.setdefault("Quantification", {})
         # keep a finer value from a parameter file that rounds to this percent
         if round(float(quant.get("Contrast Enhancement", -1)) * 100) != value:
@@ -3352,7 +3072,7 @@ class MainWindow(QMainWindow):
             self.white_bg_cb.setChecked(seg["Dark Line"])
         if "Normalized Hue Value" in seg:
             hue = seg["Normalized Hue Value"]
-            self.hue_label.setText(f"Normalized hue: {hue:.2f}")
+            self.hue_label.setText(f"Hue {hue:.2f}")
             # Update color button to reflect the hue
             r, g, b = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
             hex_color = f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}"
@@ -3543,8 +3263,7 @@ class MainWindow(QMainWindow):
         """Disable segmentation and update the UI accordingly"""
         if not self.toggle_seg_btn.isChecked():
             self.yml_data["Configs"]["Segmentation"] = False
-            self.toggle_seg_label.setText(
-                        f"Segmentation <b><span style='color: {COLORS['warning'].name()};'>Disabled</span></b>")
+            self._set_switch_label(self.toggle_seg_label, False)
             self.segment_btn.setEnabled(False)
             self.color_btn.setEnabled(False)
             self.color_thresh_slider.setEnabled(False)
@@ -3555,8 +3274,7 @@ class MainWindow(QMainWindow):
             self.toggle_img_cb.setEnabled(False)
         else:
             self.yml_data["Configs"]["Segmentation"] = True
-            self.toggle_seg_label.setText(
-                f"Segmentation <b><span style='color: {COLORS['highlight'].name()};'>Enabled</span></b>")
+            self._set_switch_label(self.toggle_seg_label, True)
             # Segment still requires a loaded image
             self.segment_btn.setEnabled(self.ori_img is not None)
             self.color_btn.setEnabled(True)
@@ -3571,15 +3289,13 @@ class MainWindow(QMainWindow):
         """Disable gap analysis and update the UI accordingly"""
         if not self.toggle_gap_btn.isChecked():
             self.yml_data["Configs"]["Gap Analysis"] = False
-            self.toggle_gap_label.setText(
-                f"Gap Analysis <b><span style='color: {COLORS['warning'].name()};'>Disabled</span></b>")
+            self._set_switch_label(self.toggle_gap_label, False)
             self.analyze_btn.setEnabled(False)
             self.min_gap_slider.setEnabled(False)
             self.overlay_gaps_cb.setEnabled(False)
         else:
             self.yml_data["Configs"]["Gap Analysis"] = True
-            self.toggle_gap_label.setText(
-                f"Gap Analysis <b><span style='color: {COLORS['highlight'].name()};'>Enabled</span></b>")
+            self._set_switch_label(self.toggle_gap_label, True)
             self.analyze_btn.setEnabled(True)
             self.min_gap_slider.setEnabled(True)
             self.overlay_gaps_cb.setEnabled(True)
@@ -4144,9 +3860,7 @@ class MainWindow(QMainWindow):
 
         # Buttons
         for btn in (self.start_open_btn, self.start_params_btn, self.cancel_batch_btn,
-                     self.tma_slide_btn, self.tma_output_btn,
-                     self.tma_cancel_btn, self.tma_undo_btn, self.tma_load_edits_btn, self.tma_save_edits_btn,
-                     self.brf_input_btn, self.brf_mask_btn, self.brf_output_btn):
+                     self.tma_cancel_btn, self.tma_undo_btn, self.tma_load_edits_btn, self.tma_save_edits_btn):
             btn.setStyleSheet(self.btn_style)
 
         # Primary buttons
@@ -4182,9 +3896,6 @@ class MainWindow(QMainWindow):
             cb.setStyleSheet(self.checkbox_style)
 
         # Path edits
-        for edit in (self.tma_slide_path, self.tma_output_path,
-                     self.brf_input_path, self.brf_mask_path, self.brf_output_path):
-            edit.setStyleSheet(self.path_edit_style)
         self.tma_status_label.setStyleSheet(self.value_label_style)
         self.progress_label.setStyleSheet(self.value_label_style)
         self.gap_summary_label.setStyleSheet(self.value_label_style)
@@ -4193,8 +3904,6 @@ class MainWindow(QMainWindow):
         self.brf_summary_label.setStyleSheet(self.value_label_style)
         self.brf_folder_label.setStyleSheet(self.value_label_style)
         self.brf_progress_bar.setStyleSheet(self.progressbar_style)
-        for label in self.brf_section_titles:
-            label.setStyleSheet(self.value_label_style + " font-weight: 600;")
 
         # Value labels (slider readouts)
         for label in (self.color_thresh_value, self.num_labels_value, self.max_iters_value,
@@ -4227,12 +3936,8 @@ class MainWindow(QMainWindow):
         self.image_panel.setPalette(img_palette)
 
         # Update toggle labels with current theme colors
-        if hasattr(self, 'toggle_seg_btn') and self.toggle_seg_btn.isChecked():
-            self.toggle_seg_label.setText(
-                f"Segmentation <b><span style='color: {COLORS['highlight'].name()};'>Enabled</span></b>")
-        if hasattr(self, 'toggle_gap_btn') and self.toggle_gap_btn.isChecked():
-            self.toggle_gap_label.setText(
-                f"Gap Analysis <b><span style='color: {COLORS['highlight'].name()};'>Enabled</span></b>")
+        self._set_switch_label(self.toggle_seg_label, self.toggle_seg_btn.isChecked())
+        self._set_switch_label(self.toggle_gap_label, self.toggle_gap_btn.isChecked())
 
         # Force repaint on all widgets
         for widget in self.findChildren(QWidget):

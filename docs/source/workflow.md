@@ -13,9 +13,9 @@ Once the Cabana GUI is launched, you will see a window split horizontally: the c
 3. **Open Image** loads a single image to tune parameters on; the panel switches to Segmentation automatically. You can also drag an image onto the viewer.
 4. **Import Parameters** loads a saved `Parameters.yml` into the controls.
 
-The control panel shows one page at a time. Hover any label or control for a short description; the same hint appears in the status bar at the bottom, which also shows the loaded file, its size and the zoom. The theme selector sits at the bottom right.
+The control panel shows one page at a time, its settings grouped in collapsible cards (click a card's title to fold it). Hover any label or control for a short description; the same hint appears in the status bar at the bottom, which also shows the loaded file, its size and the zoom. The theme selector sits at the bottom right.
 
-To begin, select a representative image from your dataset, then work through the Segmentation, Fibre Detection and Gap Analysis pages in that order to determine the settings for your analysis. For polarised-light (birefringence) images, the Birefringence page separates the red-orange, yellow and green colour bands, one image or a whole folder (**Run Folder**). Its settings are not part of the parameter file. The band images it writes can then be analysed like any other images: tune and export a polarised-light parameter file (segmentation off, **Dark Line** off) and use it on the Batch Run page.
+To begin, select a representative image from your dataset, then work through the Segmentation, Fibre Detection and Gap Analysis pages in that order to determine the settings for your analysis. For polarised-light (birefringence) images, the Birefringence page separates the red-orange, yellow and green colour bands, one image or a whole folder (**Run Folder**). Its settings are not part of the parameter file. The band images it writes can then be analysed like any other images: tune and export a polarised-light parameter file (segmentation off, **Dark line** off) and use it on the Batch Run page.
 
 ## Birefringence
 
@@ -23,15 +23,15 @@ To begin, select a representative image from your dataset, then work through the
 
 Under polarised light, Picrosirius Red stained collagen shines red-orange, yellow or green, roughly from thick, densely packed fibres to thin, loosely packed ones. This page classifies the pixels of a polarised-light image into these colour bands as the CMM Lab PR-BRF Analyser ImageJ macro does; with the default settings the band pixel counts equal the macro's. A note appears when the open image looks bright-field, where the bands are meaningless.
 
-The page has two sections: **Bands**, how pixels are assigned to the bands, checked on the open image with **Separate**, and **Folder Run**, which applies them to every image of a folder.
+The page has two cards: **Bands**, how pixels are assigned to the bands, checked on the open image with **Separate**, and **Folder run**, which applies them to every image of a folder.
 
-1. **Brightness Threshold** (default 10): darker pixels are background. **Saturation Min** (default 0): less saturated pixels belong to no band; at 0, grey pixels count as red-orange, as in the macro.
-2. **Red-Orange, Yellow and Green Hue.** The hue range of each band on ImageJ's 0 to 255 scale (defaults 0-27, 28-47 and 48-140, those of the macro). The bands stay joined: moving one edge moves the neighbouring band. Drag the red-orange band below 0 to include the deep red hues just below the wrap point (shown as, for example, 230-27); the default band leaves them out and reports them as unclassified.
+1. **Min brightness** (default 10): darker pixels are background. **Min saturation** (default 0): less saturated pixels belong to no band; at 0, grey pixels count as red-orange, as in the macro.
+2. **Red-orange, Yellow and Green hue.** The hue range of each band on ImageJ's 0 to 255 scale (defaults 0-27, 28-47 and 48-140, those of the macro). The bands stay joined: moving one edge moves the neighbouring band. Drag the red-orange band below 0 to include the deep red hues just below the wrap point (shown as, for example, 230-27); the default band leaves them out and reports them as unclassified.
 3. **View.** *Grid* (the default) shows the original image and the red-orange, yellow and green bands side by side; *Total* and each band show those pixels in their original colour on black, as they are saved; *Class map* paints each band in its colour and bright pixels in no band in grey, the quickest way to judge the band limits.
-4. **Overlay Original** shows the original image.
+4. **Overlay** (next to View) shows the original image.
 5. **Separate** computes the bands of the open image; afterwards every setting updates the view at once. Below the button: each band's share of the birefringent signal, the share of the image in any band and in none (unclassified), and the area in the bands (when the image records its pixel size).
-6. **Run on a folder.** Colour separation of every image in the **Input Folder** with the settings above, without segmentation or fibre analysis. **ROI Masks** (optional) restricts the measurement of each image to its mask, matched by name as in Batch Run; leave it empty to measure whole images (the clear icon in the field empties it). When the input folder is a QuPath export such as `stroma`, its `stroma_mask` folder (or the `Masks` folder next to a TMA export's `Images`) is filled in automatically. Results go to the **Output Folder**; files of the same names are replaced and nothing else is deleted.
-7. **Sort Into Folders** (default on) puts the band images in `Total`, `Red`, `Yellow` and `Green` and the tables in `Stats`. **Save Images** (default on) writes the band images; untick it to write only the tables. **Run Folder** starts the run and turns into **Cancel** while it runs; a progress bar shows the image being separated.
+6. **Run on a folder.** Colour separation of every image in the **Input folder** with the settings above, without segmentation or fibre analysis. Click a field or its folder icon to choose the folder. **ROI masks** (optional) restricts the measurement of each image to its mask, matched by name as in Batch Run; leave it empty to measure whole images (the clear icon in the field empties it). When the input folder is a QuPath export such as `stroma`, its `stroma_mask` folder (or the `Masks` folder next to a TMA export's `Images`) is filled in automatically. Results go to the **Output folder**; files of the same names are replaced and nothing else is deleted.
+7. **Sort into folders** (default on) puts the band images in `Total`, `Red`, `Yellow` and `Green` and the tables in `Stats`. **Save images** (default on) writes the band images; untick it to write only the tables. **Run Folder** starts the run and turns into **Cancel** while it runs; a progress bar shows the image being separated.
 
 The settings start at the macro's defaults every time Cabana starts and are not saved in the parameter file. The output folder of **Run Folder** holds `Total/<image>_total.tif` (every pixel in a band, in its original colour) and `<image>_original.tif`, `Red/<image>_red_orange.tif`, `Yellow/<image>_yellow.tif`, `Green/<image>_green.tif`, `Stats/<image>_statistics.csv` and `Stats/ResultsBRF.csv` with one row per image (see [Read-outs](readouts.md#birefringence-colour-bands)), and `BRF_Settings.yml`, a record of the settings and folders used. The images are TIFFs carrying the pixel size; large sections are processed in strips, so they need little more memory than the image itself.
 
@@ -39,33 +39,33 @@ The settings start at the macro's defaults every time Cabana starts and are not 
 
 ![Segmentation page](media/segmentation.png)
 
-1. **Segmentation toggle.** Turns the segmentation step on or off for both the GUI and batch runs. If the background is clean, segmentation may not be needed.
-2. **Colour of Interest.** Click the swatch to pick the stain colour directly from the image; the **Normalised Hue** (in [0, 1], HSB/HSV colour space) is shown next to it. To pick from the original image again, use **File > Reload Image**.
-3. **Colour Threshold** is the minimum colour score (1 = exactly the colour of interest) for a segment to count as region of interest (ROI); after a segmentation, moving the slider updates the result at once. **No. of Labels** controls the granularity of the segmentation; **Max Iterations** limits the training of the segmentation network.
-4. **Patch Size** (1024 px by default): larger images are segmented in overlapping square patches. The network is trained once on the whole image and then labels each patch at a higher resolution, so fine detail survives on images of several thousand pixels such as TMA cores. Off shrinks the whole image to 512 px. **Max Size** (5000 px by default) is the largest image a batch run analyses as one piece: images with more pixels than its square are split into blocks of at most this size, each analysed (and segmented) as a separate image. *No limit* analyses every image whole, and very large images may run out of memory; the smallest value is 2048 px. It is saved with the other parameters by **Parameters > Export**. A note below the two boxes says when the open image would be split in a batch run (the segmentation preview always uses the whole image), and when Patch Size is so large that it cannot apply to the blocks.
-5. **White Background.** Fills the non-ROI area with white (default). Disable it when detecting bright fibres on a dark background. **Overlay Original** blends the segmentation with the original image in the viewer.
+1. **On/off switch** (next to the page title). Turns the segmentation step on or off for both the GUI and batch runs. If the background is clean, segmentation may not be needed.
+2. **Colour of interest.** Click the swatch to pick the stain colour directly from the image; its normalised **Hue** (in [0, 1], HSB/HSV colour space) is shown next to it. To pick from the original image again, use **File > Reload Image**.
+3. **Colour threshold** is the minimum colour score (1 = exactly the colour of interest) for a segment to count as region of interest (ROI); after a segmentation, moving the slider updates the result at once. In the **Training** card, **Labels** controls the granularity of the segmentation and **Max iterations** limits the training of the segmentation network.
+4. **Large images.** **Patch size** (1024 px by default): larger images are segmented in overlapping square patches. The network is trained once on the whole image and then labels each patch at a higher resolution, so fine detail survives on images of several thousand pixels such as TMA cores. Off shrinks the whole image to 512 px. **Max size** (5000 px by default) is the largest image a batch run analyses as one piece: images with more pixels than its square are split into blocks of at most this size, each analysed (and segmented) as a separate image. *No limit* analyses every image whole, and very large images may run out of memory; the smallest value is 2048 px. It is saved with the other parameters by **Parameters > Export**. A note below the two boxes says when the open image would be split in a batch run (the segmentation preview always uses the whole image), and when Patch size is so large that it cannot apply to the blocks.
+5. **White background.** Fills the non-ROI area with white (default). Disable it when detecting bright fibres on a dark background. **Overlay original** blends the segmentation with the original image in the viewer.
 6. **Segment** runs the step; the result replaces the image in the viewer.
 
 ## Fibre Detection
 
 ![Fibre Detection page](media/detection.png)
 
-1. **Line Width (px).** Minimum and maximum width of the ridges to detect.
-2. **Line Step (px).** Sampling interval for line widths between the minimum and maximum.
+1. **Line width.** Minimum and maximum width of the ridges to detect, in pixels.
+2. **Line step.** Sampling interval for line widths between the minimum and maximum, in pixels.
 3. **Contrast.** Lower and upper greyscale contrast thresholds between fibres and background.
-4. **Minimum Line Length (px).** Shorter fibres are ignored.
-5. **Dark Line** detects dark fibres on a light background (Picrosirius Red); disable it for bright fibres on a dark background (fluorescence, SHG). **Extend Line** enables detection near junctions and may produce artefacts, so use it with caution. **Overlay Fibres** draws the detected fibres over the image in the viewer.
+4. **Min line length.** Shorter fibres are ignored (pixels).
+5. **Dark line** detects dark fibres on a light background (Picrosirius Red); disable it for bright fibres on a dark background (fluorescence, SHG). **Extend line** enables detection near junctions and may produce artefacts, so use it with caution. **Overlay fibres** draws the detected fibres over the image in the viewer.
 6. **Detect** runs the step on the segmented image when segmentation is enabled, otherwise on the original.
-7. **Fibre measurements.** Settings used when the analysis runs (Batch Run), not by **Detect**: **Min Branch Length (px)** prunes shorter side branches of the fibre skeleton before length, branching and curvature are measured; **Curvature Window (px)** and **Window Step (px)** set the window sizes over which curvature is measured, one Curvature column per window.
+7. **Measurements.** Settings used when the analysis runs (Batch Run), not by **Detect**: **Min branch length** prunes shorter side branches of the fibre skeleton before length, branching and curvature are measured; **Curvature window** and **Window step** set the window sizes (pixels) over which curvature is measured, one Curvature column per window.
 
 ## Gap Analysis
 
 ![Gap Analysis page](media/gap_analysis.png)
 
-1. **Gap Analysis toggle.** Turns the gap analysis step on or off for the GUI and batch runs.
-2. **Min Gap Diameter (px).** The smallest gap to report.
-3. **Max Display HDM.** The maximum intensity value of the high-density matrix. **HDM Saturation (%)** is the share of pixels saturated when the HDM contrast is stretched. Both are used when the analysis runs (Batch Run), not by **Analyze**.
-4. **Analyze** fills the gaps between the detected fibres with circles: orange for intra-fibre gaps (inside the segmented region) and blue with a dashed outline for the others. Below the button it shows how many gaps were found, how many are intra-fibre, their median diameter and how much of the image they cover. **Overlay Gaps** shows the circles over the faded tissue image, with the fibres drawn on top.
+1. **On/off switch** (next to the page title). Turns the gap analysis step on or off for the GUI and batch runs.
+2. **Min gap diameter.** The smallest gap to report, in pixels.
+3. **Hematoxylin density (HDM).** **Max display HDM** is the maximum intensity value of the high-density matrix; **Saturation** is the share of pixels (%) saturated when the HDM contrast is stretched. Both are used when the analysis runs (Batch Run), not by **Analyze**, and stay active when gap analysis is off.
+4. **Analyze** fills the gaps between the detected fibres with circles: orange for intra-fibre gaps (inside the segmented region) and blue with a dashed outline for the others. Below the button it shows how many gaps were found, how many are intra-fibre, their median diameter and how much of the image they cover. **Overlay gaps** shows the circles over the faded tissue image, with the fibres drawn on top.
 
 ## Exporting parameters
 
@@ -75,12 +75,14 @@ Once the settings on the three pages are chosen, use **Parameters > Export Param
 
 ![Batch Run page](media/batch_processing.png)
 
-1. **Parameter File.** The exported `Parameters.yml`. Review it first, for example to disable segmentation or gap analysis.
-2. **Input Folder.** The folder of images to quantify (tif, png and jpg are supported).
-3. **Output Folder.** Where the results are written.
-4. **ROI Masks** (optional). A folder of binary masks named like the input images (white = analyse, black = ignore), such as a `BF/Patients/Masks/` or `POL/Patients/Masks/` folder written by the TMA Dearrayer page, restricts every measurement to the masked region. Leave it empty to rely on segmentation alone; the clear icon in the field empties it. The mask folder is a per-run path like the input and output folders; it is not stored in the parameter file, but the folder used is recorded in `version_params.yaml` in the output folder.
-5. **Batch Size.** Images are processed in batches (default 5) so that an interrupted run can be resumed. **Max Size** shows the parameter file's `Configs: Max Size` (see the Segmentation page); it cannot be changed here, so the parameter file kept with the results describes the run. To use another value, set it on the Segmentation page and export the parameters, or edit `Max Size` under `Configs` in the file.
-6. **Stats** and **Scores** add per-patient statistics (`QuantificationResults_MEAN_STD_SEM.csv`) and collagen risk scores (`QuantificationResults_SCORES.csv`) to the output; they require the TMA naming scheme. **Visualisations** (from the parameter file's `Configs: Save Visualisations`, on by default) saves the colour maps and gap overlay images; untick it to keep only the measurements (CSV files, maps and masks), which cuts storage about fivefold for TMA cores.
+The **Data flow** card lists what goes into the run and where the results go; click a field or its folder (or file) icon to choose it, in any order.
+
+1. **Images.** The folder of images to quantify (tif, png and jpg are supported).
+2. **ROI masks** (optional). A folder of binary masks named like the input images (white = analyse, black = ignore), such as a `BF/Patients/Masks/` or `POL/Patients/Masks/` folder written by the TMA Dearrayer page, restricts every measurement to the masked region. Leave it empty to rely on segmentation alone; the clear icon in the field empties it. The mask folder is a per-run path like the input and output folders; it is not stored in the parameter file, but the folder used is recorded in `version_params.yaml` in the output folder.
+3. **Parameters.** The exported `Parameters.yml`. Review it first, for example to disable segmentation or gap analysis.
+4. **Results.** Where the results are written.
+5. **Batch size.** Images are processed in batches (default 5) so that an interrupted run can be resumed. **Max size** shows the parameter file's `Configs: Max Size` (see the Segmentation page); it cannot be changed here, so the parameter file kept with the results describes the run. To use another value, set it on the Segmentation page and export the parameters, or edit `Max Size` under `Configs` in the file.
+6. **Save.** The measurements are always written; **Per-patient statistics** and **Risk scores** add per-patient statistics (`QuantificationResults_MEAN_STD_SEM.csv`) and collagen risk scores (`QuantificationResults_SCORES.csv`); they require the TMA naming scheme. **Visualisations** (from the parameter file's `Configs: Save Visualisations`, on by default) saves the colour maps and gap overlay images; untick it to keep only the measurements (CSV files, maps and masks), which cuts storage about fivefold for TMA cores.
 7. **Process Batch** starts the run; the button turns into **Cancel** while it runs.
 8. While a run is in progress a status line above the progress bar names the current batch, stage and image. The bar weights segmentation by its cost (one CNN training run per image, plus one labelling pass per patch), so it keeps moving through that slow stage.
 
@@ -88,7 +90,7 @@ If a run is cancelled or stops with an error, the completed batches and a checkp
 
 ## Image naming for per-patient statistics
 
-**Stats** and **Scores** group the analysed images by patient, so Cabana has to read the patient from the image file name. Name your images as the QuPath export script does, and every field below is recovered automatically:
+**Per-patient statistics** and **Risk scores** group the analysed images by patient, so Cabana has to read the patient from the image file name. Name your images as the QuPath export script does, and every field below is recovered automatically:
 
 ```
 <patient>.vsi - <anything>_<BF|POL>_<anything>Annotation (<sample type>)_<ROI number>
@@ -193,6 +195,6 @@ x. **QuantificationResults.csv**
 
    Contains all resultant image statistics, one row per analysed image or block. Please refer to [Read-outs](readouts.md) for a detailed explanation of every column. `QuantificationResults_Compact.csv` holds the same rows with a [shorter column set](readouts.md#compact-results) that drops the columns restating others.
 
-   With **Stats** ticked, `QuantificationResults_MEAN_STD_SEM.csv` adds the mean, sample standard deviation and standard error per patient over that patient's images (a patient with a single image has a mean but no STD or SEM), and `QuantificationResults_Compact_MEAN_STD_SEM.csv` the same for the compact column set. Patients are identified from the image name: the prefix before `.vsi`, which is how both QuPath slide exports (`K324.vsi - 20x_BF_01Annotation (Tumor)_1`) and the TMA core export (`1734.vsi - TMA1_BF_A4Annotation (Tumor)_1`) name their files; otherwise the first token of the name is used. With **Scores** ticked, `QuantificationResults_SCORES.csv` adds the Rigidity and Bundling collagen risk scores computed from those per-patient means (`QuantificationResults_Compact_SCORES.csv` carries the same scores with the compact column set).
+   With **Per-patient statistics** ticked, `QuantificationResults_MEAN_STD_SEM.csv` adds the mean, sample standard deviation and standard error per patient over that patient's images (a patient with a single image has a mean but no STD or SEM), and `QuantificationResults_Compact_MEAN_STD_SEM.csv` the same for the compact column set. Patients are identified from the image name: the prefix before `.vsi`, which is how both QuPath slide exports (`K324.vsi - 20x_BF_01Annotation (Tumor)_1`) and the TMA core export (`1734.vsi - TMA1_BF_A4Annotation (Tumor)_1`) name their files; otherwise the first token of the name is used. With **Risk scores** ticked, `QuantificationResults_SCORES.csv` adds the Rigidity and Bundling collagen risk scores computed from those per-patient means (`QuantificationResults_Compact_SCORES.csv` carries the same scores with the compact column set).
 
    The output folder also contains `version_params.yaml` with all parameters used for the run, the Cabana version and git commit, the user and time, and the folders used (including the ROI mask folder), for tracking and reproducibility.

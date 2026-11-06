@@ -12,7 +12,7 @@ described in detail on the [TMA preprocessing](tma.md) page.
    Open TMA Slide**). Choose the `.vsi` file. A preview appears within a few
    seconds and the status line reports the slide size, pixel size and the
    channels found (`BF`, `POL`).
-2. Set **Array Map** to the slide's array. For a TMA that is not one of the
+2. Set **Array map** to the slide's array. For a TMA that is not one of the
    built-in ICGC/APGI arrays, choose **Load map file…** and pick your map (see
    [Array maps](tma.md#array-maps); **File > Generate TMA Map Template…** writes
    a template to type or paste it into). Check the map in the preview and
@@ -38,14 +38,14 @@ described in detail on the [TMA preprocessing](tma.md) page.
    - With a typed **Core Ø**, the status line warns when the median fitted
      diameter differs from it by more than 10 %; tick *Auto* or set Core Ø to
      the reported value and refit.
-   - Torn or partial cores fit a smaller circle; lower **Min Ø** (for example
+   - Torn or partial cores fit a smaller circle; lower the **Core size** minimum (for example
      70 %) to keep them. Filter changes apply instantly without a refit.
    - For the odd circle the fit got wrong, tick **Edit cores**: drag a circle
      to move it, drag its rim to resize it, double-click it to include or
      exclude it, double-click a dashed circle to add a core there. The core
      takes the patient ID of the cell it lands in (see
      [Editing cores by hand](tma.md#editing-cores-by-hand)).
-5. Check the **Output Folder** (defaults to `<slide>_cores` next to the slide),
+5. Check the **Output folder** (defaults to `<slide>_cores` next to the slide),
    tick the **Channels** to export and click **Export Cores**. A 20x slide
    with 80 cores exports in one to two minutes. The dialog at the end offers
    **Use BF in Batch Run** and **Use POL in Batch Run**.
@@ -69,9 +69,9 @@ APGI_TMA_4_PicRed_cores/
 
 1. Open one exported core with **Open Image…** and tune the Segmentation,
    Fibre Detection and Gap Analysis pages on it as described in the
-   [workflow](workflow.md). Bright-field cores use **Dark Line** on; polarised
+   [workflow](workflow.md). Bright-field cores use **Dark line** on; polarised
    cores use it off.
-2. Keep **Patch Size** on the Segmentation page at 1024 px (the default), so
+2. Keep **Patch size** on the Segmentation page at 1024 px (the default), so
    that the segmentation network sees the tissue at a useful resolution rather
    than the whole core shrunk to 512 px.
 3. Export the parameters with **Parameters > Export Parameters**. The default
@@ -81,11 +81,11 @@ APGI_TMA_4_PicRed_cores/
 ## 3. Run the batch
 
 1. Click **Use BF in Batch Run** in the export dialog, or go to **Analysis >
-   Batch Run** and select `BF/Patients/Images` as **Input Folder** and
-   `BF/Patients/Masks` as **ROI Masks** yourself.
-2. Select the parameter file from step 2 and an **Output Folder**.
-3. Tick **Stats** and **Scores** to get per-patient statistics and collagen
-   risk scores; the TMA core names give the patient IDs.
+   Batch Run** and choose `BF/Patients/Images` as **Images** and
+   `BF/Patients/Masks` as **ROI masks** yourself.
+2. Choose the parameter file from step 2 as **Parameters** and a **Results** folder.
+3. Tick **Per-patient statistics** and **Risk scores**; the TMA core names give
+   the patient IDs.
 4. Click **Process Batch**. The status line above the progress bar names the
    batch, stage and image being processed. On an Apple M-series Mac a whole
    4400 px core takes about 2.5 minutes with nine line widths: segmentation

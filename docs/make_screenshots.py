@@ -152,7 +152,7 @@ def main(argv):
             (2, rect_of(win, win.color_btn), "right"),
             (3, union(win, (win.color_thresh_slider, win.num_labels_slider, win.max_iters_slider))),
             (4, union(win, (win.patch_size_spinner, win.seg_max_size_spinner)), "left"),
-            (5, rect_of(win, win.white_bg_cb), "right"),
+            (5, union(win, (win.white_bg_cb, win.toggle_img_cb)), "right"),
             (6, rect_of(win, win.segment_btn)),
         ])
 
@@ -206,10 +206,10 @@ def main(argv):
         win.progress_bar.setValue(14)
         settle(app)
         grab(win, "batch_processing.png", [
-            (1, rect_of(win, win.param_btn), "right"),
-            (2, rect_of(win, win.input_btn), "right"),
-            (3, rect_of(win, win.output_btn), "right"),
-            (4, rect_of(win, win.mask_btn), "right"),
+            (1, rect_of(win, win.input_folder_path), "right"),
+            (2, rect_of(win, win.mask_folder_path), "right"),
+            (3, rect_of(win, win.param_file_path), "right"),
+            (4, rect_of(win, win.output_folder_path), "right"),
             (5, union(win, (win.batch_size_spinner, win.batch_max_size_label)), "right"),
             (6, union(win, (win.stats_cb, win.scores_cb, win.visuals_cb)), "right"),
             (7, rect_of(win, win.process_batch_btn), "below"),
@@ -237,7 +237,7 @@ def main(argv):
             wait_until(app, lambda: win.tma_pre is not None and win.tma_fit_btn.text() == "Fit Cores",
                        label="core fitting")
             grab(win, "tma.png", [
-                (1, rect_of(win, win.tma_slide_btn), "right"),
+                (1, rect_of(win, win.tma_slide_path), "right"),
                 (2, rect_of(win, win.tma_array_combo), "left"),
                 (3, union(win, (win.tma_core_auto_cb, win.tma_core_diameter_spin, win.tma_sat_spin, win.tma_recover_cb))),
                 (4, rect_of(win, win.tma_fit_btn)),
@@ -245,7 +245,7 @@ def main(argv):
                 (6, union(win, (win.tma_edit_cb, win.tma_links_cb, win.tma_undo_btn,
                                  win.tma_load_edits_btn, win.tma_save_edits_btn))),
                 (7, union(win, (win.tma_margin_spin, win.tma_erode_spin, *win.tma_channel_cbs.values()))),
-                (8, rect_of(win, win.tma_output_btn), "right"),
+                (8, rect_of(win, win.tma_output_path), "right"),
                 (9, rect_of(win, win.tma_export_btn)),
             ])
 
@@ -269,7 +269,7 @@ def main(argv):
                 (3, rect_of(win, win.brf_view_combo), "left"),
                 (4, rect_of(win, win.brf_original_cb), "left"),
                 (5, union(win, (win.brf_btn, win.brf_summary_label)), "right"),
-                (6, union(win, (win.brf_input_path, win.brf_mask_btn, win.brf_output_btn)), "right"),
+                (6, union(win, (win.brf_input_path, win.brf_mask_path, win.brf_output_path)), "right"),
                 (7, union(win, (win.brf_sort_cb, win.brf_images_cb, win.brf_run_btn)), "below"),
             ])
 

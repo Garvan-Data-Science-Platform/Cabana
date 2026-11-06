@@ -62,7 +62,7 @@ def test_page_sits_between_tma_and_segmentation_and_starts_at_the_macro_defaults
     assert win.pages.indexOf(win.brf_tab) == titles.index("Birefringence")
     assert not win.brf_btn.isEnabled() and win.brf_view_combo.currentText() == "Grid"   # no image yet
     assert win._brf_settings == brf.DEFAULTS
-    assert win.brf_brightness_slider.value() == 10 and win.brf_band_values[2].text() == "(48, 140)"
+    assert win.brf_brightness_slider.value() == 10 and win.brf_band_values[2].text() == "48, 140"
 
 
 def test_separate_shows_the_class_map_and_a_summary(win, tmp_path, monkeypatch, app):
@@ -99,14 +99,14 @@ def test_bands_stay_joined(win):
     assert (green.lower_value, green.upper_value) == (61, 140)
     params = win._brf_settings
     assert [params[k] for k in ("Red-Orange Max", "Yellow Min", "Yellow Max", "Green Min")] == [19, 20, 60, 61]
-    assert win.brf_band_values[1].text() == "(20, 60)"
+    assert win.brf_band_values[1].text() == "20, 60"
 
 
 def test_red_orange_wraps_below_zero(win):
     win.brf_band_sliders[0].setValues(-26, 27)
     params = win._brf_settings
     assert (params["Red-Orange Min"], params["Red-Orange Max"]) == (230, 27)
-    assert win.brf_band_values[0].text() == "(230, 27)"
+    assert win.brf_band_values[0].text() == "230, 27"
     hue = np.array([[229, 230, 255, 0, 27]], np.uint8)
     on = np.full(hue.shape, 255, np.uint8)
     masks, _ = brf.band_masks(hue, on, on, brf.band_ranges(params))
@@ -251,11 +251,10 @@ def test_empty_roi_masks_means_whole_images(win, tmp_path, monkeypatch, app):
 
 
 def test_page_has_two_titled_sections(win):
-    assert [t.text() for t in win.brf_section_titles] == ["Bands", "Folder Run"]
-    for t in win.brf_section_titles:
-        t.setStyleSheet("")
-    win._reapply_widget_styles()
-    assert all("font-weight: 600" in t.styleSheet() for t in win.brf_section_titles)
+    assert [t.text() for t in win.brf_section_titles] == ["Bands", "Folder run"]
+    # card titles, styled by the panel stylesheet (restyled with the theme)
+    assert all(t.objectName() == "sectionTitle" for t in win.brf_section_titles)
+    assert "QLabel#sectionTitle" in win.dock_contents.styleSheet()
 
 
 def test_batch_run_mask_folder_is_cleared_in_the_field(win):

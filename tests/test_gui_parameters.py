@@ -54,7 +54,7 @@ def test_quantification_controls_write_the_parameters(win):
     assert q["Minimum Branch Length"] == 12
     assert (q["Minimum Curvature Window"], q["Maximum Curvature Window"], q["Curvature Window Step"]) == (8, 40, 16)
     assert q["Contrast Enhancement"] == 0.25
-    assert win.curve_window_value.text() == "(8, 40)" and win.hdm_saturation_value.text() == "25"
+    assert win.curve_window_value.text() == "8, 40 px" and win.hdm_saturation_value.text() == "25 %"
     assert list(curve_windows_from_args(win.yml_data)) == [8, 24, 40]
 
 

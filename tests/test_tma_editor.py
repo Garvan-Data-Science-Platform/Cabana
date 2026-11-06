@@ -541,7 +541,7 @@ class TestPanelScrolls:
         from cabana.cabana_gui import MainWindow
         win = MainWindow()
         win.showNormal()
-        win.resize(1500, 980)
+        win.resize(1500, 1250)          # tall enough for the TMA page's four cards
         win.show_page(win.pages.indexOf(win.tma_tab))
         settle(app, 200)
         bar = win.pages_scroll.verticalScrollBar()

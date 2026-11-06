@@ -360,7 +360,7 @@ class MainWindow(QMainWindow):
         file_menu.addAction(self.open_slide_action)
         self.save_map_templates_action = QAction("Generate TMA Map &Template…", self)
         self.save_map_templates_action.setStatusTip(
-            "Write a map template to type or paste your own TMA map into")
+            "Write a template for your own TMA map")
         self.save_map_templates_action.triggered.connect(self.save_tma_map_templates)
         file_menu.addAction(self.save_map_templates_action)
 
@@ -477,19 +477,19 @@ class MainWindow(QMainWindow):
 
         self.start_slide_btn = QPushButton("Open TMA Slide…")
         self.start_slide_btn.setStyleSheet(self.primary_btn_style)
-        self.start_slide_btn.setToolTip("Choose a whole-slide TMA scan and switch to the TMA Dearrayer page.")
+        self.start_slide_btn.setToolTip("Open a whole-slide TMA scan on the TMA Dearrayer page.")
         self.start_slide_btn.clicked.connect(self._open_tma_slide_from_menu)
         layout.addWidget(self.start_slide_btn)
 
         self.start_open_btn = QPushButton("Open Image…")
         self.start_open_btn.setStyleSheet(self.btn_style)
-        self.start_open_btn.setToolTip("Load a single image; the Segmentation page opens once it is loaded.")
+        self.start_open_btn.setToolTip("Open an image to tune the parameters on.")
         self.start_open_btn.clicked.connect(self.load_image)
         layout.addWidget(self.start_open_btn)
 
         self.start_params_btn = QPushButton("Import Parameters…")
         self.start_params_btn.setStyleSheet(self.btn_style)
-        self.start_params_btn.setToolTip("Load a Parameters.yml exported earlier; all pages update to its values.")
+        self.start_params_btn.setToolTip("Load a saved Parameters.yml into all pages.")
         self.start_params_btn.clicked.connect(self.import_parameters)
         layout.addWidget(self.start_params_btn)
 
@@ -790,8 +790,7 @@ class MainWindow(QMainWindow):
         self.param_file_path = QLineEdit("Not selected")
         self.param_file_path.setReadOnly(True)
         self.param_file_path.setStyleSheet(self.path_edit_style)
-        self.param_file_path.setToolTip("Parameters.yml to apply to every image; export one from Parameters > Export\n"
-                                        "after tuning on a representative image.")
+        self.param_file_path.setToolTip("Parameters.yml applied to every image (Parameters > Export).")
         param_layout.addWidget(self.param_file_path, 1)
 
         self.param_btn = QPushButton("Select")
@@ -810,8 +809,7 @@ class MainWindow(QMainWindow):
         self.input_folder_path = QLineEdit("Not selected")
         self.input_folder_path.setReadOnly(True)
         self.input_folder_path.setStyleSheet(self.path_edit_style)
-        self.input_folder_path.setToolTip("Folder of images to analyse (TIFF/PNG/JPEG). Pixel size is read from the\n"
-                                          "image metadata; a TMA export's <channel>/Patients/Images folder works directly.")
+        self.input_folder_path.setToolTip("Images to analyse (TIFF/PNG/JPEG); the pixel size is read from their metadata.")
         input_layout.addWidget(self.input_folder_path, 1)
 
         self.input_btn = QPushButton("Select")
@@ -830,8 +828,7 @@ class MainWindow(QMainWindow):
         self.output_folder_path = QLineEdit("Not selected")
         self.output_folder_path.setReadOnly(True)
         self.output_folder_path.setStyleSheet(self.path_edit_style)
-        self.output_folder_path.setToolTip("Where results are written (QuantificationResults.csv, per-image exports,\n"
-                                           "colour maps). A checkpoint here lets an interrupted run resume.")
+        self.output_folder_path.setToolTip("Where the results go; also holds the checkpoint for resuming a run.")
         output_layout.addWidget(self.output_folder_path, 1)
 
         self.output_btn = QPushButton("Select")
@@ -845,7 +842,7 @@ class MainWindow(QMainWindow):
         mask_layout = QHBoxLayout()
         mask_label = QLabel("ROI Masks:")
         mask_label.setFixedWidth(95)
-        mask_label.setToolTip("Optional folder of binary masks, one <image name>.png per input image.")
+        mask_label.setToolTip("Optional masks named like the images (white = analyse).")
         mask_layout.addWidget(mask_label)
 
         self.mask_folder_path = QLineEdit("")
@@ -853,8 +850,8 @@ class MainWindow(QMainWindow):
         self.mask_folder_path.setPlaceholderText("Optional: leave empty to use segmentation only")
         self.mask_folder_path.setStyleSheet(self.path_edit_style)
         self.mask_folder_path.setToolTip(
-            "Optional. Binary masks (white = analyse, black = ignore) named like the input images,\n"
-            "e.g. the Masks folder written by the TMA Dearrayer page. Leave empty to rely on segmentation alone.")
+            "Optional masks named like the images (white = analyse), e.g. a TMA export's\n"
+            "Masks folder. Empty: no masks.")
         mask_layout.addWidget(self.mask_folder_path, 1)
 
         self.mask_btn = QPushButton("Select")
@@ -879,8 +876,7 @@ class MainWindow(QMainWindow):
         self.batch_size_spinner.setValue(5)
         self.batch_size_spinner.setFixedWidth(50)
         self.batch_size_spinner.setStyleSheet(self.spinner_style)
-        self.batch_size_spinner.setToolTip("Images processed per batch. Lower it for very large images (e.g. 2 for\n"
-                                           "full-resolution TMA cores) to keep memory use flat.")
+        self.batch_size_spinner.setToolTip("Images per batch; lower it for very large images to save memory.")
         batch_size_layout.addWidget(self.batch_size_spinner)
         batch_size_layout.addStretch()
 
@@ -890,9 +886,8 @@ class MainWindow(QMainWindow):
         self.batch_max_size_label = QLabel("Max Size: –")
         self.batch_max_size_label.setStyleSheet(self.value_label_style)
         self.batch_max_size_label.setToolTip(
-            "Images with more pixels than this squared are split into blocks of at most this size.\n"
-            "Taken from the parameter file (Configs: Max Size): set it on the Segmentation page\n"
-            "and export the parameters, or edit the file. A resumed run keeps the value it started with.")
+            "Larger images are split into blocks of this size. From the parameter file;\n"
+            "set it on the Segmentation page.")
         batch_size_layout.addWidget(self.batch_max_size_label)
 
         layout.addLayout(batch_size_layout)
@@ -907,24 +902,21 @@ class MainWindow(QMainWindow):
         self.stats_cb.setEnabled(False)
         self.stats_cb.setStyleSheet(self.checkbox_style)
         self.stats_cb.setToolTip(
-            "Generate per-patient MEAN, STD and SEM statistics\n"
-            "(QuantificationResults_MEAN_STD_SEM.csv)")
+            "Per-patient mean, STD and SEM (QuantificationResults_MEAN_STD_SEM.csv).")
 
         self.scores_cb = QCheckBox("Scores")
         self.scores_cb.setChecked(False)
         self.scores_cb.setEnabled(False)
         self.scores_cb.setStyleSheet(self.checkbox_style)
         self.scores_cb.setToolTip(
-            "Generate collagen rigidity and bundling risk scores\n"
-            "(QuantificationResults_SCORES.csv)")
+            "Rigidity and bundling risk scores (QuantificationResults_SCORES.csv).")
 
         self.visuals_cb = QCheckBox("Visualisations")
         self.visuals_cb.setChecked(True)
         self.visuals_cb.setStyleSheet(self.checkbox_style)
         self.visuals_cb.setToolTip(
-            "Save the colour maps and gap overlay images (Colors/).\n"
-            "Untick to keep only the measurements (CSV files, maps, masks) and save storage.\n"
-            "Filled from the parameter file (Configs: Save Visualisations); a change here applies to this run.")
+            "Save the colour maps and gap images; untick to keep only the measurements.\n"
+            "Starts from the parameter file; a change applies to this run only.")
 
         options_layout.addWidget(self.stats_cb)
         options_layout.addWidget(self.scores_cb)
@@ -963,7 +955,7 @@ class MainWindow(QMainWindow):
 
         fit_title = QLabel("Fit")
         fit_title.setStyleSheet(self.value_label_style + " font-weight: 600;")
-        fit_title.setToolTip("Settings used by Fit Cores; change them and fit again.")
+        fit_title.setToolTip("Settings for Fit Cores; fit again after changing them.")
         layout.addWidget(fit_title)
 
         # --- Slide -------------------------------------------------------
@@ -976,12 +968,11 @@ class MainWindow(QMainWindow):
         self.tma_slide_path.setPlaceholderText("Olympus .vsi or whole-slide TIFF/PNG")
         self.tma_slide_path.setStyleSheet(self.path_edit_style)
         self.tma_slide_path.setToolTip(
-            "Whole-slide scan of the tissue micro-array. Olympus .vsi files are read natively\n"
-            "(keep the _<name>_ tile folder next to the .vsi); TIFF/PNG exports also work.")
+            "Whole-slide TMA scan: Olympus .vsi (with its _<name>_ folder), TIFF or PNG.")
         slide_layout.addWidget(self.tma_slide_path, 1)
         self.tma_slide_btn = QPushButton("Open")
         self.tma_slide_btn.setStyleSheet(self.btn_style)
-        self.tma_slide_btn.setToolTip("Choose the slide file (File > Open TMA Slide).")
+        self.tma_slide_btn.setToolTip("Choose the slide file.")
         self.tma_slide_btn.clicked.connect(self.select_tma_slide)
         slide_layout.addWidget(self.tma_slide_btn)
         layout.addLayout(slide_layout)
@@ -999,9 +990,8 @@ class MainWindow(QMainWindow):
         self._tma_array_prev = 0
         self.tma_array_combo.setStyleSheet(self.combo_style)
         self.tma_array_combo.setToolTip(
-            "Array map used to name cores by patient ID: a built-in ICGC/APGI array, or your own\n"
-            "map loaded with 'Load map file…' (.csv/.tsv/.txt/.qpmap);\n"
-            "File > Generate TMA Map Template… writes a template to type or paste a map into.")
+            "Map that names the cores by patient: a built-in ICGC/APGI array or your own\n"
+            "(Load map file…; File > Generate TMA Map Template… makes a template).")
         map_layout.addWidget(self.tma_array_combo, 1)
         layout.addLayout(map_layout)
 
@@ -1014,10 +1004,8 @@ class MainWindow(QMainWindow):
             self.tma_orientation_combo.addItem("Auto" if o == "auto" else o, o)
         self.tma_orientation_combo.setStyleSheet(self.combo_style)
         self.tma_orientation_combo.setToolTip(
-            "How the printed map sits on the scan. Auto compares the pattern of missing cores;\n"
-            "a fully populated array cannot distinguish a rotation from its mirror image,\n"
-            "so check the control cores (named on the overlay) against the printed map and\n"
-            "pick the orientation explicitly if needed. Changing it relabels instantly, no refit.")
+            "How the printed map sits on the scan. Auto matches the missing cores; a full array\n"
+            "can mistake a rotation for its mirror, so check the control cores. Relabels at once.")
         self.tma_orientation_combo.currentIndexChanged.connect(self._tma_map_changed)
         self.tma_array_combo.currentIndexChanged.connect(self._tma_array_selected)
         orient_layout.addWidget(self.tma_orientation_combo, 1)
@@ -1046,8 +1034,7 @@ class MainWindow(QMainWindow):
         self.tma_core_auto_cb.setChecked(True)
         self.tma_core_auto_cb.setStyleSheet(self.checkbox_style)
         self.tma_core_auto_cb.setToolTip(
-            "Measure the core diameter from the slide at every fit (median of the well-formed cores).\n"
-            "Untick to type it in; the box then starts from the measured value.")
+            "Measure the core diameter at every fit; untick to type it in.")
         self.tma_core_diameter_spin = QSpinBox()
         self.tma_core_diameter_spin.setRange(0, 5000)
         self.tma_core_diameter_spin.setSpecialValueText("—")     # shown at 0: Auto, not measured yet
@@ -1071,16 +1058,15 @@ class MainWindow(QMainWindow):
         self.tma_sat_spin.setValue(15)
         self.tma_sat_spin.setStyleSheet(self.spinner_style)
         self.tma_sat_spin.setToolTip(
-            "HSV saturation above which a pixel counts as tissue (default 15).\n"
-            "Lower it to catch paler cores; raise it if debris or shading is picked up.")
+            "Saturation above which a pixel is tissue (default 15). Lower it for pale cores,\n"
+            "raise it if debris is picked up.")
         geo.addWidget(self.tma_sat_spin, 1, 1)
 
         self.tma_recover_cb = QCheckBox("Recover faint")
         self.tma_recover_cb.setChecked(True)
         self.tma_recover_cb.setStyleSheet(self.checkbox_style)
         self.tma_recover_cb.setToolTip(
-            "After the grid is known, test every empty grid position for pale tissue with a\n"
-            "more permissive threshold and add such cores (purple circles, flag 'recovered').")
+            "Look for pale cores at empty grid positions and add them (purple).")
         geo.addWidget(self.tma_recover_cb, 1, 2, 1, 2)
         layout.addLayout(geo)
 
@@ -1090,9 +1076,8 @@ class MainWindow(QMainWindow):
         filter_title = QLabel("Filter")
         filter_title.setStyleSheet(self.value_label_style + " font-weight: 600;")
         filter_title.setToolTip(
-            "Quality filters applied to the fitted cores; changes update the overlay instantly.\n"
-            "Excluded cores are drawn grey with a cross, listed in cores.csv and not exported.\n"
-            "Filters run after patient IDs are assigned and never change them.")
+            "Quality filters; changes update the overlay at once. Excluded cores are grey with\n"
+            "a cross and not exported. Filters never change patient IDs.")
         layout.addWidget(filter_title)
         flt = QGridLayout()
         flt.setHorizontalSpacing(8)
@@ -1114,18 +1099,14 @@ class MainWindow(QMainWindow):
             return w
 
         self.tma_offset_spin = _spin(0.05, 1.0, 0.35, 0.05, " pitch",
-                                     "Exclude cores whose centre is further than this from its grid position\n"
-                                     "(fraction of the core spacing). Catches debris between cores.", decimals=2)
+                                     "Exclude cores this far from their grid position (fraction of the core spacing);\n"
+                                     "catches debris.", decimals=2)
         self.tma_dmin_spin = _spin(10, 100, 80, 5, " %",
-                                   "Exclude cores smaller than this percentage of Core Ø (lower it to keep partial cores).\n"
-                                   "Set Core Ø to the real diameter first (see the median in the status line).")
+                                   "Exclude cores smaller than this share of Core Ø; lower it to keep partial cores.")
         self.tma_dmax_spin = _spin(100, 300, 120, 5, " %",
-                                   "Exclude cores larger than this percentage of Core Ø.\n"
-                                   "Set Core Ø to the real diameter first (see the median in the status line).")
+                                   "Exclude cores larger than this share of Core Ø.")
         self.tma_stain_spin = _spin(0, 100, 2, 1, " %",
-                                    "Exclude patient cores whose stained area (saturation above 40) is below this\n"
-                                    "fraction of the circle; catches empty and unstained cores.\n"
-                                    "Control cores (e.g. Brain) are exempt.")
+                                    "Exclude patient cores with less stained area than this; controls are exempt.")
 
         flt.addWidget(QLabel("Grid Offset:"), 0, 0)
         flt.addWidget(self.tma_offset_spin, 0, 1)
@@ -1143,9 +1124,8 @@ class MainWindow(QMainWindow):
         edit_title = QLabel("Edit")
         edit_title.setStyleSheet(self.value_label_style + " font-weight: 600;")
         edit_title.setToolTip(
-            "Correct the fit by hand. A moved or added core takes the patient ID of the grid\n"
-            "cell it lands in; nothing is typed. Edits are saved with the export (cores_edits.json);\n"
-            "refitting the slide into the same output folder offers to reinstate them.")
+            "Correct the fit by hand; a moved or added core takes the patient ID of its grid cell.\n"
+            "Edits are saved with the export and offered back after refitting.")
         layout.addWidget(edit_title)
         edit_layout = QHBoxLayout()
         edit_layout.setSpacing(12)
@@ -1153,24 +1133,21 @@ class MainWindow(QMainWindow):
         self.tma_edit_cb.setStyleSheet(self.checkbox_style)
         self.tma_edit_cb.setEnabled(False)
         self.tma_edit_cb.setToolTip(
-            "Click a circle to select it (yellow halo). Drag inside it to move it; drag its rim,\n"
-            "the yellow handle, or Shift+drag inside it to resize it. Double-click a circle to\n"
-            "include or exclude it, double-click empty space or a dashed placeholder to add a core,\n"
-            "Delete removes the selected core, Ctrl+Z undoes, right-click for a menu.\n"
-            "Hand-edited cores carry an orange dot on top of their ring; hover a core for its details.")
+            "Click a core to select it; drag to move, drag its rim to resize. Double-click to\n"
+            "include, exclude or add a core; Delete removes, Ctrl+Z undoes, right-click for more.")
         self.tma_edit_cb.toggled.connect(self._tma_edit_toggled)
         edit_layout.addWidget(self.tma_edit_cb)
         self.tma_links_cb = QCheckBox("Grid lines")
         self.tma_links_cb.setChecked(True)
         self.tma_links_cb.setStyleSheet(self.checkbox_style)
-        self.tma_links_cb.setToolTip("Draw lines between cores in neighbouring grid cells; they follow edits.")
+        self.tma_links_cb.setToolTip("Draw lines between neighbouring cores.")
         self.tma_links_cb.toggled.connect(self._tma_links_toggled)
         edit_layout.addWidget(self.tma_links_cb)
         edit_layout.addStretch()
         self.tma_undo_btn = QPushButton("Undo")
         self.tma_undo_btn.setStyleSheet(self.btn_style)
         self.tma_undo_btn.setEnabled(False)
-        self.tma_undo_btn.setToolTip("Undo the last edit (Ctrl+Z on the image).")
+        self.tma_undo_btn.setToolTip("Undo the last edit (Ctrl+Z).")
         self.tma_undo_btn.clicked.connect(lambda: self.tma_editor.undo())
         edit_layout.addWidget(self.tma_undo_btn)
         layout.addLayout(edit_layout)
@@ -1180,17 +1157,15 @@ class MainWindow(QMainWindow):
         self.tma_load_edits_btn.setStyleSheet(self.btn_style)
         self.tma_load_edits_btn.setEnabled(False)
         self.tma_load_edits_btn.setToolTip(
-            f"Replace the fitted cores with hand edits saved earlier ({EDITS_FILE}),\n"
-            "including the orientation and any map position set by hand.")
+            f"Load hand edits saved earlier ({EDITS_FILE}), with the orientation and map position.")
         self.tma_load_edits_btn.clicked.connect(self.open_tma_edits)
         edits_file_layout.addWidget(self.tma_load_edits_btn)
         self.tma_save_edits_btn = QPushButton("Save Edits…")
         self.tma_save_edits_btn.setStyleSheet(self.btn_style)
         self.tma_save_edits_btn.setEnabled(False)
         self.tma_save_edits_btn.setToolTip(
-            "Save the current cores, orientation and map position without exporting.\n"
-            f"Saved as {EDITS_FILE} in the output folder, they are offered back after the next fit.\n"
-            "Export Cores also saves them there.")
+            f"Save the cores, orientation and map position as {EDITS_FILE} without exporting;\n"
+            "they are offered back after the next fit.")
         self.tma_save_edits_btn.clicked.connect(self.save_tma_edits)
         edits_file_layout.addWidget(self.tma_save_edits_btn)
         layout.addLayout(edits_file_layout)
@@ -1200,7 +1175,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(create_separator())
         export_title = QLabel("Export")
         export_title.setStyleSheet(self.value_label_style + " font-weight: 600;")
-        export_title.setToolTip("Settings used when writing the core images and masks; no refit needed.")
+        export_title.setToolTip("Settings for Export Cores; no refit needed.")
         layout.addWidget(export_title)
         exp = QGridLayout()
         exp.setHorizontalSpacing(8)
@@ -1223,7 +1198,7 @@ class MainWindow(QMainWindow):
         self.tma_erode_spin.setValue(8)
         self.tma_erode_spin.setSuffix(" px")
         self.tma_erode_spin.setStyleSheet(self.spinner_style)
-        self.tma_erode_spin.setToolTip("Shrink of the circular mask so the core edge stays out of the analysis.")
+        self.tma_erode_spin.setToolTip("Shrinks the core mask so the core edge is left out.")
         exp.addWidget(self.tma_erode_spin, 0, 3)
 
         layout.addLayout(exp)
@@ -1234,10 +1209,10 @@ class MainWindow(QMainWindow):
         ch_label.setFixedWidth(95)
         ch_layout.addWidget(ch_label)
         self.tma_channel_cbs = {}
-        ch_hints = {"BF": "Bright-field layer (Picrosirius Red in transmitted light). Analyse with Dark Line on.",
-                    "POL": "Polarised-light layer (collagen birefringence on black). Analyse with Dark Line off."}
-        ch_label.setToolTip("Slide layers to export; each core gets one image per ticked channel.\n"
-                            "Enabled after Fit Cores once the slide's layers are known.")
+        ch_hints = {"BF": "Bright-field layer; analyse it with Dark Line on.",
+                    "POL": "Polarised-light layer; separate its bands on the Birefringence page,\n"
+                           "or analyse it with Dark Line off."}
+        ch_label.setToolTip("Slide layers to export, one image per core each. Available after Fit Cores.")
         for name in ("BF", "POL"):
             cb = QCheckBox(name)
             cb.setChecked(True)
@@ -1259,14 +1234,12 @@ class MainWindow(QMainWindow):
         self.tma_output_path.setPlaceholderText("BF/, POL/ (Patients, Controls), cores.csv, overlay.png")
         self.tma_output_path.setStyleSheet(self.path_edit_style)
         self.tma_output_path.setToolTip(
-            "Destination: one folder per channel (BF/, POL/), split into Patients/ and Controls/\n"
-            "(Unmapped/ when no array map is used), each with Images/ (core crops) and Masks/\n"
-            "(circle masks with the same names); plus cores.csv (manifest with patient IDs) and\n"
-            "overlay.png at the top. Defaults to <slide>_cores.")
+            "Gets BF/ and POL/ folders (Patients, Controls), each with Images/ and Masks/,\n"
+            "plus cores.csv and overlay.png. Defaults to <slide>_cores.")
         out_layout.addWidget(self.tma_output_path, 1)
         self.tma_output_btn = QPushButton("Select")
         self.tma_output_btn.setStyleSheet(self.btn_style)
-        self.tma_output_btn.setToolTip("Choose a different output folder.")
+        self.tma_output_btn.setToolTip("Choose the output folder.")
         self.tma_output_btn.clicked.connect(self.select_tma_output)
         out_layout.addWidget(self.tma_output_btn)
         layout.addLayout(out_layout)
@@ -1278,30 +1251,26 @@ class MainWindow(QMainWindow):
         self.tma_status_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.tma_status_label.setStyleSheet(self.value_label_style)
         self.tma_status_label.setToolTip(
-            "Fit summary: cores found and to export, grid size, matched orientation and any\n"
-            "orientations that fit equally well, exclusions per filter and median diameter.\n"
-            "Overlay: green = exported, purple = recovered at an empty grid position (exported),\n"
-            "grey with a cross = excluded by a filter, grey = outside the printed map,\n"
-            "orange dot on the ring = hand-edited, dashed grey = position without a core.\n"
-            "Labels: map position (grid cell without a map) and core number; controls show their tissue.")
+            "Fit summary. Overlay: green = exported, purple = recovered, grey with a cross =\n"
+            "excluded, grey = outside the map, dashed = no core, orange dot = hand-edited.")
         layout.addWidget(self.tma_status_label)
 
         btn_layout = QHBoxLayout()
         self.tma_fit_btn = QPushButton("Fit Cores")
         self.tma_fit_btn.setStyleSheet(self.primary_btn_style)
         self.tma_fit_btn.setEnabled(False)
-        self.tma_fit_btn.setToolTip("Detect the cores and draw the numbered overlay. Re-run after changing settings.")
+        self.tma_fit_btn.setToolTip("Find the cores and draw the overlay; run again after changing settings.")
         self.tma_fit_btn.clicked.connect(self.run_tma_fit)
         btn_layout.addWidget(self.tma_fit_btn)
         self.tma_export_btn = QPushButton("Export Cores")
         self.tma_export_btn.setStyleSheet(self.primary_btn_style)
         self.tma_export_btn.setEnabled(False)
-        self.tma_export_btn.setToolTip("Write one image and one mask per core and channel to the output folder.")
+        self.tma_export_btn.setToolTip("Write one image and one mask per core and channel.")
         self.tma_export_btn.clicked.connect(self.run_tma_export)
         btn_layout.addWidget(self.tma_export_btn)
         self.tma_cancel_btn = QPushButton("Cancel")
         self.tma_cancel_btn.setStyleSheet(self.btn_style)
-        self.tma_cancel_btn.setToolTip("Stop the export after the current core; files already written are kept.")
+        self.tma_cancel_btn.setToolTip("Stop after the current core; files written so far are kept.")
         self.tma_cancel_btn.setVisible(False)
         self.tma_cancel_btn.clicked.connect(self.cancel_tma)
         btn_layout.addWidget(self.tma_cancel_btn)
@@ -2204,8 +2173,7 @@ class MainWindow(QMainWindow):
 
         color_toggle_layout = QHBoxLayout()
         color_label = QLabel("Color of Interest:")
-        color_label.setToolTip("Colour of the structures to keep (e.g. Picrosirius Red collagen). Click the swatch\n"
-                               "to pick it; the normalised hue is written to the parameters.")
+        color_label.setToolTip("Colour of the structures to keep, e.g. Picrosirius Red collagen; click the swatch.")
         self.toggle_seg_label = QLabel()
         self.toggle_seg_label.setText(
             f"Segmentation <b><span style='color: {COLORS['highlight'].name()};'>Enabled</span></b>")
@@ -2220,7 +2188,7 @@ class MainWindow(QMainWindow):
             f"background-color: #f53282; border: 1px solid {color_to_stylesheet(COLORS['border'])}; border-radius: 4px;")
         self.color_btn.setFixedSize(QSize(30, 30))
         self.color_btn.clicked.connect(self.select_color)
-        self.color_btn.setToolTip("Select the color you want to segment.")
+        self.color_btn.setToolTip("Pick the colour to keep.")
         color_layout.addWidget(self.color_btn)
 
         self.hue_label = QLabel("Normalized hue: 0.96")
@@ -2232,7 +2200,7 @@ class MainWindow(QMainWindow):
         self.toggle_seg_btn = ToggleButton()
         self.toggle_seg_btn.setChecked(True)
         self.toggle_seg_btn.toggled.connect(self.toggle_segmentation)
-        self.toggle_seg_btn.setToolTip("Enable/Disable segmentation and update accordingly in the parameter file.")
+        self.toggle_seg_btn.setToolTip("Turn segmentation on or off.")
         color_layout.addStretch()
         color_layout.addWidget(self.toggle_seg_btn)
         color_group_layout.addLayout(color_layout)
@@ -2251,9 +2219,8 @@ class MainWindow(QMainWindow):
         self.color_thresh_slider.valueChanged.connect(self.update_color_threshold)
         self.color_thresh_slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.color_thresh_slider.setToolTip(
-            "Minimum colour score of a region (1.0 = exactly the chosen hue). Lower it to keep paler\n"
-            "tissue; below about 0.12 pale tissue and glass start to count. After a segmentation the\n"
-            "result updates as you move the slider, without segmenting again.")
+            "Minimum colour score of a region (1 = exactly the chosen colour). Lower it for paler\n"
+            "tissue; below about 0.12 glass starts to count. Updates the result at once.")
         threshold_layout.addWidget(self.color_thresh_slider, 3)
         self.color_thresh_value = QLabel("0.2")
         self.color_thresh_value.setFixedWidth(35)
@@ -2274,7 +2241,7 @@ class MainWindow(QMainWindow):
         self.num_labels_slider.setValue(32)  # Default
         self.num_labels_slider.valueChanged.connect(self.update_num_labels)
         self.num_labels_slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.num_labels_slider.setToolTip("Increase this value for fine-granularity segmentation.")
+        self.num_labels_slider.setToolTip("Higher = finer segmentation.")
         num_labels_layout.addWidget(self.num_labels_slider, 3)
         self.num_labels_value = QLabel("32")
         self.num_labels_value.setFixedWidth(30)
@@ -2295,7 +2262,7 @@ class MainWindow(QMainWindow):
         self.max_iters_slider.setValue(30)  # Default
         self.max_iters_slider.valueChanged.connect(self.update_max_iters)
         self.max_iters_slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.max_iters_slider.setToolTip("Reduce this value for fine-granularity segmentation.")
+        self.max_iters_slider.setToolTip("Lower = finer segmentation.")
         max_iters_layout.addWidget(self.max_iters_slider, 3)
         self.max_iters_value = QLabel("30")
         self.max_iters_value.setFixedWidth(30)
@@ -2322,9 +2289,8 @@ class MainWindow(QMainWindow):
         self.patch_size_spinner.setStyleSheet(self.spinner_style)
         self.patch_size_spinner.valueChanged.connect(self.update_patch_size)
         self.patch_size_spinner.setToolTip(
-            "Segment large images in patches of this size to keep fine fibres.\n"
-            "Smaller = finer detail but slower. Off = whole image shrunk to 512 px.\n"
-            "Default 1024 px. No effect on split images when at or above Max Size.")
+            "Large images are segmented in patches of this size to keep fine fibres;\n"
+            "smaller is finer but slower. Off: whole image at 512 px.")
         patch_layout.addWidget(self.patch_size_spinner)
         layout.addLayout(patch_layout)
 
@@ -2344,9 +2310,8 @@ class MainWindow(QMainWindow):
         self.seg_max_size_spinner.setStyleSheet(self.spinner_style)
         self.seg_max_size_spinner.valueChanged.connect(self.update_max_size)
         self.seg_max_size_spinner.setToolTip(
-            "Batch runs cut larger images into blocks of at most this size.\n"
-            "Lower it if a run runs out of memory or is slow; raise it to cut fewer fibres.\n"
-            "Default 5000 px. No limit = never cut.")
+            "Batch runs split larger images into blocks of this size; lower it if memory\n"
+            "runs out. No limit: never split.")
         max_size_layout.addWidget(self.seg_max_size_spinner)
         layout.addLayout(max_size_layout)
 
@@ -2365,7 +2330,7 @@ class MainWindow(QMainWindow):
         self.white_bg_cb.setChecked(True)
         self.white_bg_cb.setStyleSheet(self.checkbox_style)
         self.white_bg_cb.stateChanged.connect(self.update_white_bg)
-        self.white_bg_cb.setToolTip("Enable this option when detecting dark fibres in bright backgrounds.")
+        self.white_bg_cb.setToolTip("Fill the area outside the region with white; untick for bright fibres on dark.")
         h_layout.addWidget(self.white_bg_cb)
 
         # Add toggle checkbox for comparing with the original image
@@ -2373,7 +2338,7 @@ class MainWindow(QMainWindow):
         self.toggle_img_cb.setChecked(False)
         self.toggle_img_cb.setStyleSheet(self.checkbox_style)
         self.toggle_img_cb.clicked.connect(self.compare_image)
-        self.toggle_img_cb.setToolTip("Toggle to overlay the original image.")
+        self.toggle_img_cb.setToolTip("Show the original image.")
         h_layout.addStretch()
         h_layout.addWidget(self.toggle_img_cb)
 
@@ -2423,9 +2388,7 @@ class MainWindow(QMainWindow):
             self.brf_section_titles.append(label)
 
         # --- Bands: used by both the open image and the folder run ---
-        section("Bands", "How pixels are assigned to the red-orange, yellow and green bands, checked on the\n"
-                         "open image with Separate and used by Folder Run. The macro's defaults at every\n"
-                         "start of Cabana.")
+        section("Bands", "How pixels are sorted into bands; check them on the open image with Separate.")
 
         # Brightness threshold
         bright_layout = QHBoxLayout()
@@ -2435,8 +2398,7 @@ class MainWindow(QMainWindow):
         self.brf_brightness_slider.setValue(10)  # Default (as in the macro)
         self.brf_brightness_slider.valueChanged.connect(self.update_brf_brightness)
         self.brf_brightness_slider.setToolTip(
-            "Pixels darker than this (the brightest of R, G and B) are background and belong to\n"
-            "no band. Default 10, as in the PR-BRF Analyser macro.")
+            "Darker pixels are background (default 10, as in the macro).")
         bright_layout.addWidget(self.brf_brightness_slider)
         self.brf_brightness_value = value_label("10")
         bright_layout.addWidget(self.brf_brightness_value)
@@ -2450,8 +2412,7 @@ class MainWindow(QMainWindow):
         self.brf_saturation_slider.setValue(0)  # Default (as in the macro)
         self.brf_saturation_slider.valueChanged.connect(self.update_brf_saturation)
         self.brf_saturation_slider.setToolTip(
-            "Pixels less saturated than this belong to no band. Default 0, as in the macro;\n"
-            "grey pixels then count as red-orange (their hue is 0). Set 1 or more to leave them out.")
+            "Less saturated pixels belong to no band (default 0: grey pixels count as red-orange).")
         sat_layout.addWidget(self.brf_saturation_slider)
         self.brf_saturation_value = value_label("0")
         sat_layout.addWidget(self.brf_saturation_value)
@@ -2461,10 +2422,10 @@ class MainWindow(QMainWindow):
         self._brf_syncing = False
         self.brf_band_sliders, self.brf_band_values = [], []
         tips = {
-            "Red-Orange": "Hue range of the red-orange band (thick, densely packed fibres). Default 0-27.\n"
-                          "Drag the lower handle below 0 to include the deep red hues 192-255.",
-            "Yellow": "Hue range of the yellow band. Default 28-47.",
-            "Green": "Hue range of the green band (thin, loosely packed fibres). Default 48-140.",
+            "Red-Orange": "Hue range of red-orange (thick fibres), default 0-27. Drag below 0 to\n"
+                          "include deep red (hues 192-255).",
+            "Yellow": "Hue range of yellow, default 28-47.",
+            "Green": "Hue range of green (thin fibres), default 48-140.",
         }
         band_labels = [QLabel(f"{band} Hue:") for band in brf.BANDS]
         label_width = max(label.sizeHint().width() for label in band_labels)
@@ -2479,7 +2440,8 @@ class MainWindow(QMainWindow):
             slider.setValues(lo, hi)
             slider.valueChanged.connect(lambda lo, hi, i=index: self.update_brf_band(i, lo, hi))
             slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            slider.setToolTip(tips[band] + "\nThe bands stay joined: moving one edge moves the neighbouring band.")
+            slider.setToolTip(tips[band] + "\n"
+                                           "The bands stay joined.")
             band_layout.addWidget(slider, 3)
             value = value_label(f"({lo}, {hi})", 70)
             band_layout.addWidget(value)
@@ -2496,9 +2458,8 @@ class MainWindow(QMainWindow):
         self.brf_view_combo.setStyleSheet(self.combo_style)
         self.brf_view_combo.currentIndexChanged.connect(self._show_brf_view)
         self.brf_view_combo.setToolTip(
-            "Grid: the original image and the three bands side by side.\n"
-            "Total or one band: those pixels in their original colour on black, as saved.\n"
-            "Class map: each band in its colour, bright pixels in no band in grey.")
+            "Grid: original and the three bands. Total or a band: those pixels, as saved.\n"
+            "Class map: one colour per band, grey for bright pixels in no band.")
         view_layout.addWidget(self.brf_view_combo)
         layout.addLayout(view_layout)
 
@@ -2516,7 +2477,7 @@ class MainWindow(QMainWindow):
         self.brf_original_cb.setChecked(False)
         self.brf_original_cb.setStyleSheet(self.checkbox_style)
         self.brf_original_cb.clicked.connect(self._show_brf_view)
-        self.brf_original_cb.setToolTip("Toggle to show the original image.")
+        self.brf_original_cb.setToolTip("Show the original image.")
         cb_layout.addStretch()
         cb_layout.addWidget(self.brf_original_cb)
         layout.addLayout(cb_layout)
@@ -2532,15 +2493,13 @@ class MainWindow(QMainWindow):
         self.brf_summary_label = QLabel("")
         self.brf_summary_label.setWordWrap(True)
         self.brf_summary_label.setStyleSheet(self.value_label_style)
-        self.brf_summary_label.setToolTip("Share of the birefringent signal in each band, share of the image in\n"
-                                          "any band and in none (unclassified), and the area in the bands.")
+        self.brf_summary_label.setToolTip("Signal per band, share of the image in a band or in none, and band area.")
         layout.addWidget(self.brf_summary_label)
 
         # --- Folder: colour separation only, no segmentation or fibre analysis ---
         layout.addWidget(create_separator())
-        section("Folder Run", "Separates every image of a folder with the band settings and writes the band\n"
-                          "images and tables; no segmentation or fibre analysis. The band images can then\n"
-                          "be analysed on the Batch Run page with a polarised-light parameter file.")
+        section("Folder Run", "Separate every image of a folder (no segmentation or fibre analysis);\n"
+                              "analyse the band images afterwards with Batch Run.")
 
         folder_labels = []
 
@@ -2564,17 +2523,14 @@ class MainWindow(QMainWindow):
             return row, edit, btn
 
         _, self.brf_input_path, self.brf_input_btn = folder_row(
-            "Input Folder:", "Folder of polarised-light images (TIFF/PNG/JPEG); the pixel size is read from\n"
-            "each image's metadata.", self.select_brf_input_folder)
+            "Input Folder:", "Polarised-light images (TIFF/PNG/JPEG); the pixel size is read from their metadata.", self.select_brf_input_folder)
         _, self.brf_mask_path, self.brf_mask_btn = folder_row(
-            "ROI Masks:", "Optional. Binary masks named like the images (white = measure), e.g. the stroma\n"
-            "masks exported from QuPath or a TMA export's Masks folder. Empty: whole images.",
+            "ROI Masks:", "Optional masks named like the images (white = measure). Empty: whole images.",
             self.select_brf_mask_folder, placeholder="Optional: leave empty to measure whole images")
         self.brf_mask_clear_action = add_clear_action(self.brf_mask_path, lambda: self.set_brf_mask_folder(None),
                                                       "Clear the ROI mask folder (whole images)")
         _, self.brf_output_path, self.brf_output_btn = folder_row(
-            "Output Folder:", "Where Total, Red, Yellow, Green and Stats are written. Files of the same names\n"
-            "are replaced; nothing else is deleted.", self.select_brf_output_folder)
+            "Output Folder:", "Where the band images and tables go; files of the same names are replaced.", self.select_brf_output_folder)
         self.brf_input_folder = self.brf_mask_folder = self.brf_output_folder = None
         # one width for the three row labels
         label_width = max(label.sizeHint().width() for label in folder_labels)
@@ -2586,14 +2542,12 @@ class MainWindow(QMainWindow):
         self.brf_sort_cb.setChecked(True)
         self.brf_sort_cb.setStyleSheet(self.checkbox_style)
         self.brf_sort_cb.stateChanged.connect(self.update_brf_sort)
-        self.brf_sort_cb.setToolTip("Band images go to Total, Red, Yellow and Green and the tables to Stats;\n"
-                                    "unticked, all files go in one folder.")
+        self.brf_sort_cb.setToolTip("Band images in Total, Red, Yellow and Green; tables in Stats.")
         out_cb_layout.addWidget(self.brf_sort_cb)
         self.brf_images_cb = QCheckBox("Save Images")
         self.brf_images_cb.setChecked(True)
         self.brf_images_cb.setStyleSheet(self.checkbox_style)
-        self.brf_images_cb.setToolTip("Write the band images (TIFF, with the pixel size); untick to write the\n"
-                                      "tables only, which takes far less disk space.")
+        self.brf_images_cb.setToolTip("Write the band images; untick to write only the tables.")
         out_cb_layout.addStretch()
         out_cb_layout.addWidget(self.brf_images_cb)
         layout.addLayout(out_cb_layout)
@@ -2872,7 +2826,7 @@ class MainWindow(QMainWindow):
         self.line_width_range.setValues(5, 7)  # Default values
         self.line_width_range.valueChanged.connect(self.update_line_width_range)
         self.line_width_range.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.line_width_range.setToolTip("Increase line widths to detect thicker fibers.")
+        self.line_width_range.setToolTip("Widths of the fibres to detect; raise them for thicker fibres.")
         line_width_layout.addWidget(self.line_width_range, 3)
 
         self.line_width_value = QLabel("(5, 7)")
@@ -2891,7 +2845,7 @@ class MainWindow(QMainWindow):
         self.line_step_slider.setRange(1, 5)
         self.line_step_slider.setValue(2)  # Default
         self.line_step_slider.valueChanged.connect(self.update_line_step)
-        self.line_step_slider.setToolTip("Reduce this value to detect more fibers.")
+        self.line_step_slider.setToolTip("Step between line widths; lower finds more fibres.")
         line_step_layout.addWidget(self.line_step_slider)
         self.line_step_value = QLabel("2")
         self.line_step_value.setFixedWidth(30)
@@ -2913,7 +2867,7 @@ class MainWindow(QMainWindow):
         self.contrast_range.setValues(100, 200)  # Default values
         self.contrast_range.valueChanged.connect(self.update_contrast_range)
         self.contrast_range.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.contrast_range.setToolTip("Reduce the values if fibre contrast is low.")
+        self.contrast_range.setToolTip("Lower it for faint fibres.")
         contrast_layout.addWidget(self.contrast_range, 3)
 
         self.contrast_value = QLabel("(100, 200)")
@@ -2932,7 +2886,7 @@ class MainWindow(QMainWindow):
         self.min_length_slider.setRange(1, 50)
         self.min_length_slider.setValue(5)  # Default
         self.min_length_slider.valueChanged.connect(self.update_min_length)
-        self.min_length_slider.setToolTip("Fibers shorter than this length will be ignored.")
+        self.min_length_slider.setToolTip("Shorter fibres are ignored.")
         min_length_layout.addWidget(self.min_length_slider)
         self.min_length_value = QLabel("5")
         self.min_length_value.setFixedWidth(30)
@@ -2949,21 +2903,21 @@ class MainWindow(QMainWindow):
         self.dark_line_cb.setChecked(True)
         self.dark_line_cb.setStyleSheet(self.checkbox_style)
         self.dark_line_cb.stateChanged.connect(self.update_dark_line)
-        self.dark_line_cb.setToolTip("Enable this option to detect dark fibers on bright backgrounds.")
+        self.dark_line_cb.setToolTip("Dark fibres on a light background (Picrosirius Red); untick for bright fibres.")
         checkbox_layout.addWidget(self.dark_line_cb)
 
         self.extend_line_cb = QCheckBox("Extend Line")
         self.extend_line_cb.setChecked(False)
         self.extend_line_cb.setStyleSheet(self.checkbox_style)
         self.extend_line_cb.stateChanged.connect(self.update_extend_line)
-        self.extend_line_cb.setToolTip("Enable to detect fibers near junctions.")
+        self.extend_line_cb.setToolTip("Also detect fibres near junctions (may add artefacts).")
         checkbox_layout.addWidget(self.extend_line_cb)
 
         self.overlay_fibres_cb = QCheckBox("Overlay Fibres")
         self.overlay_fibres_cb.setChecked(True)
         self.overlay_fibres_cb.setStyleSheet(self.checkbox_style)
         self.overlay_fibres_cb.stateChanged.connect(self.update_overlay_fibres)
-        self.overlay_fibres_cb.setToolTip("Toggle to overlay detected fibres on the image.")
+        self.overlay_fibres_cb.setToolTip("Show the detected fibres on the image.")
         checkbox_layout.addWidget(self.overlay_fibres_cb)
 
         layout.addLayout(checkbox_layout)
@@ -2979,8 +2933,7 @@ class MainWindow(QMainWindow):
         # (Batch Run), not by the Detect preview above
         layout.addWidget(create_separator())
         measure_label = QLabel("Fibre measurements (used when the analysis runs):")
-        measure_label.setToolTip("These settings shape the fibre metrics of a full analysis (Batch Run);\n"
-                                 "they do not change the Detect preview.")
+        measure_label.setToolTip("Used by Batch Run, not by Detect.")
         layout.addWidget(measure_label)
 
         min_branch_layout = QHBoxLayout()
@@ -2991,8 +2944,7 @@ class MainWindow(QMainWindow):
         self.min_branch_slider.setValue(5)  # Default
         self.min_branch_slider.valueChanged.connect(self.update_min_branch)
         self.min_branch_slider.setToolTip(
-            "Side branches of the fibre skeleton shorter than this are pruned before length,\n"
-            "branching and curvature are measured. (Minimum Line Length drops whole lines.)")
+            "Shorter side branches are pruned before length, branching and curvature are measured.")
         min_branch_layout.addWidget(self.min_branch_slider)
         self.min_branch_value = QLabel("5")
         self.min_branch_value.setFixedWidth(30)
@@ -3011,9 +2963,8 @@ class MainWindow(QMainWindow):
         self.curve_window_range.valueChanged.connect(self.update_curve_window_range)
         self.curve_window_range.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.curve_window_range.setToolTip(
-            "Curvature is measured along the fibres over windows from the smaller to the larger\n"
-            "size, in steps of Window Step; each window gives one Curvature column.\n"
-            "Larger windows measure broader bends.")
+            "Curvature window sizes, from smaller to larger in steps of Window Step;\n"
+            "one Curvature column per window.")
         curve_window_layout.addWidget(self.curve_window_range, 3)
         self.curve_window_value = QLabel("(10, 30)")
         self.curve_window_value.setFixedWidth(70)
@@ -3058,7 +3009,7 @@ class MainWindow(QMainWindow):
         self.toggle_gap_btn = ToggleButton()
         self.toggle_gap_btn.setChecked(True)
         self.toggle_gap_btn.toggled.connect(self.toggle_gap_analysis)
-        self.toggle_gap_btn.setToolTip("Enable/Disable gap analysis and update accordingly in the parameter file.")
+        self.toggle_gap_btn.setToolTip("Turn gap analysis on or off.")
         # layout.addWidget(self.toggle_gap_btn, 0, Qt.AlignRight)
         toggle_layout.addStretch()
         toggle_layout.addWidget(self.toggle_gap_label)
@@ -3073,7 +3024,7 @@ class MainWindow(QMainWindow):
         self.min_gap_slider.setRange(5, 100)
         self.min_gap_slider.setValue(20)  # Default
         self.min_gap_slider.valueChanged.connect(self.update_min_gap)
-        self.min_gap_slider.setToolTip("Lower this value for more detailed analysis.")
+        self.min_gap_slider.setToolTip("Smallest gap to report; lower finds smaller gaps.")
         min_gap_layout.addWidget(self.min_gap_slider)
         self.min_gap_value = QLabel("20")
         self.min_gap_value.setFixedWidth(30)
@@ -3091,7 +3042,7 @@ class MainWindow(QMainWindow):
         self.max_hdm_slider.setRange(100, 255)
         self.max_hdm_slider.setValue(230)  # Default
         self.max_hdm_slider.valueChanged.connect(self.update_max_hdm)
-        self.max_hdm_slider.setToolTip("Reduce this value to narrow down the HDM area of interest.")
+        self.max_hdm_slider.setToolTip("Highest grey level counted in the HDM; lower it to narrow the HDM area.")
         max_hdm_layout.addWidget(self.max_hdm_slider)
         self.max_hdm_value = QLabel("230")
         self.max_hdm_value.setFixedWidth(30)
@@ -3110,8 +3061,7 @@ class MainWindow(QMainWindow):
         self.hdm_saturation_slider.setValue(10)  # Default 0.1
         self.hdm_saturation_slider.valueChanged.connect(self.update_hdm_saturation)
         self.hdm_saturation_slider.setToolTip(
-            "Share of pixels saturated when the HDM contrast is stretched (split between the\n"
-            "darkest and brightest ends). Used when the analysis runs, not by Analyze.")
+            "Share of pixels saturated when stretching the HDM contrast; used by Batch Run.")
         hdm_sat_layout.addWidget(self.hdm_saturation_slider)
         self.hdm_saturation_value = QLabel("10")
         self.hdm_saturation_value.setFixedWidth(30)
@@ -3127,7 +3077,7 @@ class MainWindow(QMainWindow):
         self.overlay_gaps_cb.setChecked(False)
         self.overlay_gaps_cb.setStyleSheet(self.checkbox_style)
         self.overlay_gaps_cb.stateChanged.connect(self.update_overlay_gaps)
-        self.overlay_gaps_cb.setToolTip("Toggle to overlay gap analysis results on image.")
+        self.overlay_gaps_cb.setToolTip("Show the gaps over the tissue image.")
         overlay_layout = QHBoxLayout()
         overlay_layout.addStretch()
         overlay_layout.addWidget(self.overlay_gaps_cb)
@@ -3144,8 +3094,7 @@ class MainWindow(QMainWindow):
         self.gap_summary_label = QLabel("")
         self.gap_summary_label.setWordWrap(True)
         self.gap_summary_label.setStyleSheet(self.value_label_style)
-        self.gap_summary_label.setToolTip("Gaps found by the last analysis: count, median diameter and the\n"
-                                          "share of the image the circles cover. Circles are coloured by size.")
+        self.gap_summary_label.setToolTip("Last analysis: gap count, median diameter and share of the image covered.")
         layout.addWidget(self.gap_summary_label)
 
         layout.addStretch()

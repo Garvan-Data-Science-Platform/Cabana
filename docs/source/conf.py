@@ -7,8 +7,8 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = 'cabana'
-copyright = '2025, Gavin'
-author = 'Gavin'
+copyright = '2025-2026, Garvan Institute of Medical Research'
+author = 'Garvan Institute of Medical Research'
 release = 'v1'
 
 # -- General configuration ---------------------------------------------------

@@ -269,7 +269,7 @@ def main(argv):
                 (3, rect_of(win, win.brf_view_combo), "left"),
                 (4, rect_of(win, win.brf_original_cb), "left"),
                 (5, union(win, (win.brf_btn, win.brf_summary_label)), "right"),
-                (6, union(win, (win.brf_input_path, win.brf_mask_clear_btn, win.brf_output_btn)), "right"),
+                (6, union(win, (win.brf_input_path, win.brf_mask_btn, win.brf_output_btn)), "right"),
                 (7, union(win, (win.brf_sort_cb, win.brf_images_cb, win.brf_run_btn)), "below"),
             ])
 

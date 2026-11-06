@@ -183,7 +183,7 @@ def test_run_folder_separates_a_folder(win, tmp_path, monkeypatch, app):
     os.rename(mask_dir, tmp_path / "stroma_mask")
     assert not win.brf_run_btn.isEnabled()
     win.set_brf_input_folder(str(stroma))
-    assert win.brf_mask_folder == str(tmp_path / "stroma_mask") and win.brf_mask_clear_btn.isEnabled()
+    assert win.brf_mask_folder == str(tmp_path / "stroma_mask") and win.brf_mask_cb.isChecked()
     win.set_brf_output_folder(str(tmp_path / "out"))
     assert win.brf_run_btn.isEnabled()
     messages = []
@@ -227,3 +227,40 @@ def test_run_folder_reports_an_output_folder_holding_the_input(win, tmp_path, mo
     assert _wait(app, lambda: messages)
     assert messages[-1][1] == {"warning": True} and "output folder" in messages[-1][0][2]
     assert win.brf_run_btn.text() == "Run Folder"
+
+
+def test_roi_masks_checkbox_switches_between_masks_and_whole_images(win, tmp_path, monkeypatch, app):
+    import pandas as pd
+    from PyQt5.QtWidgets import QFileDialog
+    from cabana.stages import BRF_RESULTS
+    from tests.test_brf_folder import _write_inputs
+    img_dir, mask_dir = _write_inputs(tmp_path)
+    win.set_brf_input_folder(img_dir)
+    assert win._brf_mask_dir() == mask_dir                      # Masks/ next to Images/ is picked up
+    win.set_brf_mask_folder(None)
+    assert not win.brf_mask_cb.isChecked() and win._brf_mask_dir() is None
+    # ticking without a folder asks for one; cancelling the dialog leaves it unticked
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", staticmethod(lambda *a, **k: ""))
+    win.brf_mask_cb.setChecked(True)
+    assert not win.brf_mask_cb.isChecked() and not win.brf_mask_path.isEnabled()
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", staticmethod(lambda *a, **k: mask_dir))
+    win.brf_mask_cb.setChecked(True)
+    assert win.brf_mask_cb.isChecked() and win._brf_mask_dir() == mask_dir and win.brf_mask_path.isEnabled()
+    # unticked: the folder is kept but not used
+    win.brf_mask_cb.setChecked(False)
+    assert win._brf_mask_dir() is None and win.brf_mask_path.text() == mask_dir
+    win.set_brf_output_folder(str(tmp_path / "out"))
+    messages = []
+    monkeypatch.setattr(win, "_notify", lambda *a, **k: messages.append(a))
+    win.run_brf_folder()
+    assert _wait(app, lambda: messages)
+    results = pd.read_csv(tmp_path / "out" / "Stats" / BRF_RESULTS)
+    assert results.loc[0, "Region Pixels"] == 160 * 160                      # whole image
+
+
+def test_page_has_three_titled_sections(win):
+    assert [t.text() for t in win.brf_section_titles] == ["Bands", "Open Image", "Folder"]
+    for t in win.brf_section_titles:
+        t.setStyleSheet("")
+    win._reapply_widget_styles()
+    assert all("font-weight: 600" in t.styleSheet() for t in win.brf_section_titles)

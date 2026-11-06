@@ -2404,7 +2404,7 @@ class MainWindow(QMainWindow):
         (PR-BRF Analyser classification, see cabana.brf)."""
         layout = QVBoxLayout()
         layout.setContentsMargins(6, 10, 6, 6)
-        layout.setSpacing(12)
+        layout.setSpacing(10)
 
         # The page's own settings: the macro defaults at every start, not part of
         # the parameter file (Batch Run analyses the separated images like any other)
@@ -2416,6 +2416,20 @@ class MainWindow(QMainWindow):
             label.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
             label.setStyleSheet(self.value_label_style)
             return label
+
+        # Section titles as on the TMA page
+        self.brf_section_titles = []
+
+        def section(title, tip):
+            label = QLabel(title)
+            label.setStyleSheet(self.value_label_style + " font-weight: 600;")
+            label.setToolTip(tip)
+            layout.addWidget(label)
+            self.brf_section_titles.append(label)
+
+        # --- Bands: used by both the open image and the folder run ---
+        section("Bands", "How pixels are assigned to the red-orange, yellow and green bands; used for the\n"
+                         "open image and for Run Folder. The macro's defaults at every start of Cabana.")
 
         # Brightness threshold
         bright_layout = QHBoxLayout()
@@ -2477,6 +2491,10 @@ class MainWindow(QMainWindow):
             self.brf_band_sliders.append(slider)
             self.brf_band_values.append(value)
 
+        # --- Open Image: preview of the image open in the viewer ---
+        layout.addWidget(create_separator())
+        section("Open Image", "Separate the bands of the image open in the viewer, to check the settings.")
+
         # View
         view_layout = QHBoxLayout()
         view_layout.addWidget(QLabel("View:"))
@@ -2501,7 +2519,6 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.brf_note)
 
         # Overlay checkbox
-        layout.addWidget(create_separator())
         cb_layout = QHBoxLayout()
         self.brf_original_cb = QCheckBox("Overlay Original")
         self.brf_original_cb.setChecked(False)
@@ -2527,18 +2544,19 @@ class MainWindow(QMainWindow):
                                           "any band and in none (unclassified), and the area in the bands.")
         layout.addWidget(self.brf_summary_label)
 
-        # Run on a folder: colour separation only, no segmentation or fibre analysis
+        # --- Folder: colour separation only, no segmentation or fibre analysis ---
         layout.addWidget(create_separator())
-        folder_label = QLabel("Run on a folder (colour separation only):")
-        folder_label.setToolTip("Separates every image of a folder with the settings above and writes the band\n"
-                                "images and tables; no segmentation or fibre analysis. The band images can then\n"
-                                "be analysed on the Batch Run page with a polarised-light parameter file.")
-        layout.addWidget(folder_label)
+        section("Folder", "Separates every image of a folder with the band settings and writes the band\n"
+                          "images and tables; no segmentation or fibre analysis. The band images can then\n"
+                          "be analysed on the Batch Run page with a polarised-light parameter file.")
 
-        def folder_row(label_text, tip, select, placeholder="Not selected"):
+        folder_labels = []
+
+        def folder_row(label, tip, select, placeholder="Not selected"):
             row = QHBoxLayout()
-            label = QLabel(label_text)
-            label.setFixedWidth(95)
+            if isinstance(label, str):
+                label = QLabel(label)
+            folder_labels.append(label)
             row.addWidget(label)
             edit = QLineEdit("")
             edit.setReadOnly(True)
@@ -2556,21 +2574,25 @@ class MainWindow(QMainWindow):
         _, self.brf_input_path, self.brf_input_btn = folder_row(
             "Input Folder:", "Folder of polarised-light images (TIFF/PNG/JPEG); the pixel size is read from\n"
             "each image's metadata.", self.select_brf_input_folder)
-        mask_row, self.brf_mask_path, self.brf_mask_btn = folder_row(
-            "ROI Masks:", "Optional. Binary masks named like the images (white = measure), e.g. the stroma\n"
-            "masks exported from QuPath or a TMA export's Masks folder. Empty: whole images.",
-            self.select_brf_mask_folder, placeholder="Optional: leave empty to measure whole images")
-        self.brf_mask_clear_btn = QPushButton("✕")
-        self.brf_mask_clear_btn.setToolTip("Clear the ROI mask folder")
-        self.brf_mask_clear_btn.clicked.connect(lambda: self.set_brf_mask_folder(None))
-        self.brf_mask_clear_btn.setStyleSheet(self.btn_style)
-        self.brf_mask_clear_btn.setFixedWidth(34)
-        self.brf_mask_clear_btn.setEnabled(False)
-        mask_row.addWidget(self.brf_mask_clear_btn)
+        # Ticked: measure each image inside its mask; unticked: whole images
+        self.brf_mask_cb = QCheckBox("ROI Masks:")
+        self.brf_mask_cb.setChecked(False)
+        self.brf_mask_cb.setStyleSheet(self.checkbox_style)
+        self.brf_mask_cb.toggled.connect(self._brf_mask_toggled)
+        self.brf_mask_cb.setToolTip("Tick to measure each image inside its mask; untick to measure whole images.")
+        _, self.brf_mask_path, self.brf_mask_btn = folder_row(
+            self.brf_mask_cb, "Binary masks named like the images (white = measure), e.g. the stroma masks\n"
+            "exported from QuPath or a TMA export's Masks folder.",
+            self.select_brf_mask_folder, placeholder="Not used: whole images are measured")
+        self.brf_mask_path.setEnabled(False)
         _, self.brf_output_path, self.brf_output_btn = folder_row(
             "Output Folder:", "Where Total, Red, Yellow, Green and Stats are written. Files of the same names\n"
             "are replaced; nothing else is deleted.", self.select_brf_output_folder)
         self.brf_input_folder = self.brf_mask_folder = self.brf_output_folder = None
+        # one width for the three row labels (the ROI Masks tick box needs more than a label)
+        label_width = max(label.sizeHint().width() for label in folder_labels)
+        for label in folder_labels:
+            label.setFixedWidth(label_width)
 
         out_cb_layout = QHBoxLayout()
         self.brf_sort_cb = QCheckBox("Sort Into Folders")
@@ -2678,10 +2700,29 @@ class MainWindow(QMainWindow):
             self.set_brf_mask_folder(folder)
 
     def set_brf_mask_folder(self, folder):
+        """Use ``folder`` as the ROI mask folder (ticks ROI Masks); None: whole images."""
         self.brf_mask_folder = folder or None
         self.brf_mask_path.setText(folder or "")
         self.brf_mask_path.setToolTip(folder or "")
-        self.brf_mask_clear_btn.setEnabled(bool(folder))
+        self.brf_mask_cb.blockSignals(True)
+        self.brf_mask_cb.setChecked(bool(folder))
+        self.brf_mask_cb.blockSignals(False)
+        self.brf_mask_path.setEnabled(bool(folder))
+
+    def _brf_mask_toggled(self, on):
+        """ROI Masks ticked: ask for the folder if none is set yet; unticked: whole images."""
+        if on and not self.brf_mask_folder:
+            self.select_brf_mask_folder()
+            if not self.brf_mask_folder:
+                self.brf_mask_cb.blockSignals(True)
+                self.brf_mask_cb.setChecked(False)
+                self.brf_mask_cb.blockSignals(False)
+                return
+        self.brf_mask_path.setEnabled(on)
+
+    def _brf_mask_dir(self):
+        """The ROI mask folder of a folder run, or None for whole images."""
+        return self.brf_mask_folder if self.brf_mask_cb.isChecked() else None
 
     def select_brf_output_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Output Folder", "", QFileDialog.ShowDirsOnly)
@@ -2713,7 +2754,7 @@ class MainWindow(QMainWindow):
                 "Continue", "Cancel"):
             return
         self.brf_folder_worker = BRFFolderWorker(dict(self._brf_settings), self.brf_input_folder, out,
-                                                 self.brf_mask_folder, self.brf_images_cb.isChecked())
+                                                 self._brf_mask_dir(), self.brf_images_cb.isChecked())
         self.brf_folder_worker.progress_updated.connect(self._brf_folder_progress)
         self.brf_folder_worker.run_complete.connect(self.handle_brf_folder_complete)
         self.brf_folder_worker.failed.connect(self.handle_brf_folder_failed)
@@ -4202,7 +4243,7 @@ class MainWindow(QMainWindow):
                     self.param_btn, self.input_btn, self.output_btn, self.cancel_batch_btn,
                      self.mask_btn, self.mask_clear_btn, self.tma_slide_btn, self.tma_output_btn,
                      self.tma_cancel_btn, self.tma_undo_btn, self.tma_load_edits_btn, self.tma_save_edits_btn,
-                     self.brf_input_btn, self.brf_mask_btn, self.brf_mask_clear_btn, self.brf_output_btn):
+                     self.brf_input_btn, self.brf_mask_btn, self.brf_output_btn):
             btn.setStyleSheet(self.btn_style)
 
         # Primary buttons
@@ -4234,7 +4275,7 @@ class MainWindow(QMainWindow):
                    self.extend_line_cb, self.overlay_fibres_cb, self.overlay_gaps_cb,
                    self.stats_cb, self.scores_cb, self.visuals_cb, self.tma_recover_cb, self.tma_core_auto_cb,
                    self.tma_edit_cb, self.tma_links_cb, *self.tma_channel_cbs.values(),
-                   self.brf_sort_cb, self.brf_original_cb, self.brf_images_cb):
+                   self.brf_sort_cb, self.brf_original_cb, self.brf_images_cb, self.brf_mask_cb):
             cb.setStyleSheet(self.checkbox_style)
 
         # Path edits
@@ -4251,6 +4292,8 @@ class MainWindow(QMainWindow):
         self.brf_summary_label.setStyleSheet(self.value_label_style)
         self.brf_folder_label.setStyleSheet(self.value_label_style)
         self.brf_progress_bar.setStyleSheet(self.progressbar_style)
+        for label in self.brf_section_titles:
+            label.setStyleSheet(self.value_label_style + " font-weight: 600;")
 
         # Value labels (slider readouts)
         for label in (self.color_thresh_value, self.num_labels_value, self.max_iters_value,

@@ -485,11 +485,11 @@ class TestMapLoader:
         assert win.tma_array_combo.currentData() == 1 and pre.array_number == 1
 
     def test_save_templates(self, fitted_gui, tmp_path, monkeypatch):
-        from PyQt5.QtWidgets import QFileDialog, QMessageBox
+        from PyQt5.QtWidgets import QFileDialog
         win, _ = fitted_gui
         monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(tmp_path / "tpl"))
         shown = []
-        monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: shown.append(a))
+        monkeypatch.setattr(win, "_notify", lambda *a, **k: shown.append(a))
         win.save_tma_map_templates()
         assert os.listdir(tmp_path / "tpl") == ["tma_map_template.csv"]
         assert shown

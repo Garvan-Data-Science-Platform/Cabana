@@ -600,7 +600,7 @@ def generate_panel_style():
 
 
 def generate_dialog_style():
-    """Card-style dialogs (About, What's New, the tour prompt)."""
+    """Card-style dialogs (About, What's New, the tour prompt, every message)."""
     pc = panel_colors()
     border = color_to_stylesheet(pc['card_border'])
     return f"""
@@ -616,6 +616,9 @@ def generate_dialog_style():
         QLabel#dialogBullet {{ color: {color_to_stylesheet(COLORS['highlight'])}; background: transparent;
             font-size: {FONT_SIZES['base'] + 1}px; }}
         QFrame#cardDivider {{ background-color: {border}; border: none; }}
+        QPlainTextEdit#dialogDetails {{ background-color: {color_to_stylesheet(pc['field'])};
+            color: {color_to_stylesheet(COLORS['text_dim'])}; border: 1px solid {border}; border-radius: 5px;
+            font-family: monospace; font-size: {FONT_SIZES['small']}px; }}
     """
 
 
@@ -1160,6 +1163,17 @@ class CardDialog(QDialog):
             btn.setDefault(True)
         self.footer_layout.addWidget(btn)
         return btn
+
+
+def card_message(parent, title, text, info=""):
+    """A one-button card-style message (plain text; ``info`` in a fainter note)."""
+    import html
+    dlg = CardDialog(parent, title, width=460)
+    dlg.add_text(html.escape(text).replace("\n", "<br>"))
+    if info:
+        dlg.add_text(html.escape(info).replace("\n", "<br>"), kind="note")
+    dlg.add_button("OK", primary=True)
+    dlg.exec_()
 
 
 class PercentageProgressBar(QProgressBar):
@@ -2827,30 +2841,12 @@ class ImagePanel(QWidget):
                 success = self.image.save(file_path)
 
                 if success:
-                    # Show success message
-                    msg_box = QMessageBox(self)
-                    msg_box.setIcon(QMessageBox.Information)
-                    msg_box.setWindowTitle("Save Successful")
-                    msg_box.setText(f"Image saved successfully to:\n{file_path}")
-                    msg_box.setStyleSheet(generate_messagebox_style())
-                    msg_box.exec_()
+                    card_message(self, "Save Image", "Image saved.", file_path)
                 else:
-                    # Show error message
-                    msg_box = QMessageBox(self)
-                    msg_box.setIcon(QMessageBox.Critical)
-                    msg_box.setWindowTitle("Save Failed")
-                    msg_box.setText("Failed to save the image. Please check the file path and permissions.")
-                    msg_box.setStyleSheet(generate_messagebox_style())
-                    msg_box.exec_()
-
+                    card_message(self, "Save Image", "The image could not be saved.",
+                                 "Check the file path and permissions.")
             except Exception as e:
-                # Show error message for any exceptions
-                msg_box = QMessageBox(self)
-                msg_box.setIcon(QMessageBox.Critical)
-                msg_box.setWindowTitle("Save Error")
-                msg_box.setText(f"An error occurred while saving the image:\n{str(e)}")
-                msg_box.setStyleSheet(generate_messagebox_style())
-                msg_box.exec_()
+                card_message(self, "Save Image", "The image could not be saved.", str(e))
 
 
 class ToggleButton(QWidget):

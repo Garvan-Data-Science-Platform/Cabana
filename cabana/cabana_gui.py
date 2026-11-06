@@ -1,3 +1,4 @@
+import html
 import os
 os.environ["NUMEXPR_MAX_THREADS"] = "20"
 import sys
@@ -13,9 +14,10 @@ from .utils import join_path, sanitize_filename
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QSpinBox,
                              QVBoxLayout, QHBoxLayout, QCheckBox,
                              QPushButton, QFileDialog, QSizePolicy, QColorDialog,
-                             QMessageBox, QGroupBox, QComboBox, QWidget,
+                             QGroupBox, QComboBox, QWidget,
                              QStatusBar, QLineEdit, QDoubleSpinBox, QStackedWidget, QGridLayout,
-                             QAction, QActionGroup, QDialog, QScrollArea, QFrame, QLayout)
+                             QAction, QActionGroup, QDialog, QScrollArea, QFrame, QLayout,
+                             QPlainTextEdit)
 from PyQt5.QtGui import QIcon, QPalette, QFont, QFontMetrics, QKeySequence
 from PyQt5.QtCore import QPointF, QSettings, QTimer, QUrl
 from PyQt5.QtGui import QDesktopServices
@@ -637,27 +639,51 @@ class MainWindow(QMainWindow):
         try:
             paths = write_templates(folder)
         except OSError as e:
-            QMessageBox.warning(self, "TMA Map Template", f"Could not write the template:\n{e}")
+            self._notify("TMA Map Template", "Could not write the template.", str(e), warning=True)
             return
-        QMessageBox.information(self, "TMA Map Template",
-                                "Wrote:\n" + "\n".join(paths) +
-                                "\n\nOpen it in a spreadsheet, type or paste your map into the grid (the notes at "
-                                "the top explain how), save it as CSV, then choose 'Load map file…' under Array Map.")
+        self._notify("TMA Map Template", "Wrote:\n" + "\n".join(paths),
+                     "Open it in a spreadsheet, type or paste your map into the grid (the notes at "
+                     "the top explain how), save it as CSV, then choose 'Load map file…' under Array Map.")
 
     def _open_tma_slide_from_menu(self):
         self.show_page(self.pages.indexOf(self.tma_tab))
         self.select_tma_slide()
 
+    def _message(self, title, text, info="", buttons=("OK",), default=None, details=None, rich=False):
+        """A card-style message: ``text`` (rich text when ``rich``), then ``info``
+        in a fainter note and optional ``details`` behind a Show Details button. ``default`` (the first
+        button when None) is the primary button, placed last on the right.
+        Returns the label clicked, or None when the dialog is closed."""
+        default = default or buttons[0]
+        as_html = lambda t: html.escape(t).replace("\n", "<br>")  # noqa: E731
+        link = color_to_stylesheet(COLORS['highlight'])
+        dlg = CardDialog(self, title, width=460)
+        dlg.add_text(text.replace("<a ", f"<a style='color:{link}; text-decoration:none;' ") if rich
+                     else as_html(text))
+        if info:
+            dlg.add_text(as_html(info), kind="note")
+        clicked = []
+        if details:
+            box = QPlainTextEdit(details)
+            box.setObjectName("dialogDetails")
+            box.setReadOnly(True)
+            box.setMinimumHeight(160)
+            box.setVisible(False)
+            dlg.body_layout.addWidget(box)
+            toggle = QPushButton("Show Details")
+            toggle.setStyleSheet(self.btn_style)
+            toggle.clicked.connect(lambda: (box.setVisible(not box.isVisible()),
+                                            toggle.setText("Hide Details" if box.isVisible() else "Show Details")))
+            dlg.footer_layout.insertWidget(0, toggle)
+        for label in [b for b in buttons if b != default] + [default]:
+            dlg.add_button(label, primary=label == default,
+                           slot=lambda _=False, label=label: clicked.append(label))
+        dlg.exec_()
+        return clicked[0] if clicked else None
+
     def _notify(self, title, text, info="", warning=False):
-        """One-button message box. Monkeypatched in tests."""
-        msg = QMessageBox(self)
-        msg.setIcon(QMessageBox.Warning if warning else QMessageBox.Information)
-        msg.setWindowTitle(title)
-        msg.setText(text)
-        msg.setInformativeText(info)
-        msg.setStyleSheet(self.msgbox_style)
-        self._fit_dialog_buttons(msg)
-        msg.exec_()
+        """One-button message. Monkeypatched in tests."""
+        self._message(title, text, info)
 
     def restore_default_parameters(self):
         """Reload the bundled default parameters into the widgets."""
@@ -1303,7 +1329,7 @@ class MainWindow(QMainWindow):
             self.tma_editor.push_undo()
             n = self.tma_pre.load_edits(path)
         except Exception as e:
-            QMessageBox.warning(self, "Load Edits", f"Could not load {path}:\n{e}")
+            self._notify("Load Edits", f"Could not load {path}:\n{e}", warning=True)
             return
         self.tma_editor.selected = None
         self._tma_unsaved = False
@@ -1350,17 +1376,8 @@ class MainWindow(QMainWindow):
                 "description": " and ".join(parts)}
 
     def _ask_tma(self, title, text, info, yes_label, no_label):
-        """Two-button question on the TMA page; True when ``yes_label`` is chosen."""
-        msg = QMessageBox(self)
-        msg.setWindowTitle(title)
-        msg.setText(text)
-        msg.setInformativeText(info)
-        msg.setStyleSheet(self.msgbox_style)
-        yes = msg.addButton(yes_label, QMessageBox.AcceptRole)
-        msg.addButton(no_label, QMessageBox.RejectRole)
-        self._fit_dialog_buttons(msg)
-        msg.exec_()
-        return msg.clickedButton() == yes
+        """Two-button question; True when ``yes_label`` is chosen. Monkeypatched in tests."""
+        return self._message(title, text, info, (yes_label, no_label)) == yes_label
 
     def _tma_edits_default_path(self):
         folder = self.tma_output or (os.path.dirname(self.tma_slide) if self.tma_slide else "")
@@ -1376,7 +1393,7 @@ class MainWindow(QMainWindow):
             return
         saved = self._read_saved_edits(path)
         if saved is None:
-            QMessageBox.warning(self, "Load Edits", f"Could not read {path}.")
+            self._notify("Load Edits", f"Could not read {path}.", warning=True)
             return
         if saved["slide"] != self.tma_pre.slide_name and not self._ask_tma(
                 "Load Edits", f"These edits were saved for slide '{saved['slide']}', "
@@ -1400,7 +1417,7 @@ class MainWindow(QMainWindow):
                 os.makedirs(folder, exist_ok=True)
             pre.save_edits(path)
         except Exception as e:
-            QMessageBox.warning(self, "Save Edits", f"Could not save {path}:\n{e}")
+            self._notify("Save Edits", f"Could not save {path}:\n{e}", warning=True)
             return
         self._tma_unsaved = False
         self.tma_status_label.setText(f"Saved {len(pre.cores)} cores ({pre.manual_count()} hand-edited"
@@ -1702,7 +1719,7 @@ class MainWindow(QMainWindow):
                 return
         channels = [n for n, cb in self.tma_channel_cbs.items() if cb.isEnabled() and cb.isChecked()]
         if not channels:
-            QMessageBox.warning(self, "TMA Export", "Select at least one channel to export.")
+            self._notify("TMA Export", "Select at least one channel to export.", warning=True)
             return
         if not self._confirm_output_slide() or not self._confirm_edits_overwrite():
             return
@@ -1770,36 +1787,18 @@ class MainWindow(QMainWindow):
         self._tma_set_busy(False)
         n = len(self.tma_pre.exportable_cores()) if self.tma_pre else 0  # excludes filtered cores
         self.tma_status_label.setText(f"Exported {n} cores to {out_dir}")
-        msg = QMessageBox(self)
-        msg.setWindowTitle("TMA Export Complete")
-        msg.setText("Core images and masks were written.")
         channels = [c for c in ("BF", "POL") if os.path.isdir(join_path(out_dir, c))]
-        msg.setInformativeText(f"{out_dir}\n\nEach channel ({', '.join(channels)}) has Patients/ and Controls/ folders,\n"
-                               f"each holding Images/ and Masks/ usable directly as the input and\n"
-                               f"ROI-mask folders of Batch Run. Analyse BF with Dark line on and\n"
-                               f"POL with it off.")
-        msg.setStyleSheet(self.msgbox_style)
-        batch_btns = {msg.addButton(f"Use {c} in Batch Run", QMessageBox.ActionRole): c for c in channels}
-        open_btn = msg.addButton("Open Folder", QMessageBox.ActionRole)
-        msg.addButton(QMessageBox.Ok)
-        self._fit_dialog_buttons(msg)
-        msg.exec_()
-        clicked = msg.clickedButton()
-        if clicked == open_btn:
+        batch_btns = {f"Use {c} in Batch Run": c for c in channels}
+        clicked = self._message(
+            "TMA Export Complete", "Core images and masks were written.",
+            f"{out_dir}\n\nEach channel ({', '.join(channels)}) has Patients/ and Controls/ folders, "
+            f"each holding Images/ and Masks/ usable directly as the input and ROI-mask folders of "
+            f"Batch Run. Analyse BF with Dark line on and POL with it off.",
+            [*batch_btns, "Open Folder", "OK"], default="OK")
+        if clicked == "Open Folder":
             QDesktopServices.openUrl(QUrl.fromLocalFile(out_dir))
         elif clicked in batch_btns:
             self.use_tma_export_in_batch(out_dir, batch_btns[clicked])
-
-    @staticmethod
-    def _fit_dialog_buttons(box):
-        """Widen message-box buttons so their full text fits.
-
-        The dialog stylesheet adds horizontal padding that Qt's size hint for
-        QMessageBox buttons does not account for, which clips longer labels.
-        """
-        for btn in box.buttons():
-            need = btn.fontMetrics().horizontalAdvance(btn.text().replace("&", "")) + 40
-            btn.setMinimumWidth(max(btn.minimumWidth(), need))
 
     def use_tma_export_in_batch(self, out_dir, channel="BF"):
         """Point the Batch Run page at the patient cores of one channel of a TMA
@@ -1825,13 +1824,7 @@ class MainWindow(QMainWindow):
         self.tma_export_btn.setText("Export Cores")
         self._tma_set_busy(False)
         self.tma_status_label.setText(f"Error: {message}")
-        box = QMessageBox(self)
-        box.setWindowTitle("TMA Preprocessing")
-        box.setIcon(QMessageBox.Warning)
-        box.setText("TMA preprocessing failed.")
-        box.setInformativeText(message)
-        box.setStyleSheet(self.msgbox_style)
-        box.exec_()
+        self._notify("TMA Preprocessing", "TMA preprocessing failed.", message, warning=True)
 
     def select_param_file(self):
         """Open a file dialog to select a parameter file"""
@@ -1958,8 +1951,6 @@ class MainWindow(QMainWindow):
 
         # If validation passes, ask user about resuming
         if resume:
-            msg_box = QMessageBox(self)
-            msg_box.setWindowTitle("Checkpoint Detected")
             text = "A checkpoint file was found. Do you want to resume from the last checkpoint?"
             changes = run_settings_changes(self.output_folder, self.param_file, self.mask_folder,
                                            save_visuals=self.visuals_cb.isChecked())
@@ -1968,12 +1959,8 @@ class MainWindow(QMainWindow):
                          + "\n".join("• " + c for c in changes)
                          + "\n\nResuming uses the original settings. Choose No to start a new run "
                            "with the selected ones.")
-            msg_box.setText(text)
-            msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-            msg_box.setDefaultButton(QMessageBox.Yes)
-            msg_box.setStyleSheet(self.msgbox_style)
 
-            if msg_box.exec_() == QMessageBox.Yes:
+            if self._message("Checkpoint Detected", text, buttons=("Yes", "No")) == "Yes":
                 Log.logger.info('Resuming from last check point.')
                 return True, batch_size, batch_num, ignore_large, {
                     k: v for k, v in (("max_size", max_size), ("save_visuals", save_visuals)) if v is not None}
@@ -2097,17 +2084,9 @@ class MainWindow(QMainWindow):
         self._restore_batch_buttons()
 
         output_folder = getattr(self, 'output_folder', '')
-        msg = QMessageBox(self)
-        msg.setWindowTitle("Batch Processing Complete")
-        msg.setText("Batch processing finished successfully.")
-        msg.setInformativeText(f"Results saved to:\n{output_folder}")
-        msg.setStyleSheet(self.msgbox_style)
-        open_btn = msg.addButton("Open Folder", QMessageBox.ActionRole)
-        msg.addButton(QMessageBox.Ok)
-        self._fit_dialog_buttons(msg)
-
-        msg.exec_()
-        if msg.clickedButton() == open_btn:
+        if self._message("Batch Processing Complete", "Batch processing finished successfully.",
+                         f"Results saved to:\n{output_folder}",
+                         ("Open Folder", "OK"), default="OK") == "Open Folder":
             QDesktopServices.openUrl(QUrl.fromLocalFile(output_folder))
 
     def handle_batch_failed(self, message):
@@ -2115,22 +2094,12 @@ class MainWindow(QMainWindow):
         self._restore_batch_buttons()
 
         output_folder = getattr(self, 'output_folder', '')
-        msg = QMessageBox(self)
-        msg.setWindowTitle("Batch Processing Failed")
-        msg.setIcon(QMessageBox.Warning)
-        msg.setText("Batch processing stopped with an error.")
-        msg.setInformativeText(
-            f"{message}\n\n"
-            f"Completed batches and the checkpoint are kept in:\n{output_folder}\n\n"
-            "Fix the cause (for example free disk space) and run again with the same "
-            "output folder to resume.")
-        msg.setStyleSheet(self.msgbox_style)
-        open_btn = msg.addButton("Open Folder", QMessageBox.ActionRole)
-        msg.addButton(QMessageBox.Ok)
-        self._fit_dialog_buttons(msg)
-
-        msg.exec_()
-        if msg.clickedButton() == open_btn:
+        if self._message("Batch Processing Failed", "Batch processing stopped with an error.",
+                         f"{message}\n\n"
+                         f"Completed batches and the checkpoint are kept in:\n{output_folder}\n\n"
+                         "Fix the cause (for example free disk space) and run again with the same "
+                         "output folder to resume.",
+                         ("Open Folder", "OK"), default="OK") == "Open Folder":
             QDesktopServices.openUrl(QUrl.fromLocalFile(output_folder))
 
     def handle_batch_cancelled(self):
@@ -2138,19 +2107,10 @@ class MainWindow(QMainWindow):
         self._restore_batch_buttons()
 
         output_folder = getattr(self, 'output_folder', '')
-        msg = QMessageBox(self)
-        msg.setWindowTitle("Batch Processing Cancelled")
-        msg.setText("Batch processing was cancelled.")
-        msg.setInformativeText(
-            f"Partial results and a checkpoint are saved in:\n{output_folder}\n\n"
-            "You can resume from where you left off next time.")
-        msg.setStyleSheet(self.msgbox_style)
-        open_btn = msg.addButton("Open Folder", QMessageBox.ActionRole)
-        msg.addButton(QMessageBox.Ok)
-        self._fit_dialog_buttons(msg)
-
-        msg.exec_()
-        if msg.clickedButton() == open_btn:
+        if self._message("Batch Processing Cancelled", "Batch processing was cancelled.",
+                         f"Partial results and a checkpoint are saved in:\n{output_folder}\n\n"
+                         "You can resume from where you left off next time.",
+                         ("Open Folder", "OK"), default="OK") == "Open Folder":
             QDesktopServices.openUrl(QUrl.fromLocalFile(output_folder))
 
     def _title_switch(self, page, label, button):
@@ -2635,7 +2595,7 @@ class MainWindow(QMainWindow):
     def handle_brf_failed(self, message):
         self.brf_btn.setText("Separate")
         self.brf_btn.setEnabled(self.ori_img is not None)
-        QMessageBox.warning(self, "Birefringence failed", f"Birefringence did not complete:\n{message}")
+        self._notify("Birefringence failed", f"Birefringence did not complete:\n{message}", warning=True)
 
     def _schedule_brf_refresh(self):
         """Re-threshold (debounced) after a setting changed, once separated."""
@@ -3268,19 +3228,8 @@ class MainWindow(QMainWindow):
         if image is not None:
             self.image_panel.setImage(image, preserve_view=True)
         else:
-            msg = QMessageBox(self)
-            msg.setIcon(QMessageBox.Warning)
-            msg.setWindowTitle("Warning")
-            msg.setText(f"No {label} image {'loaded' if label == 'original' else 'available'}.")
-            msg.setStyleSheet(f"""
-                QMessageBox {{
-                    background-color: {COLORS['background'].name()};
-                    color: {COLORS['text'].name()};
-                }}
-            """)
-            self._fit_dialog_buttons(msg)
-
-            msg.exec_()
+            self._notify("No Image", f"No {label} image {'loaded' if label == 'original' else 'available'}.",
+                         warning=True)
 
     def update_overlay_fibres(self):
         """Overlay fibres on the image"""
@@ -3292,38 +3241,14 @@ class MainWindow(QMainWindow):
         if image is not None:
             self.image_panel.setImage(image, preserve_view=True)
         else:
-            msg = QMessageBox(self)
-            msg.setIcon(QMessageBox.Warning)
-            msg.setWindowTitle("Warning")
-            msg.setText(f"No {label} image available.")
-            msg.setStyleSheet(f"""
-                            QMessageBox {{
-                                background-color: {COLORS['background'].name()};
-                                color: {COLORS['text'].name()};
-                            }}
-                        """)
-            self._fit_dialog_buttons(msg)
-
-            msg.exec_()
+            self._notify("No Image", f"No {label} image available.", warning=True)
 
     def update_overlay_gaps(self):
         """Show the gap circles over the tissue image (Overlay Gaps) or the fibre mask."""
         if self.gap_img is not None:
             self._show_gaps(preserve_view=True)
         else:
-            msg = QMessageBox(self)
-            msg.setIcon(QMessageBox.Warning)
-            msg.setWindowTitle("Warning")
-            msg.setText(f"No gap image available.")
-            msg.setStyleSheet(f"""
-                            QMessageBox {{ 
-                                background-color: {COLORS['background'].name()}; 
-                                color: {COLORS['text'].name()};
-                            }}
-                        """)
-            self._fit_dialog_buttons(msg)
-
-            msg.exec_()
+            self._notify("No Image", "No gap image available.", warning=True)
 
     def toggle_segmentation(self):
         """Disable segmentation and update the UI accordingly"""
@@ -3442,7 +3367,7 @@ class MainWindow(QMainWindow):
         self.detect_btn.setText("Detect")
         self.analyze_btn.setEnabled(self.frb_img is not None and self.toggle_gap_btn.isChecked())
         self.analyze_btn.setText("Analyse")
-        QMessageBox.warning(self, f"{stage} failed", f"{stage} did not complete:\n{message}")
+        self._notify(f"{stage} failed", f"{stage} did not complete:\n{message}", warning=True)
 
     def show_progress_bar(self):
         self.progress_bar.setValue(0)
@@ -3981,24 +3906,9 @@ class MainWindow(QMainWindow):
                              ["OK"], details=output)
 
     def _ask_update(self, title, text, info, buttons, details=None):
-        """Message box with ``buttons`` (the first is the default); returns the
+        """Message with ``buttons`` (the first is the default); returns the
         label clicked, or None when closed. Monkeypatched in tests."""
-        msg = QMessageBox(self)
-        msg.setWindowTitle(title)
-        msg.setTextFormat(Qt.RichText)
-        msg.setText(text)
-        msg.setInformativeText(info)
-        if details:
-            msg.setDetailedText(details)
-        msg.setStyleSheet(self.msgbox_style)
-        added = {}
-        for i, label in enumerate(buttons):
-            role = QMessageBox.AcceptRole if i == 0 else QMessageBox.RejectRole
-            added[msg.addButton(label, role)] = label
-        msg.setDefaultButton(next(iter(added)))
-        self._fit_dialog_buttons(msg)
-        msg.exec_()
-        return added.get(msg.clickedButton())
+        return self._message(title, text, info, buttons, details=details, rich=True)
 
     @staticmethod
     def _license_text() -> str:

@@ -5,6 +5,7 @@ Run before and after a UI change to compare the two:
     python prototypes/capture_panels.py before   # -> prototypes/ui_compare/before/
     python prototypes/capture_panels.py after    # -> prototypes/ui_compare/after/
     python prototypes/capture_panels.py compare  # -> prototypes/ui_compare/<page>.png, before | after
+    python prototypes/capture_panels.py preview  # -> prototypes/ui_compare/preview_<theme>.png, all pages
 
 Uses Qt's offscreen platform and a stand-in for QSettings, so the user's
 saved settings (theme, folders) are never read or changed.
@@ -18,8 +19,8 @@ REPO = os.path.dirname(HERE)
 OUT = os.path.join(HERE, "ui_compare")
 sys.path.insert(0, REPO)
 
-THEMES = ["Light", "Dark"]
-SIZE = (1500, 1000)
+THEMES = ["Dark", "Light"]           # Dark first in the comparison sheets
+SIZE = (1500, 1340)          # tall enough for the TMA page
 
 
 class _FakeSettings:
@@ -104,6 +105,40 @@ def compare():
         print(path)
 
 
+PAGES = ["tma_dearrayer", "birefringence", "segmentation", "fibre_detection", "gap_analysis", "batch_run"]
+
+
+def preview():
+    """One sheet per theme with every page of the after/ captures side by side."""
+    from PyQt5.QtGui import QColor, QFont, QGuiApplication, QImage, QPainter
+    from PyQt5.QtCore import QRect, Qt
+    app = QGuiApplication.instance() or QGuiApplication(sys.argv)
+    after = os.path.join(OUT, "after")
+    gap, head = 24, 44
+    for theme in THEMES:
+        cells = [QImage(os.path.join(after, f"{name}_{theme.lower()}.png")) for name in PAGES]
+        w = max(img.width() for img in cells)
+        h = max(img.height() for img in cells)
+        sheet = QImage(len(PAGES) * (w + gap) + gap, h + head + gap, QImage.Format_RGB32)
+        sheet.fill(QColor("#8E969C"))
+        p = QPainter(sheet)
+        f = QFont()
+        f.setPixelSize(20)
+        f.setWeight(QFont.DemiBold)
+        p.setFont(f)
+        p.setPen(QColor("#FFFFFF"))
+        for i, (name, img) in enumerate(zip(PAGES, cells)):
+            x = gap + i * (w + gap)
+            p.drawText(QRect(x, 0, w, head), Qt.AlignVCenter | Qt.AlignLeft,
+                       name.replace("_", " ").title().replace("Tma", "TMA"))
+            if not img.isNull():
+                p.drawImage(x, head, img)
+        p.end()
+        path = os.path.join(OUT, f"preview_{theme.lower()}.png")
+        sheet.save(path)
+        print(path)
+
+
 if __name__ == "__main__":
     what = sys.argv[1] if len(sys.argv) > 1 else "before"
-    compare() if what == "compare" else capture(what)
+    {"compare": compare, "preview": preview}.get(what, lambda: capture(what))()

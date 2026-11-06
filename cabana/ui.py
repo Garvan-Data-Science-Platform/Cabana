@@ -16,7 +16,7 @@ from PyQt5.QtWidgets import (QSlider, QWidget, QSplitter, QSplitterHandle,
                              QProgressBar, QSizePolicy, QPushButton, QSpinBox,
                              QAbstractSpinBox, QAbstractSlider, QComboBox, QScrollBar,
                              QAbstractScrollArea, QApplication, QFrame, QLabel, QLineEdit,
-                             QHBoxLayout, QVBoxLayout, QGridLayout, QLayout, QToolButton)
+                             QHBoxLayout, QVBoxLayout, QLayout, QToolButton)
 from PyQt5.QtCore import Qt, QSize, QEvent, QPoint, QRect, QRectF, QPropertyAnimation, QEasingCurve, pyqtProperty
 from PyQt5.QtGui import (QPixmap, QPainter, QPen, QColor, QDragEnterEvent, QDropEvent, QImage, QBrush,
                          QFont, QFontMetrics, QIcon)
@@ -520,7 +520,7 @@ def generate_panel_style():
         }}
         QLabel#sectionTitle {{ color: {color_to_stylesheet(COLORS['text'])}; background: transparent;
             font-size: {FONT_SIZES['base'] + 1}px; font-weight: 600; }}
-        QLabel#sectionDesc, QLabel#rowValue, QLabel#note, QLabel#optionNote {{
+        QLabel#rowValue, QLabel#note, QLabel#optionNote {{
             color: {faint}; background: transparent; font-size: {small}px; }}
         QLabel#rowLabel, QLabel#optionTitle {{ color: {color_to_stylesheet(COLORS['text_dim'])};
             background: transparent; font-size: {FONT_SIZES['base']}px; }}
@@ -750,15 +750,14 @@ class RailNode(QWidget):
 
 
 class SectionCard(QFrame):
-    """A collapsible section card: a tinted header band with the title and a
-    one-line description, the rows, and a footer (behind a divider) for the
-    section's main action and its result. Styled by ``generate_panel_style``
-    through object names."""
+    """A collapsible section card: a tinted header band with the title, the
+    rows, and a footer (behind a divider) for the section's main action and
+    its result. Styled by ``generate_panel_style`` through object names."""
 
     LABEL_WIDTH = 118
     VALUE_WIDTH = 58
 
-    def __init__(self, title, description="", parent=None):
+    def __init__(self, title, parent=None):
         super().__init__(parent)
         self.setObjectName("sectionCard")
         outer = QVBoxLayout(self)
@@ -769,25 +768,18 @@ class SectionCard(QFrame):
         self.header.setObjectName("sectionHeader")
         self.header.setCursor(Qt.PointingHandCursor)
         self.header.mousePressEvent = lambda event: self.set_open(not self._open)
-        grid = QGridLayout(self.header)
-        grid.setContentsMargins(10, 8, 12, 8)
-        grid.setHorizontalSpacing(6)
-        grid.setVerticalSpacing(1)
+        head = QHBoxLayout(self.header)
+        head.setContentsMargins(10, 8, 12, 8)
+        head.setSpacing(6)
         self.chevron = QLabel()
         self.chevron.setFixedSize(14, 14)
         self.title_label = QLabel(title)
         self.title_label.setObjectName("sectionTitle")
-        self.desc_label = QLabel(description)
-        self.desc_label.setObjectName("sectionDesc")
-        self.desc_label.setWordWrap(True)
-        self.desc_label.setVisible(bool(description))
         self.header_right = QHBoxLayout()
         self.header_right.setSpacing(8)
-        grid.addWidget(self.chevron, 0, 0, Qt.AlignVCenter)
-        grid.addWidget(self.title_label, 0, 1)
-        grid.addLayout(self.header_right, 0, 2, Qt.AlignRight)
-        grid.addWidget(self.desc_label, 1, 1, 1, 2)
-        grid.setColumnStretch(1, 1)
+        head.addWidget(self.chevron, 0, Qt.AlignVCenter)
+        head.addWidget(self.title_label, 1)
+        head.addLayout(self.header_right)
         outer.addWidget(self.header)
 
         self.body = QWidget()

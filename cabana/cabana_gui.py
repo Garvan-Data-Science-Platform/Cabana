@@ -822,7 +822,7 @@ class MainWindow(QMainWindow):
         results, and a Run card with this run's settings and the action."""
         layout = self._page_layout()
 
-        flow = SectionCard("Data flow", "What goes in, and where the results go.")
+        flow = SectionCard("Data flow")
         self.input_folder_path = PathEdit("Not selected")
         self.input_folder_path.setToolTip("Images to analyse (TIFF/PNG/JPEG); the pixel size is read from their metadata.")
         self.input_btn = self.input_folder_path.pick_action
@@ -859,7 +859,7 @@ class MainWindow(QMainWindow):
         flow.add_flow_row("Results", self.output_folder_path)
         layout.addWidget(flow)
 
-        run = SectionCard("Run", "Settings for this run only.")
+        run = SectionCard("Run")
         self.batch_size_spinner = QSpinBox()
         self.batch_size_spinner.setRange(1, 100)
         self.batch_size_spinner.setValue(5)
@@ -1881,8 +1881,13 @@ class MainWindow(QMainWindow):
 
     def select_input_folder(self):
         """Open a file dialog to select an input folder"""
+        # start beside the parameter file when one is chosen (any order is allowed)
+        if getattr(self, 'param_file', None):
+            start = str(Path(self.param_file).parent.parent)
+        else:
+            start = getattr(self, 'input_folder', None) or os.path.expanduser('~')
         folder = QFileDialog.getExistingDirectory(
-            self, "Select Input Folder", str(Path(self.param_file).parent.parent), QFileDialog.ShowDirsOnly
+            self, "Select Input Folder", start, QFileDialog.ShowDirsOnly
         )
 
         if folder:

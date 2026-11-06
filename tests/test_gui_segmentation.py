@@ -74,6 +74,20 @@ def test_threshold_slider_rethresholds_without_segmenting(win, app, monkeypatch)
     assert win._seg_score is None
 
 
+def test_image_folder_can_be_chosen_before_the_parameter_file(win, tmp_path, monkeypatch):
+    import cabana.cabana_gui as gui
+    starts = []
+
+    def pick(parent, title, start, *a):
+        starts.append(start)
+        return str(tmp_path)
+    monkeypatch.setattr(gui.QFileDialog, "getExistingDirectory", pick)
+    assert not hasattr(win, "param_file")
+    win.input_btn.trigger()                                  # the folder icon in the Images field
+    assert starts == [os.path.expanduser("~")] and win.input_folder == str(tmp_path)
+    assert win.input_folder_path.text() == str(tmp_path)
+
+
 def test_batch_max_size_line_follows_the_parameter_file(win, tmp_path):
     import yaml
     new, old = tmp_path / "new.yml", tmp_path / "old.yml"

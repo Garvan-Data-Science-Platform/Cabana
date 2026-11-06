@@ -2492,13 +2492,13 @@ class MainWindow(QMainWindow):
         view_layout.addWidget(QLabel("View:"))
         view_layout.addStretch()
         self.brf_view_combo = QComboBox()
-        self.brf_view_combo.addItems(["Grid", "Class map", "Total", *brf.BANDS])
+        self.brf_view_combo.addItems(["Grid", "Total", *brf.BANDS, "Class map"])
         self.brf_view_combo.setStyleSheet(self.combo_style)
         self.brf_view_combo.currentIndexChanged.connect(self._show_brf_view)
         self.brf_view_combo.setToolTip(
             "Grid: the original image and the three bands side by side.\n"
-            "Class map: each band in its colour, bright pixels in no band in grey.\n"
-            "Total or one band: those pixels in their original colour on black, as saved.")
+            "Total or one band: those pixels in their original colour on black, as saved.\n"
+            "Class map: each band in its colour, bright pixels in no band in grey.")
         view_layout.addWidget(self.brf_view_combo)
         layout.addLayout(view_layout)
 

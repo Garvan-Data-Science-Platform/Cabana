@@ -223,6 +223,7 @@ def main(argv):
             print("TMA slide not found, skipping tma.png:", SLIDE)
         else:
             win.show_page(win.pages.indexOf(win.tma_tab))
+            win.resize(1500, 1340)          # the four TMA cards need the extra height
             settle(app)
             win.tma_slide = SLIDE
             win.tma_slide_path.setText(SLIDE)
@@ -248,6 +249,7 @@ def main(argv):
                 (8, rect_of(win, win.tma_output_path), "right"),
                 (9, rect_of(win, win.tma_export_btn)),
             ])
+            win.resize(1500, 980)
 
     if want("birefringence"):
         if not os.path.exists(POL):

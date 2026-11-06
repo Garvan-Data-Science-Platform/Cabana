@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.17
 
 - New Birefringence page for polarised-light images: each pixel is
   classified into the red-orange, yellow and green bands of the PR-BRF

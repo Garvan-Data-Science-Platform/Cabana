@@ -137,15 +137,15 @@ def main(argv):
     app = QApplication.instance() or QApplication([])
     import cabana.cabana_gui as gui
     from cabana.cabana_gui import MainWindow
-    gui.QSettings = _FakeSettings      # the Light screenshots never change the user's theme or folders
+    gui.QSettings = _FakeSettings      # the screenshots never change the user's theme or folders
     MainWindow.check_updates_on_start = False
     MainWindow.startup_messages = False
     win = MainWindow()         # maximises itself to the 800x600 offscreen screen
     win.confirm_on_close = False
     win.showNormal()
     win.resize(1500, 980)
-    if win.theme_combo.currentText() != "Light":
-        win.theme_combo.setCurrentText("Light")
+    if win.theme_combo.currentText() != "Dark":
+        win.theme_combo.setCurrentText("Dark")
     settle(app, 500)
 
     if want("start"):
@@ -166,11 +166,11 @@ def main(argv):
     if want("segmentation"):
         grab(win, "segmentation.png", [
             (1, rect_of(win, win.toggle_seg_btn), "left"),
-            (2, rect_of(win, win.color_btn), "right"),
-            (3, union(win, (win.color_thresh_slider, win.num_labels_slider, win.max_iters_slider))),
+            (2, union(win, (win.color_btn, win.hue_label)), "right"),
+            (3, union(win, (win.color_thresh_slider, win.num_labels_slider, win.max_iters_slider)), "right"),
             (4, union(win, (win.patch_size_spinner, win.seg_max_size_spinner)), "left"),
             (5, union(win, (win.white_bg_cb, win.toggle_img_cb)), "right"),
-            (6, rect_of(win, win.segment_btn)),
+            (6, rect_of(win, win.segment_btn), "below"),
         ])
 
     if analysis:

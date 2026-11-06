@@ -50,6 +50,7 @@ def capture(tag):
     import cabana.cabana_gui as gui
     gui.QSettings = _FakeSettings
     gui.MainWindow.check_updates_on_start = False
+    gui.MainWindow.startup_messages = False
     win = gui.MainWindow()
     win.confirm_on_close = False
     win.showNormal()            # not maximised to the small offscreen screen

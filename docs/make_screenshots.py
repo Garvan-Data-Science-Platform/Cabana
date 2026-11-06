@@ -123,6 +123,7 @@ def main(argv):
     app = QApplication.instance() or QApplication([])
     from cabana.cabana_gui import MainWindow
     MainWindow.check_updates_on_start = False
+    MainWindow.startup_messages = False
     win = MainWindow()         # maximises itself to the 800x600 offscreen screen
     win.confirm_on_close = False
     win.showNormal()

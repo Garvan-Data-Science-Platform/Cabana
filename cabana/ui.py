@@ -16,7 +16,7 @@ from PyQt5.QtWidgets import (QSlider, QWidget, QSplitter, QSplitterHandle,
                              QProgressBar, QSizePolicy, QPushButton, QSpinBox,
                              QAbstractSpinBox, QAbstractSlider, QComboBox, QScrollBar,
                              QAbstractScrollArea, QApplication, QFrame, QLabel, QLineEdit,
-                             QHBoxLayout, QVBoxLayout, QLayout, QToolButton)
+                             QHBoxLayout, QVBoxLayout, QLayout, QToolButton, QDialog)
 from PyQt5.QtCore import Qt, QSize, QEvent, QPoint, QRect, QRectF, QPropertyAnimation, QEasingCurve, pyqtProperty
 from PyQt5.QtGui import (QPixmap, QPainter, QPen, QColor, QDragEnterEvent, QDropEvent, QImage, QBrush,
                          QFont, QFontMetrics, QIcon)
@@ -531,6 +531,26 @@ def generate_panel_style():
     """
 
 
+def generate_dialog_style():
+    """Card-style dialogs (About, What's New, the tour prompt)."""
+    pc = panel_colors()
+    border = color_to_stylesheet(pc['card_border'])
+    return f"""
+        QDialog#cardDialog {{ background-color: {color_to_stylesheet(pc['card'])}; }}
+        QFrame#dialogHeader {{ background-color: {color_to_stylesheet(pc['header'])};
+            border: none; border-bottom: 1px solid {border}; }}
+        QLabel#dialogTitle {{ color: {color_to_stylesheet(COLORS['text'])}; background: transparent;
+            font-size: {FONT_SIZES['title'] + 1}px; font-weight: 600; }}
+        QLabel#dialogText {{ color: {color_to_stylesheet(COLORS['text'])}; background: transparent;
+            font-size: {FONT_SIZES['base'] + 1}px; }}
+        QLabel#dialogNote {{ color: {color_to_stylesheet(pc['faint'])}; background: transparent;
+            font-size: {FONT_SIZES['base']}px; }}
+        QLabel#dialogBullet {{ color: {color_to_stylesheet(COLORS['highlight'])}; background: transparent;
+            font-size: {FONT_SIZES['base'] + 1}px; }}
+        QFrame#cardDivider {{ background-color: {border}; border: none; }}
+    """
+
+
 def generate_context_menu_style():
     """Stylesheet for pop-up menus (image panel context menus) in the current theme."""
     return f"""
@@ -920,6 +940,88 @@ class OptionList(QFrame):
         row.addWidget(label)
         self._layout.addLayout(row)
         return label
+
+
+class CardDialog(QDialog):
+    """A dialog in the side panel's card style: a tinted header band with the
+    title, a body, and the buttons behind a divider."""
+
+    def __init__(self, parent, title, width=420):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setObjectName("cardDialog")
+        self.setMinimumWidth(width)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        header = QFrame()
+        header.setObjectName("dialogHeader")
+        head = QHBoxLayout(header)
+        head.setContentsMargins(20, 14, 20, 14)
+        self.title_label = QLabel(title)
+        self.title_label.setObjectName("dialogTitle")
+        head.addWidget(self.title_label)
+        outer.addWidget(header)
+        body = QWidget()
+        self.body_layout = QVBoxLayout(body)
+        self.body_layout.setContentsMargins(20, 18, 20, 18)
+        self.body_layout.setSpacing(10)
+        outer.addWidget(body, 1)
+        divider = QFrame()
+        divider.setObjectName("cardDivider")
+        divider.setFixedHeight(1)
+        outer.addWidget(divider)
+        self.footer_layout = QHBoxLayout()
+        self.footer_layout.setContentsMargins(20, 12, 20, 14)
+        self.footer_layout.setSpacing(8)
+        self.footer_layout.addStretch(1)
+        outer.addLayout(self.footer_layout)
+        self.setStyleSheet(generate_dialog_style())
+        self._stretched = False
+
+    def showEvent(self, event):
+        # spare height goes below the content, not between its rows
+        if not self._stretched:
+            self.body_layout.addStretch(1)
+            self._stretched = True
+        super().showEvent(event)
+
+    def add_text(self, text, kind="text"):
+        """A wrapped paragraph; ``kind`` is "text" or "note" (fainter)."""
+        label = QLabel(text)
+        label.setObjectName("dialogNote" if kind == "note" else "dialogText")
+        label.setWordWrap(True)
+        label.setTextFormat(Qt.RichText)
+        label.setOpenExternalLinks(True)
+        self.body_layout.addWidget(label)
+        return label
+
+    def add_bullets(self, items):
+        """A short list, one point per row, with accent bullets."""
+        for item in items:
+            row = QHBoxLayout()
+            row.setSpacing(10)
+            dot = QLabel("\u2022")
+            dot.setObjectName("dialogBullet")
+            row.addWidget(dot, 0, Qt.AlignTop)
+            text = QLabel(item)
+            text.setObjectName("dialogText")
+            text.setWordWrap(True)
+            row.addWidget(text, 1, Qt.AlignTop)
+            self.body_layout.addLayout(row)
+
+    def add_button(self, text, primary=False, slot=None, accept=False):
+        """A footer button; ``accept`` closes the dialog with Accepted."""
+        btn = QPushButton(text)
+        btn.setStyleSheet(generate_primary_button_style() if primary else generate_button_style())
+        btn.setMinimumWidth(88)
+        if slot is not None:
+            btn.clicked.connect(slot)
+        btn.clicked.connect(self.accept if accept else self.reject)
+        if primary:
+            btn.setDefault(True)
+        self.footer_layout.addWidget(btn)
+        return btn
 
 
 class PercentageProgressBar(QProgressBar):

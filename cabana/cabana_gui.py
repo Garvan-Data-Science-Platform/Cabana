@@ -36,7 +36,9 @@ from .tma_maps import MAP_FILE_FILTER, available_arrays, load_map_file, match_ma
 from .tma_editor import MapPreviewDialog
 from . import __version__
 from .updates import CHANGELOG_URL, install_problem, is_newer, restart_command
-from .winshell import set_taskbar_icon
+from .winshell import ICON_PATH, set_taskbar_icon
+from . import whats_new
+from .tour import TourOverlay, TourStep
 
 
 class PageStack(QStackedWidget):
@@ -337,6 +339,10 @@ class MainWindow(QMainWindow):
         self.update_worker = None
         if self.check_updates_on_start:
             QTimer.singleShot(3000, self._startup_update_check)
+        # What's New once after an upgrade, the tour offer on the very first start
+        self._tour = None
+        if self.startup_messages:
+            QTimer.singleShot(600, self._startup_messages)
 
 
     def _setup_menu_bar(self):
@@ -437,6 +443,12 @@ class MainWindow(QMainWindow):
         docs_action.triggered.connect(
             lambda: QDesktopServices.openUrl(QUrl("https://cabana.readthedocs.io")))
         about_menu.addAction(docs_action)
+        self.tour_action = QAction("Take the &Tour", self)
+        self.tour_action.triggered.connect(self.start_tour)
+        about_menu.addAction(self.tour_action)
+        self.whats_new_action = QAction("What's &New", self)
+        self.whats_new_action.triggered.connect(lambda: self.show_whats_new())
+        about_menu.addAction(self.whats_new_action)
         issue_action = QAction("Report an &Issue", self)
         issue_action.triggered.connect(
             lambda: QDesktopServices.openUrl(QUrl("https://github.com/Garvan-Data-Science-Platform/Cabana/issues")))
@@ -478,35 +490,44 @@ class MainWindow(QMainWindow):
             self.toggle_panel()
 
     def setup_start_tab(self):
-        """Landing page shown at launch: the three ways to begin."""
-        layout = QVBoxLayout()
-        layout.setContentsMargins(6, 10, 6, 6)
-        layout.setSpacing(10)
+        """Landing page shown at launch: a Begin card with the three ways to
+        start, and a Help card with the tour and the documentation."""
+        layout = self._page_layout()
 
-        intro = QLabel("Open a TMA slide to cut it into cores, open an image to tune parameters "
-                       "on it, or import a saved parameter file. Analysis pages are also under the "
-                       "Analysis menu (Ctrl/Cmd+1 to 6).")
-        intro.setWordWrap(True)
-        intro.setStyleSheet(self.value_label_style)
-        layout.addWidget(intro)
-
-        self.start_slide_btn = QPushButton("Open TMA Slide…")
-        self.start_slide_btn.setStyleSheet(self.primary_btn_style)
+        begin = SectionCard("Begin")
+        self.start_slide_btn = self._primary_button("Open TMA Slide…", play=False)
         self.start_slide_btn.setToolTip("Open a whole-slide TMA scan on the TMA Dearrayer page.")
         self.start_slide_btn.clicked.connect(self._open_tma_slide_from_menu)
-        layout.addWidget(self.start_slide_btn)
-
+        begin.add_widget(self.start_slide_btn)
         self.start_open_btn = QPushButton("Open Image…")
         self.start_open_btn.setStyleSheet(self.btn_style)
         self.start_open_btn.setToolTip("Open an image to tune the parameters on.")
         self.start_open_btn.clicked.connect(self.load_image)
-        layout.addWidget(self.start_open_btn)
-
+        begin.add_widget(self.start_open_btn)
         self.start_params_btn = QPushButton("Import Parameters…")
         self.start_params_btn.setStyleSheet(self.btn_style)
         self.start_params_btn.setToolTip("Load a saved Parameters.yml into all pages.")
         self.start_params_btn.clicked.connect(self.import_parameters)
-        layout.addWidget(self.start_params_btn)
+        begin.add_widget(self.start_params_btn)
+        self.start_begin_card = begin
+        layout.addWidget(begin)
+
+        help_card = SectionCard("Help")
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        self.start_tour_btn = QPushButton("Take the Tour")
+        self.start_tour_btn.setStyleSheet(self.btn_style)
+        self.start_tour_btn.setToolTip("Walk through the analysis, one step at a time.")
+        self.start_tour_btn.clicked.connect(self.start_tour)
+        row.addWidget(self.start_tour_btn)
+        self.start_docs_btn = QPushButton("Documentation")
+        self.start_docs_btn.setStyleSheet(self.btn_style)
+        self.start_docs_btn.setToolTip("Open the online documentation.")
+        self.start_docs_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl("https://cabana.readthedocs.io")))
+        row.addWidget(self.start_docs_btn)
+        help_card.add_layout(row)
+        layout.addWidget(help_card)
 
         layout.addStretch()
         self.start_tab.setLayout(layout)
@@ -849,6 +870,7 @@ class MainWindow(QMainWindow):
         self.output_btn.setToolTip("Choose the results folder")
         self.output_btn.triggered.connect(self.select_output_folder)
         flow.add_path_row("Results", self.output_folder_path)
+        self.bat_files_card = flow
         layout.addWidget(flow)
 
         run = SectionCard("Run")
@@ -1020,6 +1042,7 @@ class MainWindow(QMainWindow):
         self._tma_fit_row.setSpacing(8)
         self._tma_fit_row.addWidget(self.tma_fit_btn, 1)
         fit.add_footer(self._tma_fit_row)
+        self.tma_fit_card = fit
         layout.addWidget(fit)
 
         # --- Filter ----------------------------------------------------------
@@ -2149,6 +2172,7 @@ class MainWindow(QMainWindow):
             "tissue; below about 0.12 glass starts to count. Updates the result at once.")
         self.color_thresh_value = self._slider_value_label("0.2")
         colour.add_row("Colour threshold", self.color_thresh_slider, self.color_thresh_value)
+        self.seg_colour_card = colour
         layout.addWidget(colour)
 
         training = SectionCard("Training")
@@ -2334,6 +2358,7 @@ class MainWindow(QMainWindow):
         self.brf_summary_label.setStyleSheet(self.value_label_style)
         self.brf_summary_label.setToolTip("Signal per band, share of the image in a band or in none, and band area.")
         bands.add_footer(self.brf_summary_label)
+        self.brf_bands_card = bands
         layout.addWidget(bands)
 
         # --- Folder: colour separation only, no segmentation or fibre analysis ---
@@ -2702,6 +2727,7 @@ class MainWindow(QMainWindow):
         self.detect_btn.clicked.connect(self.run_detection)
         self.detect_btn.setEnabled(False)
         detection.add_footer(self.detect_btn)
+        self.det_detection_card = detection
         layout.addWidget(detection)
 
         # Fibre measurements: used by the skeleton analysis of a full run
@@ -2783,6 +2809,7 @@ class MainWindow(QMainWindow):
         self.gap_summary_label.setStyleSheet(self.value_label_style)
         self.gap_summary_label.setToolTip("Last analysis: gap count, median diameter and share of the image covered.")
         gaps.add_footer(self.gap_summary_label)
+        self.gap_gaps_card = gaps
         layout.addWidget(gaps)
 
         hdm = SectionCard("Hematoxylin density (HDM)")
@@ -3667,32 +3694,140 @@ class MainWindow(QMainWindow):
         """)
 
     def _show_about_dialog(self) -> None:
-        """Show the About dialog with version and project info."""
-        text_color = color_to_stylesheet(COLORS['text'])
-        link_color = color_to_stylesheet(COLORS['highlight'])
-        bg_color = color_to_stylesheet(COLORS['surface'])
-        dlg = QMessageBox(self)
-        dlg.setWindowTitle("About Cabana")
-        dlg.setIcon(QMessageBox.Information)
-        dlg.setTextFormat(Qt.RichText)
-        dlg.setText(
-            f"<div style='color:{text_color}; font-size:14px;'>"
-            f"<b style='font-size:16px;'>Cabana</b> — CollAgen FiBre ANAlyzer<br>"
-            f"Version {__version__} · MIT License<br><br>"
-            "A Python toolkit for analyzing collagen fibre architecture "
-            "in IHC and fluorescence microscopy images.<br><br>"
-            f"<a href='https://cabana.readthedocs.io' "
-            f"style='color:{link_color};'>Documentation</a> · "
-            f"<a href='https://pypi.org/project/cabana/' "
-            f"style='color:{link_color};'>PyPI</a>"
-            "</div>"
-        )
-        dlg.setStyleSheet(
-            f"QMessageBox {{ background-color: {bg_color}; }}"
-            f"QLabel {{ color: {text_color}; }}"
-            f"QPushButton {{ min-width: 60px; }}"
-        )
+        """Show the About dialog with version and project links."""
+        dlg = CardDialog(self, "About Cabana", width=400)
+        head = QHBoxLayout()
+        head.setSpacing(14)
+        icon = QLabel()
+        pixmap = QIcon(str(ICON_PATH)).pixmap(56, 56)
+        if not pixmap.isNull():
+            icon.setPixmap(pixmap)
+            head.addWidget(icon, 0, Qt.AlignTop)
+        names = QVBoxLayout()
+        names.setSpacing(2)
+        name = QLabel("Cabana")
+        name.setObjectName("dialogTitle")
+        names.addWidget(name)
+        for line in ("CollAgen FiBre ANAlyzer", f"Version {__version__}, MIT License"):
+            label = QLabel(line)
+            label.setObjectName("dialogNote")
+            names.addWidget(label)
+        head.addLayout(names, 1)
+        dlg.body_layout.addLayout(head)
+        dlg.body_layout.addSpacing(4)
+        dlg.add_text("A toolkit for analysing collagen fibre architecture in IHC, polarised-light "
+                     "and fluorescence microscopy images.")
+        link = color_to_stylesheet(COLORS['highlight'])
+        dlg.add_text("&nbsp;&nbsp;&nbsp;".join(
+            f"<a href='{url}' style='color:{link}; text-decoration:none;'>{text}</a>"
+            for text, url in (("Documentation", "https://cabana.readthedocs.io"),
+                              ("Changelog", CHANGELOG_URL),
+                              ("PyPI", "https://pypi.org/project/cabana/"))))
+        dlg.add_button("License", slot=self._show_license_dialog)
+        dlg.add_button("Close", primary=True)
         dlg.exec_()
+
+    def _show_license_dialog(self) -> None:
+        """Show the license text in a read-only dialog."""
+        dlg = CardDialog(self, "License", width=520)
+        text = QLabel(self._license_text())
+        text.setObjectName("dialogNote")
+        text.setTextFormat(Qt.PlainText)
+        text.setWordWrap(True)
+        text.setStyleSheet("font-family: monospace;")
+        dlg.body_layout.addWidget(text)
+        dlg.add_button("Close", primary=True)
+        dlg.exec_()
+
+    # ------------------------------------------------------------------
+    # What's New, the tour and the first start
+    # ------------------------------------------------------------------
+    startup_messages = True         # tests and scripts switch the startup prompts off
+    LAST_VERSION_KEY = 'last_seen_version'
+
+    def _startup_messages(self):
+        """Once after an upgrade show What's New; on the very first start offer the tour."""
+        settings = QSettings('Cabana', 'CabanaGUI')
+        last = settings.value(self.LAST_VERSION_KEY, "") or ""
+        # users of versions before this key existed still have other settings
+        known = bool(last) or any(settings.value(key, None) is not None
+                                  for key in ('theme', self.UPDATE_CHECK_KEY, 'tma_output_parent'))
+        settings.setValue(self.LAST_VERSION_KEY, __version__)
+        if not known:
+            if self._ask_tour():
+                self.start_tour()
+        elif whats_new.should_show(last or "0.0.0", __version__):
+            self.show_whats_new()
+
+    def _ask_tour(self):
+        """First start: offer the tour. True to start it (monkeypatched in tests)."""
+        dlg = CardDialog(self, "Take a quick tour?", width=380)
+        dlg.add_text("See where each step of the analysis lives. It takes about a minute and "
+                     "changes no settings.")
+        dlg.add_button("Not Now")
+        dlg.add_button("Start Tour", primary=True, accept=True)
+        return dlg.exec_() == QDialog.Accepted
+
+    def show_whats_new(self, version=None):
+        """The short notes of ``version`` (default: this version, else the newest notes)."""
+        version = version or __version__
+        notes = whats_new.notes_for(version)
+        if notes is None:
+            version, notes = whats_new.latest()
+        dlg = CardDialog(self, f"What's new in Cabana {version}", width=440)
+        dlg.add_bullets(notes)
+        dlg.add_button("Full Changelog", slot=lambda: QDesktopServices.openUrl(QUrl(CHANGELOG_URL)))
+        dlg.add_button("Close", primary=True)
+        self._whats_new_dialog = dlg          # for tests
+        dlg.exec_()
+
+    def _tour_steps(self):
+        """The pipeline, one step per page: what to do there, pointing at its card."""
+        def page(tab, card=None):
+            def enter():
+                self.show_page(self.pages.indexOf(tab))
+                if card is not None:
+                    self.pages_scroll.ensureWidgetVisible(card, 0, 0)
+            return enter
+        return [
+            TourStep("Welcome to Cabana",
+                     "This tour shows where each step of the analysis lives. It changes no settings; "
+                     "press Esc to leave at any time.",
+                     page(self.start_tab), lambda: self.start_begin_card),
+            TourStep("Cut a TMA slide into cores",
+                     "Optional. Fit the cores of a whole-slide TMA scan, check them on the overlay and "
+                     "export one image and mask per core.",
+                     page(self.tma_tab, self.tma_fit_card), lambda: self.tma_fit_card),
+            TourStep("Separate birefringence bands",
+                     "For polarised-light images: sort the pixels into red-orange, yellow and green "
+                     "bands, for one image or a whole folder.",
+                     page(self.brf_tab, self.brf_bands_card), lambda: self.brf_bands_card),
+            TourStep("Keep the stained tissue",
+                     "Open a typical image, pick the stain colour and click Segment at the bottom "
+                     "of the page.",
+                     page(self.seg_tab, self.seg_colour_card), lambda: self.seg_colour_card),
+            TourStep("Detect the fibres",
+                     "Set the fibre widths and contrast, then Detect to check them on the image.",
+                     page(self.det_tab, self.det_detection_card), lambda: self.det_detection_card),
+            TourStep("Measure the gaps",
+                     "Analyze fills the spaces between the fibres with circles.",
+                     page(self.gap_tab, self.gap_gaps_card), lambda: self.gap_gaps_card),
+            TourStep("Save the settings",
+                     "Parameters > Export Parameters writes the settings of these pages to a file "
+                     "for batch runs.",
+                     None, None),
+            TourStep("Run a whole folder",
+                     "Choose the images, the parameter file and a results folder, then Process Batch.",
+                     page(self.bat_tab, self.bat_files_card), lambda: self.bat_files_card),
+        ]
+
+    def start_tour(self):
+        """Walk through the analysis pages with a spotlight on each step."""
+        if self._tour is not None:
+            self._tour.end()
+        self._tour = TourOverlay(self, self._tour_steps())
+        self._tour.finished.connect(lambda: setattr(self, "_tour", None))
+        self._tour.start()
 
     # ------------------------------------------------------------------
     # Check for Updates
@@ -3860,7 +3995,8 @@ class MainWindow(QMainWindow):
         self.page_title.setStyleSheet(self.page_title_style)
 
         # Buttons
-        for btn in (self.start_open_btn, self.start_params_btn, self.cancel_batch_btn,
+        for btn in (self.start_open_btn, self.start_params_btn, self.start_tour_btn, self.start_docs_btn,
+                    self.cancel_batch_btn,
                      self.tma_cancel_btn, self.tma_undo_btn, self.tma_load_edits_btn, self.tma_save_edits_btn):
             btn.setStyleSheet(self.btn_style)
 

@@ -8,10 +8,12 @@ Once the Cabana GUI is launched, you will see a window split horizontally: the c
 
 ![Start page](media/start.png)
 
-1. **Menu bar.** All commands live here: **File** (open or reload an image, open a TMA slide, generate a TMA map template, quit; quitting asks for confirmation only when a job is running or TMA hand edits are unsaved), **Parameters** (import, export, restore defaults), **Analysis** (choose which page the control panel shows: **TMA**, **Birefringence**, **Segmentation**, **Fibre Detection**, **Gap Analysis** or **Batch Run**, shortcuts Ctrl/Cmd+1 to 6) and **Help** (about, documentation, issue tracker, **Check for Updates** (see [Updating Cabana](installation.md#updating-cabana); on macOS it is in the **Cabana** menu), version, licence).
+1. **Menu bar.** All commands live here: **File** (open or reload an image, open a TMA slide, generate a TMA map template, quit; quitting asks for confirmation only when a job is running or TMA hand edits are unsaved), **Parameters** (import, export, restore defaults), **Analysis** (choose which page the control panel shows: **TMA**, **Birefringence**, **Segmentation**, **Fibre Detection**, **Gap Analysis** or **Batch Run**, shortcuts Ctrl/Cmd+1 to 6) and **Help** (about, documentation, **Take the Tour**, **What's New**, issue tracker, **Check for Updates** (see [Updating Cabana](installation.md#updating-cabana); on macOS it is in the **Cabana** menu), version, licence).
 2. **Open TMA Slide** opens a whole-slide scan on the TMA Dearrayer page.
 3. **Open Image** loads a single image to tune parameters on; the panel switches to Segmentation automatically. You can also drag an image onto the viewer.
 4. **Import Parameters** loads a saved `Parameters.yml` into the controls.
+
+**Take the Tour** (on the Start page or under **Help**) walks through the analysis one step at a time: each step opens its page and highlights the settings to look at, with **Back** and **Next** to move between steps and Esc to leave. It changes no settings and needs no image. Cabana offers the tour once, the first time it starts. After an upgrade it shows a short **What's New** note once; **Help > What's New** shows it again.
 
 The control panel shows one page at a time, its settings grouped in collapsible cards (click a card's title to fold it). Hover any label or control for a short description; the same hint appears in the status bar at the bottom, which also shows the loaded file, its size and the zoom. The theme selector sits at the bottom right.
 

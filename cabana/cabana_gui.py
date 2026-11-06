@@ -521,6 +521,7 @@ class MainWindow(QMainWindow):
                    (getattr(self, "segmentation_worker", None), "segmentation"),
                    (getattr(self, "detection_worker", None), "fibre detection"),
                    (getattr(self, "gap_analysis_worker", None), "gap analysis"),
+                   (getattr(self, "brf_folder_worker", None), "a birefringence folder run"),
                    (getattr(self, "update_worker", None), "the Cabana update")]
         for worker, label in running:
             if worker is not None and worker.isRunning():
@@ -2455,8 +2456,10 @@ class MainWindow(QMainWindow):
         self.toggle_brf_btn = ToggleButton()
         self.toggle_brf_btn.setChecked(False)
         self.toggle_brf_btn.toggled.connect(self.toggle_birefringence)
-        self.toggle_brf_btn.setToolTip("Enable/Disable the birefringence colour bands and update accordingly "
-                                       "in the parameter file.\nUse it on polarised-light images only.")
+        self.toggle_brf_btn.setToolTip(
+            "Include the birefringence colour bands in Batch Run (Configs: Birefringence), next to\n"
+            "the fibre analysis. The page and Run Folder below work either way.\n"
+            "Use it on polarised-light images only.")
         toggle_layout.addStretch()
         toggle_layout.addWidget(self.toggle_brf_label)
         toggle_layout.addWidget(self.toggle_brf_btn)
@@ -2534,12 +2537,13 @@ class MainWindow(QMainWindow):
         view_layout.addWidget(QLabel("View:"))
         view_layout.addStretch()
         self.brf_view_combo = QComboBox()
-        self.brf_view_combo.addItems(["Class map", "Total", *brf.BANDS])
+        self.brf_view_combo.addItems(["Grid", "Class map", "Total", *brf.BANDS])
         self.brf_view_combo.setStyleSheet(self.combo_style)
         self.brf_view_combo.currentIndexChanged.connect(self._show_brf_view)
         self.brf_view_combo.setToolTip(
+            "Grid: the original image and the three bands side by side.\n"
             "Class map: each band in its colour, bright pixels in no band in grey.\n"
-            "Total or one band: those pixels in their original colour on black, as saved by Batch Run.")
+            "Total or one band: those pixels in their original colour on black, as saved.")
         view_layout.addWidget(self.brf_view_combo)
         layout.addLayout(view_layout)
 
@@ -2551,16 +2555,9 @@ class MainWindow(QMainWindow):
         self.brf_note.setVisible(False)
         layout.addWidget(self.brf_note)
 
-        # Checkboxes
+        # Overlay checkbox
         layout.addWidget(create_separator())
         cb_layout = QHBoxLayout()
-        self.brf_sort_cb = QCheckBox("Sort Into Folders")
-        self.brf_sort_cb.setChecked(True)
-        self.brf_sort_cb.setStyleSheet(self.checkbox_style)
-        self.brf_sort_cb.stateChanged.connect(self.update_brf_sort)
-        self.brf_sort_cb.setToolTip("Batch Run writes the band images to BRF/Total, Red, Yellow and Green and\n"
-                                    "the tables to BRF/Stats; unticked, all files go in BRF.")
-        cb_layout.addWidget(self.brf_sort_cb)
         self.brf_original_cb = QCheckBox("Overlay Original")
         self.brf_original_cb.setChecked(False)
         self.brf_original_cb.setStyleSheet(self.checkbox_style)
@@ -2585,19 +2582,95 @@ class MainWindow(QMainWindow):
                                           "any band and in none (unclassified), and the area in the bands.")
         layout.addWidget(self.brf_summary_label)
 
+        # Run on a folder: colour separation only, no segmentation or fibre analysis
+        layout.addWidget(create_separator())
+        folder_label = QLabel("Run on a folder (colour separation only):")
+        folder_label.setToolTip("Separates every image of a folder with the settings above and writes the band\n"
+                                "images and tables; no segmentation or fibre analysis. For the full analysis\n"
+                                "of polarised-light images use Batch Run with Include in Batch Run on.")
+        layout.addWidget(folder_label)
+
+        def folder_row(label_text, tip, select, placeholder="Not selected"):
+            row = QHBoxLayout()
+            label = QLabel(label_text)
+            label.setFixedWidth(95)
+            row.addWidget(label)
+            edit = QLineEdit("")
+            edit.setReadOnly(True)
+            edit.setPlaceholderText(placeholder)
+            edit.setStyleSheet(self.path_edit_style)
+            edit.setToolTip(tip)
+            row.addWidget(edit, 1)
+            btn = QPushButton("Select")
+            btn.clicked.connect(select)
+            btn.setStyleSheet(self.btn_style)
+            row.addWidget(btn)
+            layout.addLayout(row)
+            return row, edit, btn
+
+        _, self.brf_input_path, self.brf_input_btn = folder_row(
+            "Input Folder:", "Folder of polarised-light images (TIFF/PNG/JPEG); the pixel size is read from\n"
+            "each image's metadata.", self.select_brf_input_folder)
+        mask_row, self.brf_mask_path, self.brf_mask_btn = folder_row(
+            "ROI Masks:", "Optional. Binary masks named like the images (white = measure), e.g. the stroma\n"
+            "masks exported from QuPath or a TMA export's Masks folder. Empty: whole images.",
+            self.select_brf_mask_folder, placeholder="Optional: leave empty to measure whole images")
+        self.brf_mask_clear_btn = QPushButton("✕")
+        self.brf_mask_clear_btn.setToolTip("Clear the ROI mask folder")
+        self.brf_mask_clear_btn.clicked.connect(lambda: self.set_brf_mask_folder(None))
+        self.brf_mask_clear_btn.setStyleSheet(self.btn_style)
+        self.brf_mask_clear_btn.setFixedWidth(34)
+        self.brf_mask_clear_btn.setEnabled(False)
+        mask_row.addWidget(self.brf_mask_clear_btn)
+        _, self.brf_output_path, self.brf_output_btn = folder_row(
+            "Output Folder:", "Where Total, Red, Yellow, Green and Stats are written. Files of the same names\n"
+            "are replaced; nothing else is deleted.", self.select_brf_output_folder)
+        self.brf_input_folder = self.brf_mask_folder = self.brf_output_folder = None
+
+        out_cb_layout = QHBoxLayout()
+        self.brf_sort_cb = QCheckBox("Sort Into Folders")
+        self.brf_sort_cb.setChecked(True)
+        self.brf_sort_cb.setStyleSheet(self.checkbox_style)
+        self.brf_sort_cb.stateChanged.connect(self.update_brf_sort)
+        self.brf_sort_cb.setToolTip("Band images go to Total, Red, Yellow and Green and the tables to Stats;\n"
+                                    "unticked, all files go in one folder. Saved in the parameter file, so it\n"
+                                    "also applies to the BRF folder of a Batch Run.")
+        out_cb_layout.addWidget(self.brf_sort_cb)
+        self.brf_images_cb = QCheckBox("Save Images")
+        self.brf_images_cb.setChecked(True)
+        self.brf_images_cb.setStyleSheet(self.checkbox_style)
+        self.brf_images_cb.setToolTip("Write the band images (TIFF, with the pixel size); untick to write the\n"
+                                      "tables only, which takes far less disk space.")
+        out_cb_layout.addStretch()
+        out_cb_layout.addWidget(self.brf_images_cb)
+        layout.addLayout(out_cb_layout)
+
+        self.brf_run_btn = QPushButton("Run Folder")
+        self.brf_run_btn.clicked.connect(self.run_brf_folder)
+        self.brf_run_btn.setEnabled(False)
+        self.brf_run_btn.setStyleSheet(self.primary_btn_style)
+        layout.addWidget(self.brf_run_btn)
+
+        self.brf_progress_bar = PercentageProgressBar()
+        self.brf_progress_bar.setStyleSheet(self.progressbar_style)
+        self.brf_progress_bar.setVisible(False)
+        layout.addWidget(self.brf_progress_bar)
+        self.brf_folder_label = QLabel("")
+        self.brf_folder_label.setWordWrap(True)
+        self.brf_folder_label.setStyleSheet(self.value_label_style)
+        layout.addWidget(self.brf_folder_label)
+        self.brf_folder_worker = None
+
         layout.addStretch()
         self.brf_tab.setLayout(layout)
         self._set_brf_enabled(False)
 
     def _set_brf_enabled(self, on):
-        """Show the toggle state and enable the page's controls accordingly."""
-        colour, state = (COLORS['highlight'], "Enabled") if on else (COLORS['warning'], "Disabled")
+        """Show whether Batch Run includes the birefringence step. The page
+        itself (preview and Run Folder) works either way."""
+        colour, state = (COLORS['highlight'], "Yes") if on else (COLORS['warning'], "No")
         self.toggle_brf_label.setText(
-            f"Birefringence <b><span style='color: {colour.name()};'>{state}</span></b>")
-        for w in (self.brf_brightness_slider, self.brf_saturation_slider, *self.brf_band_sliders,
-                  self.brf_view_combo, self.brf_sort_cb, self.brf_original_cb):
-            w.setEnabled(on)
-        self.brf_btn.setEnabled(on and getattr(self, 'ori_img', None) is not None)
+            f"Include in Batch Run <b><span style='color: {colour.name()};'>{state}</span></b>")
 
     def toggle_birefringence(self):
         """Enable/disable the birefringence step (Configs: Birefringence)."""
@@ -2669,6 +2742,108 @@ class MainWindow(QMainWindow):
         self.toggle_brf_btn.setChecked(bool(self.yml_data.get("Configs", {}).get("Birefringence", False)))
         self._set_brf_enabled(self.toggle_brf_btn.isChecked())
 
+    def select_brf_input_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select Input Folder", self.brf_input_folder or "",
+                                                  QFileDialog.ShowDirsOnly)
+        if folder:
+            self.set_brf_input_folder(folder)
+
+    def set_brf_input_folder(self, folder):
+        self.brf_input_folder = folder or None
+        self.brf_input_path.setText(folder or "")
+        self.brf_input_path.setToolTip(folder or "")
+        # a QuPath export is <region>/ next to <region>_mask/; a TMA export Images/ next to Masks/
+        if folder and not self.brf_mask_folder:
+            for sibling in (folder.rstrip("/\\") + "_mask", join_path(os.path.dirname(folder), "Masks")):
+                if os.path.isdir(sibling) and (sibling.endswith("_mask") or os.path.basename(folder) == "Images"):
+                    self.set_brf_mask_folder(sibling)
+                    break
+        self._check_brf_folder_ready()
+
+    def select_brf_mask_folder(self):
+        start = os.path.dirname(self.brf_input_folder) if self.brf_input_folder else ""
+        folder = QFileDialog.getExistingDirectory(self, "Select ROI Mask Folder (optional)", start,
+                                                  QFileDialog.ShowDirsOnly)
+        if folder:
+            self.set_brf_mask_folder(folder)
+
+    def set_brf_mask_folder(self, folder):
+        self.brf_mask_folder = folder or None
+        self.brf_mask_path.setText(folder or "")
+        self.brf_mask_path.setToolTip(folder or "")
+        self.brf_mask_clear_btn.setEnabled(bool(folder))
+
+    def select_brf_output_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select Output Folder", "", QFileDialog.ShowDirsOnly)
+        if folder:
+            self.set_brf_output_folder(folder)
+
+    def set_brf_output_folder(self, folder):
+        self.brf_output_folder = folder or None
+        self.brf_output_path.setText(folder or "")
+        self.brf_output_path.setToolTip(folder or "")
+        self._check_brf_folder_ready()
+
+    def _check_brf_folder_ready(self):
+        running = self.brf_folder_worker is not None and self.brf_folder_worker.isRunning()
+        self.brf_run_btn.setEnabled(running or bool(self.brf_input_folder and self.brf_output_folder))
+
+    def run_brf_folder(self):
+        """Run Folder: colour separation of every image of the input folder (a
+        worker thread); pressed again while running, it cancels."""
+        import copy
+        if self.brf_folder_worker is not None and self.brf_folder_worker.isRunning():
+            self.brf_folder_worker.cancel()
+            self.brf_run_btn.setEnabled(False)
+            self.brf_folder_label.setText("Cancelling after the current image...")
+            return
+        out = self.brf_output_folder
+        if os.path.isdir(out) and os.listdir(out) and not self._ask_tma(
+                "Run Folder", "The output folder is not empty.",
+                f"{out}\n\nResults with the same names are replaced; other files are kept.",
+                "Continue", "Cancel"):
+            return
+        self.brf_folder_worker = BRFFolderWorker(copy.deepcopy(self.yml_data), self.brf_input_folder, out,
+                                                 self.brf_mask_folder, self.brf_images_cb.isChecked())
+        self.brf_folder_worker.progress_updated.connect(self._brf_folder_progress)
+        self.brf_folder_worker.run_complete.connect(self.handle_brf_folder_complete)
+        self.brf_folder_worker.failed.connect(self.handle_brf_folder_failed)
+        self.brf_run_btn.setText("Cancel")
+        self.brf_progress_bar.setValue(0)
+        self.brf_progress_bar.setVisible(True)
+        self.brf_folder_label.setText("Starting...")
+        self.brf_folder_worker.start()
+
+    def _brf_folder_progress(self, done, total, name):
+        self.brf_progress_bar.setValue(int(done / max(1, total) * 100))
+        if name:
+            self.brf_folder_label.setText(f"{done + 1}/{total}: {name}")
+
+    def _brf_folder_finished(self):
+        self.brf_run_btn.setText("Run Folder")
+        self.brf_progress_bar.setVisible(False)
+        self.brf_folder_label.setText("")
+        self._check_brf_folder_ready()
+
+    def handle_brf_folder_complete(self, summary):
+        self._brf_folder_finished()
+        title = "Run Folder"
+        text = (f"Separated {summary['done']} of {summary['total']} images"
+                + (" before it was cancelled." if summary["cancelled"] else "."))
+        info = [summary["results"] or self.brf_output_folder]
+        if summary["skipped"]:
+            info.append(f"Not readable, skipped: {', '.join(summary['skipped'][:5])}"
+                        + (" ..." if len(summary["skipped"]) > 5 else ""))
+        if summary["no_pixel_size"]:
+            info.append(f"{summary['no_pixel_size']} images have no pixel size in their metadata; "
+                        f"their areas assume 1.0 µm/pixel.")
+        self.brf_folder_label.setText(text)
+        self._notify(title, text, "\n\n".join(info))
+
+    def handle_brf_folder_failed(self, message):
+        self._brf_folder_finished()
+        self._notify("Run Folder", "The folder could not be separated.", message, warning=True)
+
     def run_birefringence(self):
         """Compute the HSB stack of the open image once (worker thread); the
         sliders then re-threshold it."""
@@ -2687,12 +2862,12 @@ class MainWindow(QMainWindow):
     def handle_brf_complete(self, hsb):
         self._brf_hsb = hsb
         self.brf_btn.setText("Separate")
-        self.brf_btn.setEnabled(self.toggle_brf_btn.isChecked())
+        self.brf_btn.setEnabled(self.ori_img is not None)
         self._refresh_brf()
 
     def handle_brf_failed(self, message):
         self.brf_btn.setText("Separate")
-        self.brf_btn.setEnabled(self.ori_img is not None and self.toggle_brf_btn.isChecked())
+        self.brf_btn.setEnabled(self.ori_img is not None)
         QMessageBox.warning(self, "Birefringence failed", f"Birefringence did not complete:\n{message}")
 
     def _schedule_brf_refresh(self):
@@ -2737,7 +2912,9 @@ class MainWindow(QMainWindow):
             return
         masks, gate = self._brf_masks
         view = self.brf_view_combo.currentText()
-        if view == "Class map":
+        if view == "Grid":
+            image = brf.grid_view(self.ori_img, masks)
+        elif view == "Class map":
             image = brf.class_map(masks, gate)
         elif view == "Total":
             image = brf.channel_image(self.ori_img, np.logical_or.reduce(masks))
@@ -2758,7 +2935,7 @@ class MainWindow(QMainWindow):
                 self._brf_pixel_size = float(size[0]) if size else None
             except Exception:
                 self._brf_pixel_size = None
-        self.brf_btn.setEnabled(self.ori_img is not None and self.toggle_brf_btn.isChecked())
+        self.brf_btn.setEnabled(self.ori_img is not None)
 
     def setup_detection_tab(self):
         """Set up the detection tab UI with range sliders"""
@@ -4120,12 +4297,14 @@ class MainWindow(QMainWindow):
         for btn in (self.start_open_btn, self.start_params_btn,
                     self.param_btn, self.input_btn, self.output_btn, self.cancel_batch_btn,
                      self.mask_btn, self.mask_clear_btn, self.tma_slide_btn, self.tma_output_btn,
-                     self.tma_cancel_btn, self.tma_undo_btn, self.tma_load_edits_btn, self.tma_save_edits_btn):
+                     self.tma_cancel_btn, self.tma_undo_btn, self.tma_load_edits_btn, self.tma_save_edits_btn,
+                     self.brf_input_btn, self.brf_mask_btn, self.brf_mask_clear_btn, self.brf_output_btn):
             btn.setStyleSheet(self.btn_style)
 
         # Primary buttons
         for btn in (self.segment_btn, self.detect_btn, self.analyze_btn, self.process_batch_btn,
-                    self.tma_fit_btn, self.tma_export_btn, self.start_slide_btn, self.brf_btn):
+                    self.tma_fit_btn, self.tma_export_btn, self.start_slide_btn, self.brf_btn,
+                    self.brf_run_btn):
             btn.setStyleSheet(self.primary_btn_style)
 
         # Page stack and its scroll area
@@ -4151,12 +4330,13 @@ class MainWindow(QMainWindow):
                    self.extend_line_cb, self.overlay_fibres_cb, self.overlay_gaps_cb,
                    self.stats_cb, self.scores_cb, self.visuals_cb, self.tma_recover_cb, self.tma_core_auto_cb,
                    self.tma_edit_cb, self.tma_links_cb, *self.tma_channel_cbs.values(),
-                   self.brf_sort_cb, self.brf_original_cb):
+                   self.brf_sort_cb, self.brf_original_cb, self.brf_images_cb):
             cb.setStyleSheet(self.checkbox_style)
 
         # Path edits
         for edit in (self.param_file_path, self.input_folder_path, self.output_folder_path,
-                     self.mask_folder_path, self.tma_slide_path, self.tma_output_path):
+                     self.mask_folder_path, self.tma_slide_path, self.tma_output_path,
+                     self.brf_input_path, self.brf_mask_path, self.brf_output_path):
             edit.setStyleSheet(self.path_edit_style)
         self.tma_status_label.setStyleSheet(self.value_label_style)
         self.progress_label.setStyleSheet(self.value_label_style)
@@ -4165,6 +4345,8 @@ class MainWindow(QMainWindow):
         self.batch_max_size_label.setStyleSheet(self.value_label_style)
         self.brf_note.setStyleSheet(self.value_label_style)
         self.brf_summary_label.setStyleSheet(self.value_label_style)
+        self.brf_folder_label.setStyleSheet(self.value_label_style)
+        self.brf_progress_bar.setStyleSheet(self.progressbar_style)
 
         # Value labels (slider readouts)
         for label in (self.color_thresh_value, self.num_labels_value, self.max_iters_value,

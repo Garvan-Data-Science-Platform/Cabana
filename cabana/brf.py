@@ -132,28 +132,42 @@ def band_stats(masks, gate, rgb, region=None, pixel_size_um=1.0):
     brightness and saturation gate in no band, e.g. deep red just below the
     hue wrap), and the pixel counts of the region and the image.
     """
-    gray = cv2.cvtColor(np.ascontiguousarray(rgb[..., :3]), cv2.COLOR_RGB2GRAY)
-    if region is None:
-        region = np.ones(gray.shape, bool)
-    region = region.astype(bool)
-    n_region = int(region.sum())
-    n_image = int(region.size)
-    px_area = float(pixel_size_um) ** 2
+    gray = _gray(rgb)
+    region = np.ones(gray.shape, bool) if region is None else region.astype(bool)
+    return _stats(_counts(masks, gate, gray, region), pixel_size_um)
 
-    pixels = [int((m & region).sum()) for m in masks]
-    pixels_image = [int(m.sum()) for m in masks]
-    sums = [float(gray[m & region].sum(dtype=np.float64)) for m in masks]
+
+def _gray(rgb):
+    return cv2.cvtColor(np.ascontiguousarray(rgb[..., :3]), cv2.COLOR_RGB2GRAY)
+
+
+def _counts(masks, gate, gray, region):
+    """Additive counts of one image or one strip of it (see :func:`_stats`)."""
     in_any = np.logical_or.reduce(masks) & region
-    n_signal = sum(pixels)
-    n_any = int(in_any.sum())
-    n_unclassified = int((gate & region & ~in_any).sum())
-    total_sum = sum(sums)
+    return {
+        "pixels": np.array([int((m & region).sum()) for m in masks], np.int64),
+        "pixels_image": np.array([int(m.sum()) for m in masks], np.int64),
+        "sums": np.array([float(gray[m & region].sum(dtype=np.float64)) for m in masks]),
+        "any": int(in_any.sum()),
+        "unclassified": int((gate & region & ~in_any).sum()),
+        "region": int(region.sum()),
+        "image": int(region.size),
+    }
+
+
+def _stats(counts, pixel_size_um):
+    """The :func:`band_stats` columns from (summed) :func:`_counts`."""
+    px_area = float(pixel_size_um) ** 2
+    n_region, n_image, n_any = counts["region"], counts["image"], counts["any"]
+    n_signal = int(counts["pixels"].sum())
+    total_sum = float(counts["sums"].sum())
 
     def pct(num, den):
         return num / den * 100.0 if den > 0 else 0.0
 
     stats = {}
-    for band, n, n_img, s in zip(BANDS, pixels, pixels_image, sums):
+    for band, n, n_img, s in zip(BANDS, counts["pixels"], counts["pixels_image"], counts["sums"]):
+        n, n_img, s = int(n), int(n_img), float(s)
         stats[f"BRF {band} Pixels"] = n
         stats[f"BRF {band} Area (µm²)"] = n * px_area
         stats[f"BRF {band} (% Region)"] = pct(n, n_region)
@@ -164,11 +178,56 @@ def band_stats(masks, gate, rgb, region=None, pixel_size_um=1.0):
     stats["BRF Total Pixels"] = n_any
     stats["BRF Total Area (µm²)"] = n_any * px_area
     stats["BRF Total (% Region)"] = pct(n_any, n_region)
-    stats["BRF Unclassified Pixels"] = n_unclassified
-    stats["BRF Unclassified (% Region)"] = pct(n_unclassified, n_region)
+    stats["BRF Unclassified Pixels"] = counts["unclassified"]
+    stats["BRF Unclassified (% Region)"] = pct(counts["unclassified"], n_region)
     stats["Region Pixels"] = n_region
     stats["Image Pixels"] = n_image
     return stats
+
+
+# ---- strip-wise processing, so large sections need little memory ----
+
+STRIP_PIXELS = 1 << 20    # pixels per strip: the working arrays of a strip take
+                          # about 70 bytes per pixel, so ~70 MB whatever the image size
+HALO = 8                  # extra rows each side of a strip: the soft edge (3x3 close,
+                          # 2x2 open, 3x3 blur) reaches fewer than 8 rows, so strips
+                          # give exactly the whole-image result
+
+
+def _strips(shape, rows=None, halo=0):
+    """``(y0, y1, a, b)``: strip rows ``[y0, y1)`` inside the read rows ``[a, b)``;
+    ``rows`` defaults to :data:`STRIP_PIXELS` worth of rows."""
+    height, width = shape[:2]
+    rows = rows or max(1, STRIP_PIXELS // max(1, width))
+    for y0 in range(0, height, rows):
+        y1 = min(height, y0 + rows)
+        yield y0, y1, max(0, y0 - halo), min(height, y1 + halo)
+
+
+def measure(rgb, params, region=None, pixel_size_um=1.0, rows=None):
+    """:func:`band_stats` of an image under ``params``, computed in strips
+    (same result, a fraction of the memory)."""
+    total = None
+    for y0, y1, _, _ in _strips(rgb.shape, rows):
+        part = rgb[y0:y1]
+        masks, gate = separate(part, params)
+        sub = np.ones(part.shape[:2], bool) if region is None else region[y0:y1].astype(bool)
+        counts = _counts(masks, gate, _gray(part), sub)
+        total = counts if total is None else {k: total[k] + counts[k] for k in total}
+    return _stats(total, pixel_size_um)
+
+
+def band_image(rgb, params, key, rows=None):
+    """The channel image of one band (``key`` in :data:`BANDS`) or of all bands
+    (``"Total"``), computed in strips with :data:`HALO` rows of overlap;
+    identical to :func:`channel_images` of the whole image."""
+    index = None if key == "Total" else BANDS.index(key)
+    out = np.empty(rgb.shape[:2] + (3,), np.uint8)
+    for y0, y1, a, b in _strips(rgb.shape, rows, HALO):
+        masks, _ = separate(rgb[a:b], params)
+        mask = np.logical_or.reduce(masks) if index is None else masks[index]
+        out[y0:y1] = channel_image(rgb[a:b], mask)[y0 - a:y1 - a]
+    return out
 
 
 def _soft_weight(mask):
@@ -206,3 +265,34 @@ def class_map(masks, gate):
 def looks_brightfield(rgb):
     """Whether an image looks bright-field rather than polarised light."""
     return float(np.asarray(rgb).mean()) > BRIGHTFIELD_MEAN
+
+
+GRID_LABELS = ("Original", "Red-Orange", "Yellow", "Green")
+
+
+def grid_view(rgb, masks, max_side=2048, gap=6):
+    """2 x 2 preview: the original image and the red-orange, yellow and green
+    channel images, each labelled; quadrants larger than ``max_side`` are
+    shrunk first so a large section stays light to display."""
+    h, w = rgb.shape[:2]
+    scale = min(1.0, max_side / max(h, w))
+    size = (max(1, round(w * scale)), max(1, round(h * scale)))
+    if scale < 1.0:
+        small = cv2.resize(np.ascontiguousarray(rgb[..., :3]), size, interpolation=cv2.INTER_AREA)
+        masks = [cv2.resize(m.astype(np.float32), size, interpolation=cv2.INTER_AREA) >= 0.5 for m in masks]
+    else:
+        small = np.ascontiguousarray(rgb[..., :3])
+    tiles = [small] + [channel_image(small, m) for m in masks]
+    qh, qw = small.shape[:2]
+    out = np.full((2 * qh + gap, 2 * qw + gap, 3), 90, np.uint8)
+    font_scale = max(0.4, min(qw, qh) / 700)
+    thickness = max(1, round(font_scale * 2))
+    for i, (tile, label) in enumerate(zip(tiles, GRID_LABELS)):
+        y, x = (i // 2) * (qh + gap), (i % 2) * (qw + gap)
+        out[y:y + qh, x:x + qw] = tile
+        (tw, th), base = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+        pad = max(3, th // 3)
+        cv2.rectangle(out, (x, y), (x + tw + 2 * pad, y + th + base + 2 * pad), (0, 0, 0), -1)
+        cv2.putText(out, label, (x + pad, y + pad + th), cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+                    (255, 255, 255), thickness, cv2.LINE_AA)
+    return out

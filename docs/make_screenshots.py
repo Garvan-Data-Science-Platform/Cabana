@@ -260,13 +260,19 @@ def main(argv):
             settle(app, 500)
             win.run_birefringence()
             wait_until(app, lambda: win._brf_masks is not None, label="birefringence")
+            win.set_brf_input_folder("/data/project/export/birefringence/stroma")
+            win.set_brf_mask_folder("/data/project/export/birefringence/stroma_mask")
+            win.set_brf_output_folder("/data/project/BRF_stroma")
+            settle(app)
             grab(win, "birefringence.png", [
                 (1, rect_of(win, win.toggle_brf_btn), "above"),
                 (2, union(win, (win.brf_brightness_slider, win.brf_saturation_slider))),
                 (3, union(win, win.brf_band_sliders)),
                 (4, rect_of(win, win.brf_view_combo), "left"),
-                (5, union(win, (win.brf_sort_cb, win.brf_original_cb)), "right"),
-                (6, union(win, (win.brf_btn, win.brf_summary_label)), "below"),
+                (5, rect_of(win, win.brf_original_cb), "left"),
+                (6, union(win, (win.brf_btn, win.brf_summary_label)), "right"),
+                (7, union(win, (win.brf_input_path, win.brf_mask_clear_btn, win.brf_output_btn)), "right"),
+                (8, union(win, (win.brf_sort_cb, win.brf_images_cb, win.brf_run_btn)), "below"),
             ])
 
 

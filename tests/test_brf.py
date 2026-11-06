@@ -147,6 +147,49 @@ def test_class_map_paints_bands_and_unclassified_pixels():
     assert cmap[0, 2].tolist() == [0, 0, 0]
 
 
+def _random_pol(shape=(53, 41), seed=4):
+    """Dark image with bright coloured specks and lines: all bands, soft edges, gaps."""
+    rng = np.random.default_rng(seed)
+    rgb = (rng.random(shape + (3,)) * 18).astype(np.uint8)
+    for _ in range(40):
+        y, x = rng.integers(0, shape[0]), rng.integers(0, shape[1])
+        rgb[y:y + rng.integers(1, 6), x:x + rng.integers(1, 9)] = rng.integers(0, 256, 3)
+    return rgb
+
+
+@pytest.mark.parametrize("rows", [1, 7, 16, 512])
+def test_measure_in_strips_equals_the_whole_image(rows):
+    rgb = _random_pol()
+    region = np.zeros(rgb.shape[:2], bool)
+    region[5:40, 3:30] = True
+    params = brf.settings({})
+    masks, gate = brf.separate(rgb, params)
+    for reg in (None, region):
+        assert brf.measure(rgb, params, region=reg, pixel_size_um=0.7, rows=rows) == \
+            brf.band_stats(masks, gate, rgb, region=reg, pixel_size_um=0.7)
+
+
+@pytest.mark.parametrize("rows", [1, 3, 9, 17, 512])
+def test_band_images_in_strips_equal_the_whole_image(rows):
+    rgb = _random_pol()
+    params = brf.settings({})
+    whole = brf.channel_images(rgb, brf.separate(rgb, params)[0])
+    for key in ("Total", *brf.BANDS):
+        np.testing.assert_array_equal(brf.band_image(rgb, params, key, rows=rows), whole[key])
+
+
+def test_grid_view_shows_the_original_and_three_bands():
+    rgb = _random_pol((120, 90))
+    masks, _ = brf.separate(rgb, brf.settings({}))
+    grid = brf.grid_view(rgb, masks, gap=6)
+    assert grid.shape == (2 * 120 + 6, 2 * 90 + 6, 3)
+    # bottom-right quadrant (below its label) is the green channel image
+    np.testing.assert_array_equal(grid[126 + 40:, 96:], brf.channel_image(rgb, masks[2])[40:])
+    np.testing.assert_array_equal(grid[60:120, :90], rgb[60:])
+    small = brf.grid_view(rgb, masks, max_side=30, gap=2)
+    assert small.shape == (2 * 30 + 2, 2 * 22 + 2, 3) or small.shape == (2 * 30 + 2, 2 * 23 + 2, 3)
+
+
 def test_looks_brightfield():
     assert brf.looks_brightfield(np.full((4, 4, 3), 230, np.uint8))
     assert not brf.looks_brightfield(np.full((4, 4, 3), 20, np.uint8))
@@ -184,5 +227,6 @@ def test_macro_parity_on_masked_sections(section):
     stats = brf.band_stats(masks, gate, rgb, region=region)
     counts = tuple(stats[f"BRF {b} Pixels"] for b in brf.BANDS)
     assert counts == IMAGEJ_COUNTS[section]
+    assert brf.measure(rgb, brf.settings({}), region=region) == stats      # strip-wise, as run_brf
     # outside the mask the export is black, so the ROI holds all the signal
     assert tuple(int(m.sum()) for m in masks) == counts

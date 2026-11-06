@@ -331,42 +331,142 @@ def run_brf(args, image_path, stem, brf_dir, roi_mask_path=None, pixel_size_um=1
     """Birefringence colour bands of one image (``Configs: Birefringence``).
 
     The region measured is the ROI mask (``roi_mask_path``, e.g. a TMA core or
-    a stroma mask) or the whole image; the segmentation mask is not used, the
-    hue bands being the collagen classifier. Writes the statistics
-    ``Stats/<stem>_statistics.csv`` and, when ``visuals``, the images
-    ``Total/<stem>_total.tif`` (all bands) and ``<stem>_original.tif``,
-    ``Red/<stem>_red_orange.tif``, ``Yellow/<stem>_yellow.tif`` and
-    ``Green/<stem>_green.tif``; with ``Sort Into Folders`` off they all go in
-    ``brf_dir`` itself. Returns the results row: ``Image`` (``image_name``,
-    default ``<stem>_roi.png`` as in QuantificationResults.csv) and the
-    :func:`cabana.brf.band_stats` columns.
+    a stroma mask, resized to the image when needed) or the whole image; the
+    segmentation mask is not used, the hue bands being the collagen
+    classifier. Writes the statistics ``Stats/<stem>_statistics.csv`` and,
+    when ``visuals``, the images ``Total/<stem>_total.tif`` (all bands) and
+    ``<stem>_original.tif``, ``Red/<stem>_red_orange.tif``,
+    ``Yellow/<stem>_yellow.tif`` and ``Green/<stem>_green.tif``; with ``Sort
+    Into Folders`` off they all go in ``brf_dir`` itself. Returns the results
+    row: ``Image`` (``image_name``, default ``<stem>_roi.png`` as in
+    QuantificationResults.csv) and the :func:`cabana.brf.band_stats` columns.
     """
-    params = brf.settings(args)
-    rgb = cv2.cvtColor(cv2.imread(image_path, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
-    region = None
-    if roi_mask_path:
-        mask = cv2.imread(roi_mask_path, cv2.IMREAD_GRAYSCALE)
-        if mask is not None and mask.shape == rgb.shape[:2]:
-            region = mask > 0
-        else:
-            Log.logger.warning(f"ROI mask {roi_mask_path} does not match {image_path}; "
-                               f"birefringence is measured on the whole image.")
-    masks, gate = brf.separate(rgb, params)
-    stats = brf.band_stats(masks, gate, rgb, region=region, pixel_size_um=pixel_size_um)
+    from .segmenter import load_roi_mask
+    rgb = cv2.imread(image_path, cv2.IMREAD_COLOR)
+    cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB, dst=rgb)                  # in place: no second copy
+    mask = load_roi_mask(roi_mask_path, rgb.shape)
+    region = None if mask is None else mask > 0
+    return _brf_outputs(args, rgb, region, stem, brf_dir, pixel_size_um, visuals,
+                        image_name or stem + "_roi.png")
 
+
+def _brf_outputs(args, rgb, region, stem, brf_dir, pixel_size_um, visuals, image_name):
+    """Measure one RGB image and write its BRF table and images, in strips
+    (cabana.brf.measure / band_image) so that whole sections fit in memory:
+    besides the image, only one output image is held at a time."""
+    params = brf.settings(args)
+    stats = brf.measure(rgb, params, region=region, pixel_size_um=pixel_size_um)
     stats_dir = brf_folder(args, brf_dir, BRF_STATS_DIR)
     os.makedirs(stats_dir, exist_ok=True)
     write_brf_image_stats(join_path(stats_dir, f"{stem}_statistics.csv"), stats, params,
                           pixel_size_um, region is not None)
     if visuals:
-        images = brf.channel_images(rgb, masks)
         for key, folder, suffix in BRF_IMAGES:
             out_dir = brf_folder(args, brf_dir, folder)
             os.makedirs(out_dir, exist_ok=True)
-            write_calibrated_tiff(join_path(out_dir, f"{stem}_{suffix}.tif"), images[key], pixel_size_um)
+            write_calibrated_tiff(join_path(out_dir, f"{stem}_{suffix}.tif"),
+                                  brf.band_image(rgb, params, key), pixel_size_um)
         write_calibrated_tiff(join_path(brf_folder(args, brf_dir, "Total"), f"{stem}_original.tif"),
                               rgb, pixel_size_um)
-    return {"Image": image_name or stem + "_roi.png", **stats}
+    return {"Image": image_name, **stats}
+
+
+BRF_PARAMETERS_FILE = "BRF_Parameters.yml"
+
+
+def read_rgb8(path):
+    """An image as 8-bit RGB, converted as the batch pipeline does: alpha
+    dropped, 16-bit stretched between its 2nd and 98th percentiles, grey
+    repeated to three channels. None when unreadable or without dynamic range."""
+    img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+    if img is None:
+        return None
+    if img.ndim == 3 and img.shape[2] == 4:
+        img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+    if img.dtype == np.uint16:
+        lower, upper = np.percentile(img, 2), np.percentile(img, 98)
+        if upper <= lower:
+            return None
+        img = ((np.clip(img, lower, upper) - lower) / (upper - lower) * 255.0).astype(np.uint8)
+    elif img.dtype != np.uint8:
+        return None
+    if img.ndim == 2:
+        return np.repeat(img[:, :, np.newaxis], 3, axis=2)
+    return cv2.cvtColor(img, cv2.COLOR_BGR2RGB, dst=img)           # in place: no second copy
+
+
+def run_brf_folder(args, input_dir, out_dir, mask_dir=None, visuals=True, progress=None, cancel=None):
+    """Birefringence colour bands of every image in ``input_dir`` (the
+    Birefringence page's Run Folder): no segmentation or fibre analysis.
+
+    Each image is measured inside its ROI mask from ``mask_dir`` (matched by
+    name, as in Batch Run) or whole, at the pixel size in its metadata (1 µm
+    when absent), and written by :func:`run_brf`'s rules into ``out_dir``
+    (``Total``, ``Red``, ``Yellow``, ``Green``, ``Stats``; flat when ``Sort
+    Into Folders`` is off), with ``Stats/ResultsBRF.csv`` for all images and
+    the parameters used in ``BRF_Parameters.yml``. Existing files of the same
+    names are replaced; nothing else is deleted.
+
+    ``progress(done, total, name)`` is called before each image and
+    ``cancel()`` checked between images. Returns ``{'done', 'total',
+    'skipped', 'cancelled', 'results', 'no_pixel_size'}``. Raises ValueError
+    for an output folder that is or contains the input or mask folder, or an
+    input folder without images.
+    """
+    import math
+    import yaml
+    from .batch import _contains
+    from .io import get_img_paths, pixel_size_um
+    from .segmenter import load_roi_mask
+    if not input_dir or not os.path.isdir(input_dir):
+        raise ValueError(f"Input folder {input_dir} does not exist.")
+    for folder, name in ((input_dir, "input"), (mask_dir, "ROI mask")):
+        if folder and _contains(out_dir, folder):
+            raise ValueError(f"The output folder must not be, or contain, the {name} folder.")
+    paths = sorted(get_img_paths(input_dir))
+    if not paths:
+        raise ValueError(f"No supported images in {input_dir}.")
+    os.makedirs(out_dir, exist_ok=True)
+    with open(join_path(out_dir, BRF_PARAMETERS_FILE), "w") as f:
+        yaml.safe_dump({"Configs": {"Birefringence": True}, "Birefringence": brf.settings(args),
+                        "Input Folder": input_dir, "ROI Mask Folder": mask_dir or ""}, f, sort_keys=False)
+
+    rows, skipped, no_size, cancelled = [], [], 0, False
+    for k, path in enumerate(paths):
+        if cancel is not None and cancel():
+            cancelled = True
+            break
+        name = os.path.basename(path)
+        if progress is not None:
+            progress(k, len(paths), name)
+        rgb = read_rgb8(path)
+        if rgb is None:
+            skipped.append(name)
+            Log.logger.warning(f"Birefringence: cannot read {name}; skipped.")
+            continue
+        size = None
+        try:
+            size = pixel_size_um(path)
+        except Exception:
+            pass
+        if size:
+            px = math.sqrt(float(size[0]) * float(size[1]))
+        else:
+            px, no_size = 1.0, no_size + 1
+        stem = os.path.splitext(name)[0]
+        mask = load_roi_mask(find_external_mask(mask_dir, stem), rgb.shape) if mask_dir else None
+        rows.append(_brf_outputs(args, rgb, None if mask is None else mask > 0, stem, out_dir, px,
+                                 visuals, name))
+    results = join_path(brf_folder(args, out_dir, BRF_STATS_DIR), BRF_RESULTS)
+    if rows:
+        write_brf_results(rows, results)
+    if no_size:
+        Log.logger.warning(f"Birefringence: {no_size} of {len(rows)} images have no pixel size in their "
+                           f"metadata; their areas assume 1.0 µm/pixel.")
+    if progress is not None and not cancelled:
+        progress(len(paths), len(paths), "")
+    return {"done": len(rows), "total": len(paths), "skipped": skipped, "cancelled": cancelled,
+            "results": results if rows else None, "no_pixel_size": no_size}
 
 
 def write_brf_image_stats(path, stats, params, pixel_size_um, has_region):

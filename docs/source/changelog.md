@@ -8,7 +8,11 @@
   at its default settings. Batch runs measure the bands inside the ROI mask,
   add them to `QuantificationResults.csv` and write the band images and
   tables to a `BRF` folder (sorted into `Total`, `Red`, `Yellow`, `Green`
-  and `Stats` by default). Off by default (`Configs: Birefringence`).
+  and `Stats` by default). Off by default (Include in Batch Run).
+- Run Folder on the Birefringence page separates the colour bands of every
+  image in a folder, inside optional ROI masks, without segmentation or
+  fibre analysis. The page's Grid view shows the original image and the
+  three bands side by side.
 - File > Combine BF and POL Results joins a bright-field and a
   polarised-light batch run into one table with one row per sample.
 - Min Branch Length and the curvature windows are now set on the Fibre

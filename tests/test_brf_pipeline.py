@@ -115,7 +115,7 @@ def test_run_brf_without_visualisations_writes_only_the_table(tmp_path):
     assert [p.relative_to(out).as_posix() for p in out.rglob("*") if p.is_file()] == ["Stats/sec1_statistics.csv"]
 
 
-def test_run_brf_ignores_a_mask_of_another_size(tmp_path, caplog):
+def test_run_brf_resizes_a_mask_of_another_size(tmp_path, caplog):
     _, args = _params(tmp_path)
     img_path = tmp_path / "sec1.png"
     cv2.imwrite(str(img_path), cv2.cvtColor(pol_image(), cv2.COLOR_RGB2BGR))
@@ -124,7 +124,7 @@ def test_run_brf_ignores_a_mask_of_another_size(tmp_path, caplog):
     row = run_brf(args, str(img_path), "sec1", str(tmp_path / "BRF"), roi_mask_path=str(mask_path),
                   visuals=False)
     assert row["Region Pixels"] == SIZE * SIZE
-    assert "does not match" in caplog.text
+    assert "resizing" in caplog.text
 
 
 def test_merge_brf_columns_joins_on_image():
@@ -211,3 +211,65 @@ def test_batch_progress_counts_the_brf_stage(tmp_path):
     bp.status_callback = statuses.append
     bp.run()
     assert any("Birefringence: sec1" in s for s in statuses)
+
+
+# ------------------------------------------------------------ folder run --
+
+def test_folder_run_measures_every_image_inside_its_mask(tmp_path):
+    from cabana.stages import BRF_PARAMETERS_FILE, run_brf_folder, write_calibrated_tiff
+    _, args = _params(tmp_path)
+    img_dir, mask_dir = _write_inputs(tmp_path, names=("sec1", "sec2"))
+    # a 16-bit TIFF with a pixel size and no mask, and an unreadable file
+    write_calibrated_tiff(os.path.join(img_dir, "sec3.tif"), pol_image(), 0.5)
+    import tifffile
+    tifffile.imwrite(os.path.join(img_dir, "sec4.tif"), (pol_image().astype(np.uint16) * 257),
+                     photometric="rgb")
+    open(os.path.join(img_dir, "broken.png"), "wb").write(b"not an image")
+    out = tmp_path / "out"
+    seen = []
+    summary = run_brf_folder(args, img_dir, str(out), mask_dir=mask_dir,
+                             progress=lambda done, total, name: seen.append((done, total, name)))
+    assert summary["done"] == 4 and summary["total"] == 5 and summary["skipped"] == ["broken.png"]
+    # the PNGs have no pixel size; a TIFF without a unit counts as µm (Cabana's rule)
+    assert not summary["cancelled"] and summary["no_pixel_size"] == 2
+    results = pd.read_csv(out / "Stats" / BRF_RESULTS).set_index("Image")
+    assert sorted(results.index) == ["sec1.png", "sec2.png", "sec3.tif", "sec4.tif"]
+    masked, whole = _expected(region=half_mask() > 0), _expected()
+    assert results.loc["sec1.png", "BRF Green Pixels"] == masked["BRF Green Pixels"]
+    assert results.loc["sec3.tif", "BRF Green Pixels"] == whole["BRF Green Pixels"]
+    assert results.loc["sec3.tif", "BRF Green Area (µm²)"] == pytest.approx(whole["BRF Green Pixels"] * 0.25)
+    assert results.loc["sec4.tif", "BRF Total Pixels"] > 0                 # 16-bit converted to 8-bit
+    for folder, suffix in (("Total", "total"), ("Total", "original"), ("Red", "red_orange"),
+                           ("Yellow", "yellow"), ("Green", "green")):
+        assert (out / folder / f"sec1_{suffix}.tif").exists()
+    assert (out / BRF_PARAMETERS_FILE).exists() and not (out / "BRF").exists()
+    assert seen[0] == (0, 5, "broken.png") and seen[-1] == (5, 5, "")
+
+
+def test_folder_run_without_images_writes_only_tables_and_can_be_cancelled(tmp_path):
+    from cabana.stages import run_brf_folder
+    _, args = _params(tmp_path, sort=False)
+    img_dir, _ = _write_inputs(tmp_path, names=("sec1", "sec2", "sec3"))
+    out = tmp_path / "out"
+    summary = run_brf_folder(args, img_dir, str(out), visuals=False)
+    assert summary["done"] == 3
+    assert sorted(p.name for p in out.iterdir()) == sorted(
+        ["BRF_Parameters.yml", BRF_RESULTS] + [f"sec{i}_statistics.csv" for i in (1, 2, 3)])
+    calls = []
+    summary = run_brf_folder(args, img_dir, str(tmp_path / "out2"), visuals=False,
+                             cancel=lambda: len(calls) >= 1, progress=lambda *a: calls.append(a))
+    assert summary["cancelled"] and summary["done"] == 1
+
+
+def test_folder_run_refuses_an_output_folder_holding_the_input(tmp_path):
+    from cabana.stages import run_brf_folder
+    _, args = _params(tmp_path)
+    img_dir, mask_dir = _write_inputs(tmp_path)
+    with pytest.raises(ValueError, match="input"):
+        run_brf_folder(args, img_dir, str(tmp_path))
+    with pytest.raises(ValueError, match="ROI mask"):
+        run_brf_folder(args, img_dir, mask_dir, mask_dir=mask_dir)
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    with pytest.raises(ValueError, match="No supported images"):
+        run_brf_folder(args, str(empty), str(tmp_path / "out"))

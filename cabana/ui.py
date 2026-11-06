@@ -767,6 +767,34 @@ class BRFWorker(QThread):
             self.failed.emit(str(e))
 
 
+class BRFFolderWorker(QThread):
+    """Run Folder of the Birefringence page: colour separation of every image
+    of a folder (cabana.stages.run_brf_folder); cancel() stops between images."""
+    progress_updated = pyqtSignal(int, int, str)     # images done, total, image being separated
+    run_complete = pyqtSignal(object)                 # the run_brf_folder summary
+    failed = pyqtSignal(str)
+
+    def __init__(self, args, input_dir, output_dir, mask_dir=None, visuals=True):
+        super().__init__()
+        self.args, self.input_dir, self.output_dir = args, input_dir, output_dir
+        self.mask_dir, self.visuals = mask_dir, visuals
+        self._cancel = False
+
+    def cancel(self):
+        self._cancel = True
+
+    def run(self):
+        try:
+            from .stages import run_brf_folder
+            summary = run_brf_folder(self.args, self.input_dir, self.output_dir, mask_dir=self.mask_dir,
+                                     visuals=self.visuals, cancel=lambda: self._cancel,
+                                     progress=lambda done, total, name: self.progress_updated.emit(done, total, name))
+            self.run_complete.emit(summary)
+        except Exception as e:
+            Log.logger.exception("Birefringence folder run failed")
+            self.failed.emit(str(e))
+
+
 class TMAWorker(QThread):
     """Background worker for the TMA page.
 

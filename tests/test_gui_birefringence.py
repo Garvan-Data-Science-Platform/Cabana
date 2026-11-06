@@ -55,25 +55,25 @@ def _separate(win, monkeypatch):
     return shown
 
 
-def test_page_sits_after_segmentation_and_starts_disabled(win):
+def test_page_sits_after_segmentation_and_is_left_out_of_batch_run(win):
     titles = win._page_titles
     assert titles.index("Birefringence") == titles.index("Segmentation") + 1
     assert win.pages.indexOf(win.brf_tab) == titles.index("Birefringence")
-    assert not win.toggle_brf_btn.isChecked() and not win.brf_btn.isEnabled()
-    assert not win.brf_brightness_slider.isEnabled() and "Disabled" in win.toggle_brf_label.text()
+    assert not win.toggle_brf_btn.isChecked() and not win.brf_btn.isEnabled()      # no image yet
+    assert "Include in Batch Run" in win.toggle_brf_label.text() and "No" in win.toggle_brf_label.text()
+    assert win.brf_brightness_slider.isEnabled() and win.brf_view_combo.currentText() == "Grid"
     assert win.yml_data["Configs"]["Birefringence"] is False
     assert win.yml_data["Birefringence"] == brf.DEFAULTS
 
 
-def test_toggle_enables_the_page_and_writes_the_parameter(win, tmp_path):
+def test_toggle_only_decides_whether_batch_run_includes_the_step(win, tmp_path):
     win.toggle_brf_btn.setChecked(True)
-    assert win.yml_data["Configs"]["Birefringence"] is True
-    assert win.brf_brightness_slider.isEnabled() and "Enabled" in win.toggle_brf_label.text()
-    assert not win.brf_btn.isEnabled()                       # no image yet
+    assert win.yml_data["Configs"]["Birefringence"] is True and "Yes" in win.toggle_brf_label.text()
     _open(win, tmp_path, pol_image())
     assert win.brf_btn.isEnabled() and not win.brf_note.isVisible()
     win.toggle_brf_btn.setChecked(False)
-    assert win.yml_data["Configs"]["Birefringence"] is False and not win.brf_btn.isEnabled()
+    assert win.yml_data["Configs"]["Birefringence"] is False and "No" in win.toggle_brf_label.text()
+    assert win.brf_btn.isEnabled() and win.brf_brightness_slider.isEnabled()
 
 
 def test_separate_shows_the_class_map_and_a_summary(win, tmp_path, monkeypatch, app):
@@ -81,6 +81,8 @@ def test_separate_shows_the_class_map_and_a_summary(win, tmp_path, monkeypatch, 
     _open(win, tmp_path, pol_image())
     shown = _separate(win, monkeypatch)
     masks, gate = brf.separate(win.ori_img, brf.settings({}))
+    np.testing.assert_array_equal(shown[-1], brf.grid_view(win.ori_img, masks))     # default view
+    win.brf_view_combo.setCurrentText("Class map")
     np.testing.assert_array_equal(shown[-1], brf.class_map(masks, gate))
     stats = brf.band_stats(masks, gate, win.ori_img)
     assert f"Red-Orange {stats['BRF Red-Orange (% Signal)']:.1f} %" in win.brf_summary_label.text()
@@ -206,3 +208,68 @@ def test_combine_bf_and_pol_results_from_the_file_menu(win, tmp_path, monkeypatc
     pd.DataFrame({"Image": ["no_token_roi.png"], "X": [1]}).to_csv(bf, index=False)
     win.combine_results_action.trigger()
     assert messages[-1][1] == {"warning": True} and "no BF/POL" in messages[-1][0][2]
+
+
+def _wait(app, condition, steps=200):
+    for _ in range(steps):
+        if condition():
+            return True
+        settle(app, 50)
+    return condition()
+
+
+def test_run_folder_separates_a_folder(win, tmp_path, monkeypatch, app):
+    import pandas as pd
+    from cabana.stages import BRF_RESULTS
+    from tests.test_brf_pipeline import _write_inputs
+    img_dir, mask_dir = _write_inputs(tmp_path, names=("sec1", "sec2"))
+    # QuPath layout: stroma/ next to stroma_mask/ is found automatically
+    stroma = tmp_path / "stroma"
+    os.rename(img_dir, stroma)
+    os.rename(mask_dir, tmp_path / "stroma_mask")
+    assert not win.brf_run_btn.isEnabled()
+    win.set_brf_input_folder(str(stroma))
+    assert win.brf_mask_folder == str(tmp_path / "stroma_mask") and win.brf_mask_clear_btn.isEnabled()
+    win.set_brf_output_folder(str(tmp_path / "out"))
+    assert win.brf_run_btn.isEnabled()
+    messages = []
+    monkeypatch.setattr(win, "_notify", lambda *a, **k: messages.append((a, k)))
+    win.brf_images_cb.setChecked(False)
+    win.brf_run_btn.click()
+    assert win.brf_run_btn.text() == "Cancel"
+    assert _wait(app, lambda: messages)
+    (title, text, info), kwargs = messages[-1]
+    assert text == "Separated 2 of 2 images." and not kwargs and BRF_RESULTS in info
+    results = pd.read_csv(tmp_path / "out" / "Stats" / BRF_RESULTS)
+    assert sorted(results["Image"]) == ["sec1.png", "sec2.png"]
+    assert results["Region Pixels"].tolist() == [160 * 80, 160 * 80]                  # the masks were used
+    assert not (tmp_path / "out" / "Total").exists()                                   # Save Images off
+    assert win.brf_run_btn.text() == "Run Folder" and win.brf_run_btn.isEnabled()
+
+
+def test_run_folder_asks_before_writing_into_a_non_empty_folder(win, tmp_path, monkeypatch):
+    from tests.test_brf_pipeline import _write_inputs
+    img_dir, _ = _write_inputs(tmp_path)
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "keep.txt").write_text("x")
+    win.set_brf_input_folder(img_dir)
+    win.set_brf_output_folder(str(out))
+    asked = []
+    monkeypatch.setattr(win, "_ask_tma", lambda *a: asked.append(a) or False)
+    win.run_brf_folder()
+    assert asked and win.brf_folder_worker is None and win.brf_run_btn.text() == "Run Folder"
+
+
+def test_run_folder_reports_an_output_folder_holding_the_input(win, tmp_path, monkeypatch, app):
+    from tests.test_brf_pipeline import _write_inputs
+    img_dir, _ = _write_inputs(tmp_path)
+    win.set_brf_input_folder(img_dir)
+    win.set_brf_output_folder(str(tmp_path))                     # the input's parent
+    messages = []
+    monkeypatch.setattr(win, "_ask_tma", lambda *a: True)
+    monkeypatch.setattr(win, "_notify", lambda *a, **k: messages.append((a, k)))
+    win.run_brf_folder()
+    assert _wait(app, lambda: messages)
+    assert messages[-1][1] == {"warning": True} and "output folder" in messages[-1][0][2]
+    assert win.brf_run_btn.text() == "Run Folder"

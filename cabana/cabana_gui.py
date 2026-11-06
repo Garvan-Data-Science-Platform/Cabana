@@ -245,15 +245,20 @@ class MainWindow(QMainWindow):
         self.image_panel = ImagePanel()
         self.image_panel.imageDropped.connect(self.load_original_image)
 
-        content_layout = QVBoxLayout(self.image_panel)
-
-        # Create toggle button
+        # Panel toggle on a fixed rail at the window's left edge: it stays put
+        # when the panel folds or unfolds (on the image panel's edge it jumped
+        # by the panel width, so the next click missed it)
         self.toggle_button = PanelToggleButton()
         self.toggle_button.clicked.connect(self.toggle_panel)
-
-        # Add toggle button and some content to the main area
-        content_layout.addWidget(self.toggle_button, 0, Qt.AlignLeft)
-        content_layout.addStretch(1)
+        self.panel_rail = QWidget()
+        self.panel_rail.setObjectName("panelRail")
+        self.panel_rail.setAttribute(Qt.WA_StyledBackground, True)
+        self.panel_rail.setFixedWidth(28)
+        rail_layout = QVBoxLayout(self.panel_rail)
+        rail_layout.setContentsMargins(2, 8, 2, 8)
+        rail_layout.addWidget(self.toggle_button, 0, Qt.AlignHCenter)
+        rail_layout.addStretch(1)
+        self.panel_rail.setStyleSheet(self._rail_style())
 
         # Add widgets to splitter
         self.splitter.addWidget(self.dock_contents)
@@ -265,7 +270,12 @@ class MainWindow(QMainWindow):
 
         # Compute the minimum dock width so tab labels are never clipped.
         # Match main-branch behavior: let the default tab bar manage elision inside the available width.
-        self.dock_contents.setMinimumWidth(200)
+        # The panel never gets narrower than its widest page (plus the scroll
+        # bar), so a short window squeezes the image panel instead of hiding
+        # the right edge of a page
+        widest = max(self.pages.widget(i).minimumSizeHint().width() for i in range(self.pages.count()))
+        margins = self.dock_layout.contentsMargins()
+        self.dock_contents.setMinimumWidth(max(200, widest + margins.left() + margins.right() + 20))
 
         # Set initial sizes so the left panel opens wide enough for the full Analysis tab labels.
         # Account for all nesting: dock_layout margins, QGroupBox stylesheet padding+border,
@@ -284,8 +294,13 @@ class MainWindow(QMainWindow):
         )
         self.splitter.setSizes([initial_dock_width, 800])
 
-        # Add splitter to the main layout
-        self.main_layout.addWidget(self.splitter)
+        # Rail and splitter side by side in the main layout
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
+        body.addWidget(self.panel_rail)
+        body.addWidget(self.splitter, 1)
+        self.main_layout.addLayout(body)
 
         # Set handle width thinner
         self.splitter.setHandleWidth(5)
@@ -490,44 +505,46 @@ class MainWindow(QMainWindow):
             self.toggle_panel()
 
     def setup_start_tab(self):
-        """Landing page shown at launch: a Begin card with the three ways to
-        start, and a Help card with the tour and the documentation."""
+        """Landing page shown at launch: the three ways to begin, then links to
+        the tour and the documentation."""
         layout = self._page_layout()
+        layout.setContentsMargins(0, 8, 0, 6)
 
-        begin = SectionCard("Begin")
+        self.start_actions = QWidget()          # what the tour's first step points at
+        actions = QVBoxLayout(self.start_actions)
+        actions.setContentsMargins(0, 0, 0, 0)
+        actions.setSpacing(8)
         self.start_slide_btn = self._primary_button("Open TMA Slide…", play=False)
         self.start_slide_btn.setToolTip("Open a whole-slide TMA scan on the TMA Dearrayer page.")
         self.start_slide_btn.clicked.connect(self._open_tma_slide_from_menu)
-        begin.add_widget(self.start_slide_btn)
+        actions.addWidget(self.start_slide_btn)
         self.start_open_btn = QPushButton("Open Image…")
         self.start_open_btn.setStyleSheet(self.btn_style)
         self.start_open_btn.setToolTip("Open an image to tune the parameters on.")
         self.start_open_btn.clicked.connect(self.load_image)
-        begin.add_widget(self.start_open_btn)
+        actions.addWidget(self.start_open_btn)
         self.start_params_btn = QPushButton("Import Parameters…")
         self.start_params_btn.setStyleSheet(self.btn_style)
         self.start_params_btn.setToolTip("Load a saved Parameters.yml into all pages.")
         self.start_params_btn.clicked.connect(self.import_parameters)
-        begin.add_widget(self.start_params_btn)
-        self.start_begin_card = begin
-        layout.addWidget(begin)
+        actions.addWidget(self.start_params_btn)
+        layout.addWidget(self.start_actions)
 
-        help_card = SectionCard("Help")
-        row = QHBoxLayout()
-        row.setSpacing(8)
+        links = QHBoxLayout()
+        links.setSpacing(18)
         self.start_tour_btn = QPushButton("Take the Tour")
-        self.start_tour_btn.setStyleSheet(self.btn_style)
         self.start_tour_btn.setToolTip("Walk through the analysis, one step at a time.")
         self.start_tour_btn.clicked.connect(self.start_tour)
-        row.addWidget(self.start_tour_btn)
         self.start_docs_btn = QPushButton("Documentation")
-        self.start_docs_btn.setStyleSheet(self.btn_style)
         self.start_docs_btn.setToolTip("Open the online documentation.")
         self.start_docs_btn.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl("https://cabana.readthedocs.io")))
-        row.addWidget(self.start_docs_btn)
-        help_card.add_layout(row)
-        layout.addWidget(help_card)
+        for btn in (self.start_tour_btn, self.start_docs_btn):
+            btn.setStyleSheet(self.link_btn_style)
+            btn.setCursor(Qt.PointingHandCursor)
+            links.addWidget(btn)
+        links.addStretch(1)
+        layout.addLayout(links)
 
         layout.addStretch()
         self.start_tab.setLayout(layout)
@@ -738,6 +755,12 @@ class MainWindow(QMainWindow):
             self.toggle_panel_action.setChecked(self.panel_visible)
 
 
+    @staticmethod
+    def _rail_style():
+        pc = panel_colors()
+        return (f"QWidget#panelRail {{ background-color: {color_to_stylesheet(pc['panel'])};"
+                f" border-right: 1px solid {color_to_stylesheet(pc['card_border'])}; }}")
+
     def _setup_styles(self) -> None:
         """Set up all style sheets"""
         # Button style
@@ -772,6 +795,12 @@ class MainWindow(QMainWindow):
 
         # Side panel: section cards, row labels, notes, option lists
         self.panel_style = generate_panel_style()
+        # Text links (Start page)
+        accent = color_to_stylesheet(COLORS['highlight'])
+        self.link_btn_style = (
+            f"QPushButton {{ border: none; background: transparent; color: {accent};"
+            f" padding: 2px 0px; font-size: {FONT_SIZES['base']}px; font-weight: 500; }}"
+            f"QPushButton:hover {{ text-decoration: underline; }}")
 
         # Value label style (slider readouts)
         self.value_label_style = (
@@ -3793,7 +3822,7 @@ class MainWindow(QMainWindow):
             TourStep("Welcome to Cabana",
                      "This tour shows where each step of the analysis lives. It changes no settings; "
                      "press Esc to leave at any time.",
-                     page(self.start_tab), lambda: self.start_begin_card),
+                     page(self.start_tab), lambda: self.start_actions),
             TourStep("Cut a TMA slide into cores",
                      "Optional. Fit the cores of a whole-slide TMA scan, check them on the overlay and "
                      "export one image and mask per core.",
@@ -3995,8 +4024,7 @@ class MainWindow(QMainWindow):
         self.page_title.setStyleSheet(self.page_title_style)
 
         # Buttons
-        for btn in (self.start_open_btn, self.start_params_btn, self.start_tour_btn, self.start_docs_btn,
-                    self.cancel_batch_btn,
+        for btn in (self.start_open_btn, self.start_params_btn, self.cancel_batch_btn,
                      self.tma_cancel_btn, self.tma_undo_btn, self.tma_load_edits_btn, self.tma_save_edits_btn):
             btn.setStyleSheet(self.btn_style)
 
@@ -4062,6 +4090,9 @@ class MainWindow(QMainWindow):
         dock_palette.setColor(QPalette.Window, panel_colors()['panel'])
         self.dock_contents.setPalette(dock_palette)
         self.dock_contents.setStyleSheet(self.panel_style)
+        self.panel_rail.setStyleSheet(self._rail_style())
+        self.start_tour_btn.setStyleSheet(self.link_btn_style)
+        self.start_docs_btn.setStyleSheet(self.link_btn_style)
         for widget in self.dock_contents.findChildren((SectionCard, PathEdit)):
             widget.restyle()
         for btn in self._play_buttons:

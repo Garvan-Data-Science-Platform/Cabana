@@ -2048,34 +2048,30 @@ class CustomSplitter(QSplitter):
 
 
 class PanelToggleButton(QPushButton):
-    """A toggle button that draws a guillemet arrow pointing left (panel visible)
-    or right (panel hidden)."""
+    """Folds and unfolds the side panel: a guillemet pointing left (panel
+    open) or right (panel folded). It sits on the fixed rail at the window's
+    left edge, so it stays under the pointer whether the panel is open or not."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setCheckable(True)
-        self.setFixedSize(20, 36)
+        self.setFixedSize(24, 32)
         self.setCursor(Qt.PointingHandCursor)
-        self.setToolTip("Toggle side panel")
+        self.setToolTip("Fold or unfold the side panel (Ctrl+B)")
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-
-        # Background
-        bg = COLORS['dock'] if not self.underMouse() else COLORS['elevated']
-        painter.setBrush(bg)
-        painter.setPen(Qt.NoPen)
-        painter.drawRoundedRect(self.rect(), 4, 4)
-
-        # Draw guillemet
-        color = COLORS['highlight'] if self.underMouse() else COLORS['secondary']
-        painter.setPen(QPen(color, 1))
+        hot = self.underMouse()
+        if hot:
+            painter.setBrush(panel_colors()['field'])
+            painter.setPen(Qt.NoPen)
+            painter.drawRoundedRect(QRectF(self.rect()), 6, 6)
+        painter.setPen(QPen(COLORS['highlight'] if hot else COLORS['text_dim'], 1))
         font = painter.font()
-        font.setPixelSize(14)
+        font.setPixelSize(15)
         painter.setFont(font)
-        symbol = '»' if self.isChecked() else '«'
-        painter.drawText(self.rect(), Qt.AlignCenter, symbol)
+        painter.drawText(self.rect(), Qt.AlignCenter, '\u00bb' if self.isChecked() else '\u00ab')
 
     def enterEvent(self, event):
         self.update()

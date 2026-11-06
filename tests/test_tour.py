@@ -142,8 +142,20 @@ def test_dialogs_use_the_card_style(win, monkeypatch):
     assert all(n in [w.text() for w in news.findChildren(gui.QLabel)] for n in notes)
 
 
-def test_start_page_is_cards(win):
+def test_start_page_is_three_buttons_and_two_links(win):
     from cabana.ui import SectionCard
-    titles = [c.title_label.text() for c in win.start_tab.findChildren(SectionCard)]
-    assert titles == ["Begin", "Help"]
-    assert win.start_tour_btn.text() == "Take the Tour"
+    assert not win.start_tab.findChildren(SectionCard)
+    assert [b.text() for b in (win.start_slide_btn, win.start_open_btn, win.start_params_btn)] == [
+        "Open TMA Slide…", "Open Image…", "Import Parameters…"]
+    assert (win.start_tour_btn.text(), win.start_docs_btn.text()) == ("Take the Tour", "Documentation")
+
+
+def test_panel_toggle_stays_put_when_the_panel_folds(win, app):
+    from PyQt5.QtCore import QPoint
+    from PyQt5.QtTest import QTest
+    where = win.toggle_button.mapTo(win, QPoint(0, 0))
+    for visible in (False, True, False, True):
+        QTest.mouseClick(win.toggle_button, Qt.LeftButton)
+        settle(app)
+        assert win.panel_visible is visible and win.dock_contents.isVisible() is visible
+        assert win.toggle_button.mapTo(win, QPoint(0, 0)) == where     # the next click lands on it

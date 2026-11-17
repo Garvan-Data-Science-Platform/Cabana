@@ -162,6 +162,44 @@ def test_wheel_over_an_unclicked_box_does_not_change_it(win, app):
     assert box.value() == 6000
 
 
+def _wheel(widget, notches, x=None):
+    from PyQt5.QtCore import QPoint, QPointF, Qt
+    from PyQt5.QtGui import QWheelEvent
+    from PyQt5.QtWidgets import QApplication
+    pos = QPointF(widget.rect().center() if x is None else QPoint(x, widget.height() // 2))
+    QApplication.sendEvent(widget, QWheelEvent(
+        pos, QPointF(widget.mapToGlobal(pos.toPoint())), QPoint(0, 0), QPoint(0, 120 * notches),
+        Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False))
+
+
+def test_wheel_moves_an_unclicked_slider_one_unit_per_notch(win, app):
+    slider = win.max_iters_slider
+    slider.setValue(30)
+    assert not slider.hasFocus()
+    _wheel(slider, 1)
+    assert slider.value() == 31
+    _wheel(slider, -3)
+    assert slider.value() == 28
+    slider.setValue(slider.maximum())
+    _wheel(slider, 1)
+    assert slider.value() == slider.maximum()
+
+
+def test_wheel_moves_the_nearest_handle_of_a_range_slider(app):
+    from cabana.ui import RangeSlider
+    slider = RangeSlider()
+    slider.resize(300, 30)
+    slider.setRange(0, 100)
+    slider.setValues(20, 80)
+    _wheel(slider, 1, x=10)
+    assert (slider.lower_value, slider.upper_value) == (21, 80)
+    _wheel(slider, -2, x=290)
+    assert (slider.lower_value, slider.upper_value) == (21, 78)
+    slider.setValues(50, 50)                          # a handle never passes the other
+    _wheel(slider, 5, x=10)
+    assert (slider.lower_value, slider.upper_value) == (50, 50)
+
+
 def test_max_size_box_skips_values_below_2048(app):
     from cabana.ui import MaxSizeSpinBox
     box = MaxSizeSpinBox()

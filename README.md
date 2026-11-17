@@ -32,6 +32,13 @@ Install CABANA using pip:
 ```bash
 pip install -U cabana
 ```
+
+On Windows with an NVIDIA graphics card, install the CUDA build of PyTorch first (pip otherwise installs the CPU-only build and segmentation runs on the CPU). Take the command from [pytorch.org/get-started/locally](https://pytorch.org/get-started/locally/), for example:
+
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cu128
+pip install -U cabana
+```
 or install the latest version on GitHub:
 
 ```bash

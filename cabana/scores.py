@@ -251,6 +251,12 @@ def compute_scores(agg_df, output_path):
         'endpoint_density': 'Endpoints Density (µm⁻¹) MEAN',
     }
 
+    # Without segmentation the batch drops every ROI column, the coverage
+    # among them. The whole image is then the ROI, so the coverage is the
+    # WIDTH area fraction (z-scores of logs ignore a constant factor).
+    if col_map['coverage'] not in agg_df.columns and '% WIDTH Area MEAN' in agg_df.columns:
+        col_map['coverage'] = '% WIDTH Area MEAN'
+
     # Check required columns exist
     missing = [k for k, v in col_map.items() if v not in agg_df.columns]
     if missing:

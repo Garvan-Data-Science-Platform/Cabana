@@ -197,6 +197,17 @@ class TestComputeScores:
         out = str(tmp_path / "scores.csv")
         compute_scores(df, out)  # Should not raise
 
+    def test_without_segmentation_coverage_is_the_width_area_fraction(self, tmp_path):
+        # a batch without segmentation has no ROI columns; the whole image is the ROI
+        df = self._make_agg_df()
+        with_roi, without_roi = str(tmp_path / "a.csv"), str(tmp_path / "b.csv")
+        compute_scores(df, with_roi)
+        df = df.rename(columns={'Fibre Coverage (WIDTH/ROI) MEAN': '% WIDTH Area MEAN'})
+        compute_scores(df, without_roi)
+        a, b = pd.read_csv(with_roi), pd.read_csv(without_roi)
+        assert list(b['Rigidity Score']) == list(a['Rigidity Score'])
+        assert list(b['Bundling Score']) == list(a['Bundling Score'])
+
     def test_output_row_count_matches_input(self, tmp_path):
         n = 6
         df = self._make_agg_df(n=n)

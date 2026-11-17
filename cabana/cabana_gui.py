@@ -29,7 +29,7 @@ from .themes import THEMES, DEFAULT_THEME
 from .tma import AUTO_START_DIAMETER_UM, ORIENTATIONS, EDITS_FILE
 from .io import (DEFAULT_MAX_SIZE, block_grid, max_image_size, migrate_max_size, pixel_size_um,
                  save_visualisations)
-from .segmenter import generate_rois, mask_from_score
+from .segmenter import generate_rois, mask_from_score, gpu_unused_reason, PYTORCH_INSTALL_URL
 from .stages import GAP_FILL_ALPHA, GAP_INTRA_RGB, GAP_OTHER_RGB, gap_base_image, gap_intra
 from . import brf
 from .brf import DEFAULTS as BRF_DEFAULTS
@@ -37,7 +37,8 @@ from .tma_editor import TMACoreEditor
 from .tma_maps import MAP_FILE_FILTER, available_arrays, load_map_file, match_map_to_slide, write_templates
 from .tma_editor import MapPreviewDialog
 from . import __version__
-from .updates import CHANGELOG_URL, install_problem, is_newer, restart_command
+from . import gpu_setup
+from .updates import CHANGELOG_URL, install_note, install_problem, is_newer, needs_repair, restart_command
 from .winshell import ICON_PATH, set_taskbar_icon
 from . import whats_new
 from .tour import TourOverlay, TourStep
@@ -269,7 +270,7 @@ class MainWindow(QMainWindow):
         # the right edge of a page
         widest = max(self.pages.widget(i).minimumSizeHint().width() for i in range(self.pages.count()))
         margins = self.dock_layout.contentsMargins()
-        self.dock_contents.setMinimumWidth(max(200, widest + margins.left() + margins.right() + 20))
+        self.dock_contents.setMinimumWidth(max(200, widest + margins.left() + margins.right() + 16))
 
         # Set initial sizes so the left panel opens wide enough for the full Analysis tab labels.
         # Account for all nesting: dock_layout margins, QGroupBox stylesheet padding+border,
@@ -468,6 +469,11 @@ class MainWindow(QMainWindow):
         self.check_updates_action.setMenuRole(QAction.ApplicationSpecificRole)
         self.check_updates_action.triggered.connect(lambda: self.check_for_updates())
         about_menu.addAction(self.check_updates_action)
+        if sys.platform != 'darwin':      # macOS uses the Apple GPU; there is nothing to install
+            self.gpu_support_action = QAction("Install &GPU Support…", self)
+            self.gpu_support_action.setStatusTip("Replace a CPU-only PyTorch by the build for the NVIDIA card")
+            self.gpu_support_action.triggered.connect(lambda: self.install_gpu_support())
+            about_menu.addAction(self.gpu_support_action)
         version_action = QAction("&Version", self)
         version_action.setMenuRole(QAction.NoRole)
         version_action.triggered.connect(self._show_about_dialog)
@@ -571,7 +577,7 @@ class MainWindow(QMainWindow):
         return self._ask_tma("Quit Cabana", "Quit Cabana?", "If you quit now:\n- " + "\n- ".join(risks),
                              "Confirm", "Cancel")
 
-    TMA_LABEL_WIDTH = 86      # TMA labels are short: the narrower column leaves room for paired fields
+    TMA_LABEL_WIDTH = 72      # TMA labels are short: the narrower column leaves room for paired fields
     MAP_LOAD_ITEM = "__load_map__"
 
     def _tma_selected_map(self):
@@ -998,8 +1004,8 @@ class MainWindow(QMainWindow):
         # two columns: short fields in the field column, a fixed block at the right edge
         font = QFont()
         font.setPixelSize(FONT_SIZES['base'])
-        second = max(QFontMetrics(font).horizontalAdvance(t) for t in ("Orientation", "Min stain", "Mask shrink"))
-        split = dict(field_width=112, label2_width=second + 2, right_width=100)
+        second = max(QFontMetrics(font).horizontalAdvance(t) for t in ("Orient.", "Min stain", "Shrink"))
+        split = dict(field_width=100, label2_width=second + 2, right_width=94)
 
         # --- Fit -------------------------------------------------------------
         fit = SectionCard("Fit", compact=True)
@@ -1046,7 +1052,7 @@ class MainWindow(QMainWindow):
         self.tma_pixel_size_spin.setFixedWidth(140)
         self.tma_pixel_size_spin.setStyleSheet(self.spinner_style)
         self.tma_pixel_size_spin.setToolTip("Filled from the slide metadata when available.")
-        fit.add_split_row("Pixel size", self.tma_pixel_size_spin, self.tma_orientation_combo, "Orientation", **split)
+        fit.add_split_row("Pixel size", self.tma_pixel_size_spin, self.tma_orientation_combo, "Orient.", **split)
 
         self.tma_core_auto_cb = QCheckBox("Auto")
         self.tma_core_auto_cb.setChecked(True)
@@ -1187,7 +1193,7 @@ class MainWindow(QMainWindow):
         self.tma_margin_spin = QSpinBox()
         self.tma_margin_spin.setRange(0, 1000)
         self.tma_margin_spin.setSingleStep(10)
-        self.tma_margin_spin.setValue(30)
+        self.tma_margin_spin.setValue(10)
         self.tma_margin_spin.setSuffix(" µm")
         self.tma_margin_spin.setFixedWidth(122)
         self.tma_margin_spin.setStyleSheet(self.spinner_style)
@@ -1200,7 +1206,7 @@ class MainWindow(QMainWindow):
         self.tma_erode_spin.setFixedWidth(112)
         self.tma_erode_spin.setStyleSheet(self.spinner_style)
         self.tma_erode_spin.setToolTip("Shrinks the core mask so the core edge is left out.")
-        export.add_split_row("Margin", self.tma_margin_spin, self.tma_erode_spin, "Mask shrink", **split)
+        export.add_split_row("Margin", self.tma_margin_spin, self.tma_erode_spin, "Shrink", **split)
 
         # the channels sit in the title bar
         self.tma_channels_box = QWidget()
@@ -1230,7 +1236,7 @@ class MainWindow(QMainWindow):
         self.tma_output_btn = self.tma_output_path.pick_action
         self.tma_output_btn.setToolTip("Choose the output folder.")
         self.tma_output_btn.triggered.connect(self.select_tma_output)
-        export.add_row("Output folder", self.tma_output_path)
+        export.add_row("Output", self.tma_output_path)
 
         # Status of the fit and export, then the export action
         self.tma_status_label = QLabel("No slide loaded")
@@ -1677,7 +1683,7 @@ class MainWindow(QMainWindow):
             if not pre.orientation_resolved:
                 msg += (f" — UNRESOLVED: {', '.join(pre.orientation_ties)} fit equally well and appearance "
                         f"cannot separate them; confirm a control core against the printed map and set "
-                        f"Orientation explicitly. Export is disabled until then.")
+                        f"Orient. explicitly. Export is disabled until then.")
             elif others and pre.orientation_method not in ("manual", "anchor"):
                 msg += f" (also tied on occupancy: {', '.join(others)}; verify a control core)"
         self.tma_export_btn.setEnabled(pre.array_number is None or pre.orientation_resolved)
@@ -3721,6 +3727,73 @@ class MainWindow(QMainWindow):
                 self.start_tour()
         elif whats_new.should_show(last or "0.0.0", __version__):
             self.show_whats_new(since=last or "0.0.0")
+        self._gpu_hint()
+
+    GPU_HINT_KEY = 'gpu_hint_torch'
+
+    def _gpu_hint(self):
+        """Tell the user, once per PyTorch build, that an NVIDIA graphics card
+        is present but segmentation runs on the CPU, and how to fix it."""
+        reason = gpu_unused_reason()
+        if reason is None:
+            return
+        import torch
+        settings = QSettings('Cabana', 'CabanaGUI')
+        if settings.value(self.GPU_HINT_KEY, "") == torch.__version__:
+            return
+        settings.setValue(self.GPU_HINT_KEY, torch.__version__)
+        problem, fix = (html.escape(part) for part in reason)
+        link = f"<a href='{PYTORCH_INSTALL_URL}'>{PYTORCH_INSTALL_URL}</a>"
+        text = f"{problem}<br><br>{fix.replace(PYTORCH_INSTALL_URL, link)}"
+        if torch.version.cuda is not None:           # a driver problem: nothing Cabana can install
+            self._message("Graphics card not used", text, rich=True)
+        elif self._message("Graphics card not used", text, buttons=[self.GPU_INSTALL, "Not Now"],
+                           rich=True) == self.GPU_INSTALL:
+            self.install_gpu_support(confirm=False)
+
+    GPU_INSTALL = "Install GPU Support"
+
+    def install_gpu_support(self, confirm=True):
+        """Help > Install GPU Support: replace a CPU-only PyTorch by the CUDA
+        build for this NVIDIA card. PyTorch's files are in use while Cabana
+        runs, so a separate installer (``gpu_setup``) does it once Cabana has
+        closed."""
+        import torch
+        title = "Install GPU Support"
+        if torch.cuda.is_available():
+            self._message(title, "The graphics card is already used.",
+                          f"PyTorch {torch.__version__} runs segmentation on the NVIDIA card.")
+            return
+        reason = gpu_unused_reason()
+        if reason is None:
+            self._message(title, "No NVIDIA graphics card was found.",
+                          "Segmentation runs on the CPU. GPU support needs an NVIDIA card with its driver installed.")
+            return
+        if torch.version.cuda is not None:
+            self._message(title, reason[0], reason[1])
+            return
+        problem = gpu_setup.location_problem()
+        if problem:
+            self._message(title, "GPU support cannot be installed here.", problem)
+            return
+        at_risk = self._work_at_risk()
+        if at_risk:
+            self._message(title, "Cabana has to close to install GPU support.",
+                          "Finish, cancel or save first:\n- " + "\n- ".join(at_risk))
+            return
+        go = "Close Cabana and Install"
+        if confirm and self._message(
+                title, "Install the PyTorch build for the NVIDIA graphics card?",
+                "Cabana closes, then a small window downloads PyTorch (about 2.5 GB) and replaces "
+                "the CPU-only build. Start Cabana again when it reports that it is done.",
+                buttons=[go, "Cancel"]) != go:
+            return
+        try:
+            gpu_setup.launch()
+        except OSError as exc:
+            self._message(title, "The installer could not be started.", str(exc))
+            return
+        self.close()
 
     def _ask_tour(self):
         """First start: offer the tour. True to start it (monkeypatched in tests)."""
@@ -3852,26 +3925,39 @@ class MainWindow(QMainWindow):
                              f"Check the internet connection and try again.\n\n{error}", ["OK"])
 
     def _update_checked(self, latest, quiet):
-        if not is_newer(latest, __version__):
+        newer = is_newer(latest, __version__)
+        problem = install_problem()
+        # leftover install records make the version shown unreliable: repair even when up to date
+        repair = problem is None and needs_repair()
+        if not newer and not repair:
             if not quiet:
                 self._ask_update("Check for Updates", f"Cabana {__version__} is the latest version.",
                                  "", ["OK"])
             return
         settings = QSettings('Cabana', 'CabanaGUI')
-        if quiet and settings.value(self.UPDATE_SKIP_KEY, "") == latest:
+        if quiet and not repair and settings.value(self.UPDATE_SKIP_KEY, "") == latest:
             return
         text = (f"Cabana {latest} is available (you have {__version__}).<br>"
                 f"<a href='{CHANGELOG_URL}'>See what's new</a>")
-        problem = install_problem()
         if problem:
             self._ask_update("Check for Updates", text, problem, ["OK"])
             return
-        buttons = ["Update", "Later"] + (["Skip This Version"] if quiet else [])
-        choice = self._ask_update(
-            "Check for Updates", text,
-            "Update installs it into this Python environment with pip; "
-            "restart Cabana afterwards to use it.", buttons)
-        if choice == "Update":
+        action = "Update"
+        info = ("Update installs it into this Python environment with pip; "
+                "restart Cabana afterwards to use it.")
+        if repair:
+            action = "Update" if newer else "Repair"
+            if not newer:
+                text = "This installation of Cabana needs a repair."
+            info = ("An earlier update left more than one install record behind, so the version "
+                    f"shown may be wrong. {action} removes the leftovers and reinstalls "
+                    f"Cabana {latest}; restart Cabana afterwards.")
+        note = install_note()
+        if note:
+            info += "\n\n" + note
+        buttons = [action, "Later"] + (["Skip This Version"] if quiet and not repair else [])
+        choice = self._ask_update("Check for Updates", text, info, buttons)
+        if choice == action:
             self.install_update(latest)
         elif choice == "Skip This Version":
             settings.setValue(self.UPDATE_SKIP_KEY, latest)
@@ -3908,9 +3994,12 @@ class MainWindow(QMainWindow):
                              ["OK"], details=output if warned else None)
         else:
             Log.logger.warning("Update to Cabana %s failed:\n%s", version, output)
+            info = "The update did not complete. Cabana keeps working; see the details below."
+            if any(sign in output.lower() for sign in ("permission", "access is denied", "errno 13")):
+                info += ("\nThis account may not be allowed to change the environment: "
+                         "ask an administrator to update Cabana.")
             self._ask_update("Check for Updates", f"Cabana {version} could not be installed.",
-                             "The update did not complete. Cabana keeps working; see the details below.",
-                             ["OK"], details=output)
+                             info, ["OK"], details=output)
 
     def _ask_update(self, title, text, info, buttons, details=None):
         """Message with ``buttons`` (the first is the default); returns the

@@ -196,3 +196,56 @@ class TestSegmentSingleImage:
         assert m[48, 30] == 255 and m[48, 60] == 0
         r = cv2.imread(str(tmp_path / "ROIs" / "core_roi.png"))
         assert tuple(r[48, 60]) == (228, 228, 228)      # background fill outside the mask
+
+
+class TestDevice:
+    """Device report and the hint for an NVIDIA card that is left unused."""
+
+    @pytest.fixture
+    def nvidia_pc(self, monkeypatch):
+        """A Windows PC with an NVIDIA driver and the CPU-only PyTorch from PyPI."""
+        import torch
+        from cabana import segmenter
+        monkeypatch.delenv("CABANA_DEVICE", raising=False)
+        monkeypatch.setattr(segmenter, "sys", types.SimpleNamespace(platform="win32"))   # not the real sys
+        monkeypatch.setattr(segmenter.shutil, "which", lambda name: "C:/Windows/System32/nvidia-smi.exe")
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+        monkeypatch.setattr(torch.version, "cuda", None)
+        monkeypatch.setattr(segmenter, "_reported_device", None)
+        return segmenter
+
+    def test_cpu_only_build_with_a_card_is_reported(self, nvidia_pc):
+        import torch
+        problem, fix = nvidia_pc.gpu_unused_reason()
+        assert "CPU-only" in problem and torch.__version__ in problem
+        assert nvidia_pc.PYTORCH_INSTALL_URL in fix
+
+    def test_cuda_build_that_cannot_reach_the_card_points_at_the_driver(self, nvidia_pc, monkeypatch):
+        import torch
+        monkeypatch.setattr(torch.version, "cuda", "12.8")
+        problem, fix = nvidia_pc.gpu_unused_reason()
+        assert "12.8" in problem and "driver" in fix
+
+    def test_nothing_to_report(self, nvidia_pc, monkeypatch):
+        import torch
+        monkeypatch.setattr(nvidia_pc.shutil, "which", lambda name: None)          # no NVIDIA driver
+        assert nvidia_pc.gpu_unused_reason() is None
+        monkeypatch.setattr(nvidia_pc.shutil, "which", lambda name: "nvidia-smi")
+        monkeypatch.setenv("CABANA_DEVICE", "cpu")                                  # the user's own choice
+        assert nvidia_pc.gpu_unused_reason() is None
+        monkeypatch.delenv("CABANA_DEVICE")
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)               # the card is used
+        assert nvidia_pc.gpu_unused_reason() is None
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+        monkeypatch.setattr(nvidia_pc, "sys", types.SimpleNamespace(platform="darwin"))   # Macs have no CUDA
+        assert nvidia_pc.gpu_unused_reason() is None
+
+    def test_device_is_logged_and_the_unused_card_warned_once(self, nvidia_pc, caplog):
+        import logging
+        with caplog.at_level(logging.DEBUG, logger="cabana"):
+            for _ in range(2):
+                segment_image(pink_square_image(), seg_args())
+        lines = [(r.levelno, r.getMessage()) for r in caplog.records if "Segmentation device" in r.getMessage()]
+        assert lines == [(logging.INFO, "Segmentation device: cpu"), (logging.DEBUG, "Segmentation device: cpu")]
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "CPU-only" in r.getMessage()]
+        assert len(warnings) == 1

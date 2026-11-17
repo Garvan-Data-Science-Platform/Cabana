@@ -43,10 +43,10 @@ def mask_color_map(img, mask, rgb_color=[0.224, 1.0, 0.0784], sigma=0.5):
 
 def colorbar_font_size(image_height):
     """Colour-bar text size (points) for an image of ``image_height`` px: about
-    4 % of the image height, at least 12 pt. The figures are saved at the
+    3 % of the image height, at least 10 pt. The figures are saved at the
     image's own pixel size, so a fixed size would shrink to specks on large
     images such as whole TMA cores."""
-    return max(12.0, 0.04 * image_height * 72 / 100)
+    return max(10.0, 0.03 * image_height * 72 / 100)
 
 
 def _save_figure(fig, image_ax, image_height, save_path):

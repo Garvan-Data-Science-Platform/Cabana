@@ -26,7 +26,7 @@ visible across gaps. Circles can be corrected by hand (see
    [Editing cores by hand](#editing-cores-by-hand)).
 3. **Export cores**: for every core and selected channel a square crop is
    written to `<channel>/<group>/Images/` and a circular mask (white inside the
-   fitted circle, shrunk by *Mask shrink*, black in the corners) to
+   fitted circle, shrunk by *Shrink*, black in the corners) to
    `<channel>/<group>/Masks/`. Channels are `BF` and `POL`; groups are
    `Patients`, `Controls` (Liver, Brain, … from the map) and `Unmapped` (cores
    without a map entry, e.g. when no array map is chosen, and cores the map
@@ -46,7 +46,7 @@ before exporting, and exporting can be repeated into a different folder.
    in the viewer.
 2. **Array map.** Choose the printed ICGC/APGI array (1 to 8) for patient IDs,
    *Load map file…* for your own map (see [Array maps](#array-maps)), or *None*
-   to name cores by grid position only. Leave **Orientation** on
+   to name cores by grid position only. Leave **Orient.** (the orientation) on
    *Auto* unless you need to force one (see [Orientation](#orientation)).
    Changing either after a fit relabels the cores instantly; no refit.
 3. **Fit settings.** *Core Ø* is the core diameter and sets the scale of
@@ -65,9 +65,9 @@ before exporting, and exporting can be repeated into a different folder.
    overlay, *Grid lines* shows or hides the lattice and *Undo* reverts the
    last edit; **Load Edits…** and **Save Edits…** in the card's title bar reinstate or keep hand
    edits without exporting (see [Editing cores by hand](#editing-cores-by-hand)).
-7. **Export settings.** *Margin* around each circle, *Mask shrink*, and the
+7. **Export settings.** *Margin* around each circle, *Shrink* (of the mask), and the
    channels to write (BF, POL, in the card's title bar).
-8. **Output folder** for the export. Opening a slide always sets it to
+8. **Output** folder for the export. Opening a slide always sets it to
    `<slide>_cores`, placed in the folder that held the output folder you last
    chose with its folder icon (remembered between sessions), or beside the slide
    until you have chosen one. One output folder holds one slide's export:
@@ -222,7 +222,7 @@ refit whose offer was declined, Export asks before replacing it, so saved
 corrections are not lost by accident.
 
 The saved orientation is the one in use at the time, whether it was confirmed
-or chosen by *Auto*. On reinstating it is applied when **Orientation** is
+or chosen by *Auto*. On reinstating it is applied when **Orient.** is
 *Auto*; an orientation chosen explicitly takes precedence.
 
 ## Output naming
@@ -287,7 +287,7 @@ assume one value for a batch.
 
 To check an orientation, look at the control cores: they are named on the
 overlay (Liver, Brain, Lung, Placenta, …), and Brain in particular must land
-on a pale, nearly unstained core. Changing **Orientation** relabels the
+on a pale, nearly unstained core. Changing **Orient.** relabels the
 fitted cores at once, so cycling through the candidates until the control
 names match the slide takes seconds.
 
@@ -307,7 +307,7 @@ map position with its patient ID). The current orientation is kept and the
 whole map is shifted so that this core gets the chosen position; every other
 core is relabelled from it. Then check a second control on the far side of the
 array: if it is wrong too, the orientation is wrong, so choose another one in
-**Orientation**. The map then turns about the pinned core, which keeps its
+**Orient.**. The map then turns about the pinned core, which keeps its
 position.
 
 A hand-set placement counts as resolved, so it enables **Export** even when

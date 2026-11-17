@@ -200,3 +200,85 @@ def test_card_dialog_shows_every_wrapped_line(win, app):
     labels = [l for l in dlg.findChildren(gui.QLabel) if l.objectName() == "dialogText"]
     assert labels and all(l.height() >= l.heightForWidth(l.width()) for l in labels)
     dlg.close()
+
+
+def test_unused_graphics_card_is_reported_once_per_pytorch_build(win, monkeypatch):
+    import torch
+    import cabana.cabana_gui as gui
+    shown = []
+    monkeypatch.setattr(win, "_message", lambda title, text, **k: shown.append((title, text, k)))
+    monkeypatch.setattr(gui, "gpu_unused_reason", lambda: None)
+    win._gpu_hint()
+    assert shown == []                                               # nothing to report
+    monkeypatch.setattr(gui, "gpu_unused_reason",
+                        lambda: ("CPU-only <build>.", f"See {gui.PYTORCH_INSTALL_URL}"))
+    win._gpu_hint()
+    win._gpu_hint()
+    assert len(shown) == 1
+    title, text, options = shown[0]
+    assert "CPU-only &lt;build&gt;." in text and f"href='{gui.PYTORCH_INSTALL_URL}'" in text
+    assert options.get("rich") is True
+    monkeypatch.setattr(torch, "__version__", "0.0.0+cpu")           # another build: told again
+    win._gpu_hint()
+    assert len(shown) == 2
+
+
+class TestInstallGpuSupport:
+    @pytest.fixture
+    def cpu_build(self, win, monkeypatch):
+        """A Windows PC with an NVIDIA card and the CPU-only PyTorch."""
+        import torch
+        import cabana.cabana_gui as gui
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+        monkeypatch.setattr(torch.version, "cuda", None)
+        monkeypatch.setattr(gui, "gpu_unused_reason", lambda: ("CPU-only build.", "Install a CUDA build."))
+        monkeypatch.setattr(gui.gpu_setup, "location_problem", lambda: None)
+        win.launched, win.closed, win.shown, win.answer = [], [], [], None
+        monkeypatch.setattr(gui.gpu_setup, "launch", lambda: win.launched.append(True))
+        monkeypatch.setattr(win, "close", lambda: win.closed.append(True))
+        monkeypatch.setattr(win, "_message",
+                            lambda title, text, info="", buttons=("OK",), **k:
+                            win.shown.append((text, info, list(buttons))) or win.answer)
+        return win
+
+    def test_hint_offers_the_install(self, cpu_build):
+        cpu_build.answer = "Install GPU Support"
+        cpu_build._gpu_hint()
+        assert cpu_build.shown[0][2] == ["Install GPU Support", "Not Now"]
+        assert cpu_build.launched and cpu_build.closed       # already confirmed: no second question
+        assert len(cpu_build.shown) == 1
+
+    def test_hint_declined(self, cpu_build):
+        cpu_build.answer = "Not Now"
+        cpu_build._gpu_hint()
+        assert not cpu_build.launched and not cpu_build.closed
+
+    def test_menu_asks_before_closing_cabana(self, cpu_build):
+        cpu_build.answer = "Cancel"
+        cpu_build.install_gpu_support()
+        assert cpu_build.shown[0][2] == ["Close Cabana and Install", "Cancel"] and not cpu_build.launched
+        cpu_build.answer = "Close Cabana and Install"
+        cpu_build.install_gpu_support()
+        assert cpu_build.launched and cpu_build.closed
+
+    def test_refused_while_work_would_be_lost(self, cpu_build, monkeypatch):
+        monkeypatch.setattr(cpu_build, "_work_at_risk", lambda: ["a batch run is still running"])
+        cpu_build.install_gpu_support()
+        assert "a batch run is still running" in cpu_build.shown[0][1] and not cpu_build.launched
+
+    def test_folder_this_account_cannot_change(self, cpu_build, monkeypatch):
+        import cabana.cabana_gui as gui
+        monkeypatch.setattr(gui.gpu_setup, "location_problem", lambda: "not allowed to change")
+        cpu_build.install_gpu_support()
+        assert cpu_build.shown[0][1] == "not allowed to change" and not cpu_build.launched
+
+    def test_nothing_to_install(self, cpu_build, monkeypatch):
+        import torch
+        import cabana.cabana_gui as gui
+        monkeypatch.setattr(gui, "gpu_unused_reason", lambda: None)
+        cpu_build.install_gpu_support()
+        assert "No NVIDIA graphics card" in cpu_build.shown[0][0]
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        cpu_build.install_gpu_support()
+        assert "already used" in cpu_build.shown[1][0]
+        assert not cpu_build.launched

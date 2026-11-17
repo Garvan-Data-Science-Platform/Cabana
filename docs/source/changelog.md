@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.4.2
+
+- **Help > Install GPU Support** (Windows and Linux) replaces a CPU-only
+  PyTorch by the newest build the NVIDIA driver supports. Cabana closes, a
+  small window installs it and reports when to start Cabana again. The
+  message shown at start when an NVIDIA card is not used has a button for
+  it. A PyTorch installed with conda is left alone.
+- **Check for Updates** always updates the copy of Cabana that is running
+  and checks that the new version arrived there. An account that may not
+  change a shared installation is told to ask an administrator; before, a
+  second copy was installed for that account only. Leftover install records
+  are repaired by Check for Updates; nothing has to be deleted by hand.
+- The mouse wheel moves a slider one unit per notch without clicking it
+  first (on a range slider, the handle nearest the pointer). Spin boxes
+  and drop-down lists still need a click first.
+- Collagen scores are also written for batch runs without segmentation;
+  the fibre coverage is then taken over the whole image.
+- TMA Dearrayer: the default *Margin* is 10 µm (was 30 µm). The side panel
+  is narrower; *Orientation*, *Mask shrink* and *Output folder* are now
+  labelled *Orient.*, *Shrink* and *Output*.
+- Smaller text beside the colour bars of the colour maps.
+
 ## 0.4.1
 
 - Every message and question (Run Folder and Batch Run results, the

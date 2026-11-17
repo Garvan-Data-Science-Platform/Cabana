@@ -18,6 +18,7 @@ Example usage:
 
 import os
 import sys
+import shutil
 import cv2
 import imutils
 from . import convcrf
@@ -118,6 +119,47 @@ def select_device():
     if sys.platform == "darwin" and mps is not None and mps.is_available():
         return torch.device("mps")
     return torch.device("cpu")
+
+
+PYTORCH_INSTALL_URL = "https://pytorch.org/get-started/locally/"
+
+
+def gpu_unused_reason():
+    """Why an NVIDIA graphics card is present but not used for segmentation,
+    as ``(problem, fix)``, or None when there is nothing to report.
+
+    The usual case is Windows, where ``pip install cabana`` pulls the CPU-only
+    PyTorch from PyPI (the CUDA builds are only on PyTorch's own index). The
+    card is recognised by the driver's ``nvidia-smi`` on the PATH."""
+    if sys.platform == "darwin" or os.environ.get("CABANA_DEVICE", "").strip():
+        return None
+    if torch.cuda.is_available() or shutil.which("nvidia-smi") is None:
+        return None
+    if torch.version.cuda is None:
+        return (f"An NVIDIA graphics card was found, but the installed PyTorch ({torch.__version__}) "
+                f"is a CPU-only build, so segmentation runs on the CPU.",
+                f"To use the graphics card, choose Help > Install GPU Support in Cabana, or install "
+                f"a CUDA build by hand with the pip command from {PYTORCH_INSTALL_URL}")
+    return (f"An NVIDIA graphics card was found, but PyTorch ({torch.__version__}, CUDA "
+            f"{torch.version.cuda}) cannot use it, so segmentation runs on the CPU.",
+            "Updating the NVIDIA driver usually fixes this.")
+
+
+_reported_device = None
+
+
+def _report_device(device):
+    """Log the segmentation device: at INFO the first time and whenever it
+    changes (with a warning when an NVIDIA card is left unused), else at DEBUG."""
+    global _reported_device
+    if str(device) == _reported_device:
+        Log.logger.debug(f"Segmentation device: {device}")
+        return
+    _reported_device = str(device)
+    Log.logger.info(f"Segmentation device: {device}")
+    reason = gpu_unused_reason() if device.type == "cpu" else None
+    if reason:
+        Log.logger.warning(" ".join(reason))
 
 
 def _reduce(img_bgr, cnn_size):
@@ -232,6 +274,7 @@ def colour_score_map(img_bgr, args, iter_callback=None, cnn_size=512):
     in pixels of that map. Falls back to the CPU when the accelerator rejects
     an operation (e.g. a kernel missing on MPS)."""
     device = select_device()
+    _report_device(device)
     try:
         return _colour_score_map(img_bgr, args, iter_callback, cnn_size, device)
     except (RuntimeError, NotImplementedError) as e:

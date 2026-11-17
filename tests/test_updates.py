@@ -58,6 +58,7 @@ class TestInstallProblem:
         """A fake site-packages whose cabana/ is the running package."""
         pkg = tmp_path / "site-packages" / "cabana"
         pkg.mkdir(parents=True)
+        (pkg / "__init__.py").touch()
         monkeypatch.setattr(updates, "__file__", str(pkg / "updates.py"))
         return pkg.parent
 
@@ -81,17 +82,37 @@ class TestInstallProblem:
         monkeypatch.setattr(updates, "distribution", lambda name: _FakeDist(str(site)))
         assert "development checkout" in updates.install_problem()
 
-    def test_duplicate_install_records(self, site, monkeypatch):
+    def test_duplicate_install_records_are_repairable(self, site, monkeypatch):
         monkeypatch.setattr(updates, "distribution", lambda name: _FakeDist(str(site)))
         (site / "cabana-0.3.11.dist-info").mkdir()
         (site / "other_pkg-1.0.dist-info").mkdir()
-        assert updates.install_problem() is None             # one record: fine
+        assert not updates.needs_repair()                    # one record: fine
         (site / "cabana-0.3.7.dist-info").mkdir()
+        assert updates.needs_repair()
+        assert updates.install_problem() is None             # repaired by the update, not by hand
+        removed = updates.remove_stale_records(site)
+        assert [p.name for p in removed] == ["cabana-0.3.7.dist-info"]       # 0.3.11 is the newest
+        assert sorted(p.name for p in site.glob("*.dist-info")) == [
+            "cabana-0.3.11.dist-info", "other_pkg-1.0.dist-info"]
+
+    def test_environment_this_account_cannot_change(self, site, monkeypatch):
+        monkeypatch.setattr(updates, "distribution", lambda name: _FakeDist(str(site)))
+        assert updates.can_modify(site)
+        monkeypatch.setattr(updates, "can_modify", lambda folder: False)
         problem = updates.install_problem()
-        assert "more than one Cabana install record" in problem
-        assert "cabana-0.3.7.dist-info" in problem and "cabana-0.3.11.dist-info" in problem
-        assert "other_pkg" not in problem
-        assert "pip install --force-reinstall --no-deps cabana" in problem
+        assert "not allowed to change" in problem and str(site) in problem
+        assert "administrator" in problem and "pip install --upgrade cabana" in problem
+
+    def test_cannot_modify_without_the_package(self, tmp_path):
+        assert not updates.can_modify(tmp_path)              # no cabana/__init__.py to write to
+        assert not updates.can_modify(tmp_path / "missing")
+
+    def test_per_user_copy_is_noted(self, site, monkeypatch):
+        assert updates.install_note() is None
+        monkeypatch.setattr(updates.site, "getusersitepackages", lambda: str(site))
+        assert updates.in_user_site(site)
+        note = updates.install_note()
+        assert "your account only" in note and str(site) in note
 
     def test_problems_say_what_to_do(self, site, tmp_path, monkeypatch):
         monkeypatch.setattr(updates, "distribution", lambda name: _FakeDist(str(tmp_path / "x")))
@@ -104,23 +125,61 @@ class TestInstallProblem:
 
 
 class TestInstallVersion:
-    def test_runs_pip_in_this_environment(self, monkeypatch):
+    @pytest.fixture
+    def site(self, tmp_path, monkeypatch):
+        """A fake site-packages holding Cabana 9.9.8, and the pip calls made."""
+        folder = tmp_path / "site-packages"
+        (folder / "cabana").mkdir(parents=True)
+        (folder / "cabana-9.9.8.dist-info").mkdir()
+        monkeypatch.setattr(updates, "__file__", str(folder / "cabana" / "updates.py"))
+        return folder
+
+    @pytest.fixture
+    def pip(self, site, monkeypatch):
+        """pip stand-in that replaces the newest install record like an upgrade."""
         calls = []
 
         def fake_run(cmd, **kwargs):
             calls.append(cmd)
+            for record in updates.install_records(site)[-1:]:
+                record.rmdir()
+            (site / f"cabana-{cmd[-1].split('==')[1]}.dist-info").mkdir()
             return subprocess.CompletedProcess(cmd, 0, stdout="ok", stderr="")
 
         monkeypatch.setattr(updates.subprocess, "run", fake_run)
-        assert updates.install_version("9.9.9") == (True, "ok")
-        assert calls == [[sys.executable, "-m", "pip", "install", "cabana==9.9.9"]]
+        return calls
 
-    def test_failure_returns_output(self, monkeypatch):
+    def test_runs_pip_in_this_environment(self, site, pip):
+        assert updates.install_version("9.9.9") == (True, "ok")
+        assert pip == [[sys.executable, "-m", "pip", "install", "--no-user", "cabana==9.9.9"]]
+
+    def test_per_user_copy_is_updated_in_place(self, site, pip, monkeypatch):
+        monkeypatch.setattr(updates.site, "getusersitepackages", lambda: str(site))
+        assert updates.install_version("9.9.9")[0]
+        assert pip == [[sys.executable, "-m", "pip", "install", "--user", "cabana==9.9.9"]]
+
+    def test_leftover_records_are_removed_and_cabana_reinstalled(self, site, pip):
+        (site / "cabana-9.9.1.dist-info").mkdir()
+        ok, output = updates.install_version("9.9.9")
+        assert ok and "cabana-9.9.1.dist-info" in output
+        assert [p.name for p in updates.install_records(site)] == ["cabana-9.9.9.dist-info"]
+        assert pip == [
+            [sys.executable, "-m", "pip", "install", "--no-user", "--force-reinstall", "--no-deps", "cabana==9.9.9"],
+            [sys.executable, "-m", "pip", "install", "--no-user", "cabana==9.9.9"]]
+
+    def test_success_elsewhere_is_a_failure(self, site, monkeypatch):
+        # pip succeeds but this folder still holds the old version (installed somewhere else)
+        monkeypatch.setattr(updates.subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(
+            cmd, 0, stdout="Successfully installed", stderr=""))
+        ok, output = updates.install_version("9.9.9")
+        assert not ok and "holds Cabana 9.9.8, not Cabana 9.9.9 alone" in output
+
+    def test_failure_returns_output(self, site, monkeypatch):
         monkeypatch.setattr(updates.subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(
             cmd, 1, stdout="", stderr="no matching distribution"))
         assert updates.install_version("9.9.9") == (False, "no matching distribution")
 
-    def test_pip_missing(self, monkeypatch):
+    def test_pip_missing(self, site, monkeypatch):
         def boom(cmd, **kw):
             raise OSError("not found")
         monkeypatch.setattr(updates.subprocess, "run", boom)
@@ -199,6 +258,34 @@ class TestGui:
         monkeypatch.setattr(gui, "install_problem", lambda: "Cabana is running from X.")
         win._update_checked("1.1.0", quiet=False)
         assert win.asked[0][1] == ["OK"] and not win.installs
+
+    def test_leftover_records_offer_a_repair(self, win, monkeypatch):
+        import cabana.cabana_gui as gui
+        monkeypatch.setattr(gui, "needs_repair", lambda: True)
+        win.answer = "Repair"
+        win._update_checked("1.0.0", quiet=True)     # up to date, still repaired, also at startup
+        assert "needs a repair" in win.asked[0][0] and win.asked[0][1] == ["Repair", "Later"]
+        assert win.installs == ["1.0.0"]
+        win.answer = "Update"
+        win._update_checked("1.1.0", quiet=False)
+        assert win.asked[1][1] == ["Update", "Later"] and win.installs == ["1.0.0", "1.1.0"]
+
+    def test_per_user_copy_is_mentioned(self, win, monkeypatch):
+        import cabana.cabana_gui as gui
+        infos = []
+        monkeypatch.setattr(gui, "install_note", lambda: "your account only")
+        monkeypatch.setattr(win, "_ask_update",
+                            lambda title, text, info, buttons, details=None: infos.append(info))
+        win._update_checked("1.1.0", quiet=False)
+        assert "your account only" in infos[0]
+
+    def test_permission_failure_names_the_administrator(self, win, monkeypatch):
+        infos = []
+        monkeypatch.setattr(win, "_ask_update",
+                            lambda title, text, info, buttons, details=None: infos.append(info))
+        win._update_installed("1.1.0", False, "ERROR: [WinError 5] Access is denied")
+        win._update_installed("1.1.0", False, "no matching distribution")
+        assert "administrator" in infos[0] and "administrator" not in infos[1]
 
     def test_check_failure_quiet_on_startup(self, win):
         win._update_check_failed("offline", quiet=True)

@@ -7,6 +7,14 @@ of the changelog (docs/source/changelog.md), which holds the full list.
 from .updates import is_newer
 
 NOTES = {
+    "0.4.2": [
+        "Help > Install GPU Support replaces a CPU-only PyTorch by the build for an NVIDIA "
+        "graphics card (Windows and Linux).",
+        "Check for Updates repairs leftover install records by itself and no longer installs "
+        "a second copy when it may not change a shared installation.",
+        "The mouse wheel moves a slider one unit per notch; the side panel is narrower.",
+        "Collagen scores are also written for batch runs without segmentation.",
+    ],
     "0.4.1": [
         "Messages and questions, such as the results of Run Folder and Batch Run, now share "
         "the look of the rest of the app.",

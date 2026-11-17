@@ -797,7 +797,7 @@ class TMAPreprocessor:
     """
 
     def __init__(self, slide_path, array_number=None, slide_name=None, pixel_size_um=None,
-                 core_diameter_um=None, margin_um=30.0, erode_px=8, fit_pixel_size_um=5.0,
+                 core_diameter_um=None, margin_um=10.0, erode_px=8, fit_pixel_size_um=5.0,
                  orientation="auto", reader=None, sat_thresh=15, val_ratio=0.965,
                  recover_faint=True, min_fill=0.03, max_grid_offset=0.35,
                  min_diameter_frac=0.8, max_diameter_frac=1.2,
@@ -2006,7 +2006,7 @@ def main(argv=None):
     p.add_argument("--pixel-size", type=float, default=None, help="µm per pixel if not in metadata")
     p.add_argument("--core-diameter", type=_diameter_arg, default=None, metavar="UM|auto",
                    help="core diameter in µm, or 'auto' to measure it from the slide (default auto)")
-    p.add_argument("--margin", type=float, default=30.0, help="crop margin around the circle in µm (default 30)")
+    p.add_argument("--margin", type=float, default=10.0, help="crop margin around the circle in µm (default 10)")
     p.add_argument("--erode", type=int, default=8, help="mask shrink in pixels")
     p.add_argument("--orientation", choices=ORIENTATIONS, default="auto")
     p.add_argument("--channels", nargs="*", default=None, help="channels to export (default: all)")

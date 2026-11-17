@@ -1563,6 +1563,15 @@ def _focus_ring(painter, centre, radius):
     painter.drawEllipse(centre, radius + 4, radius + 4)
 
 
+def _wheel_steps(widget, event):
+    """Whole wheel notches of ``event`` (up = +1), carrying the remainder of
+    fine-grained devices such as trackpads on ``widget``."""
+    total = getattr(widget, "_wheel_rest", 0) + event.angleDelta().y()
+    steps = int(total / 120)
+    widget._wheel_rest = total - steps * 120
+    return steps
+
+
 class RangeSlider(QWidget):
     """
     Custom Range Slider widget that allows selecting a range between min and max values.
@@ -1779,6 +1788,20 @@ class RangeSlider(QWidget):
             self.setValues(lower, upper)
             return
         super().keyPressEvent(event)
+
+    def wheelEvent(self, event):
+        """One wheel notch moves the handle nearest the pointer by one unit."""
+        steps = _wheel_steps(self, event)
+        if steps:
+            pos = (event.pos().x() if self.orientation == Qt.Horizontal else event.pos().y()) - self.edge
+            lower, upper = self.lower_value, self.upper_value
+            if abs(pos - self.lower_pos) <= abs(pos - self.upper_pos):
+                lower = max(self.min_val, min(lower + steps, upper))
+            else:
+                upper = min(self.max_val, max(upper + steps, lower))
+            if (lower, upper) != (self.lower_value, self.upper_value):
+                self.setValues(lower, upper)
+        event.accept()
 
     def mousePressEvent(self, event):
         """Handle mouse press events to start dragging handles"""
@@ -2033,6 +2056,14 @@ class CustomSlider(QSlider):
     def keyPressEvent(self, event):
         self._kbd_focus = True
         super().keyPressEvent(event)
+
+    def wheelEvent(self, event):
+        """One wheel notch changes the value by one unit (Qt's default is
+        several steps per notch)."""
+        steps = _wheel_steps(self, event)
+        if steps:
+            self.setValue(self.value() + steps)
+        event.accept()
 
     def mousePressEvent(self, event):
         """Handle mouse press events without propagation"""
@@ -3012,20 +3043,19 @@ class MaxSizeSpinBox(QSpinBox):
 
 
 class WheelGuard(QObject):
-    """Event filter that keeps the mouse wheel from changing a spin box, slider
-    or combo box the user has not clicked: over such a widget the wheel
-    scrolls the enclosing scroll area instead, so scrolling the side panel
-    never alters a setting by accident.
+    """Event filter that keeps the mouse wheel from changing a spin box or
+    combo box the user has not clicked: over such a widget the wheel scrolls
+    the enclosing scroll area instead, so scrolling the side panel never
+    alters one by accident. Sliders are left alone: the wheel moves them one
+    unit per notch (their own ``wheelEvent``), clicked or not.
 
     ``guard(root)`` installs it on every such widget under ``root``.
     """
 
-    TYPES = (QAbstractSpinBox, QAbstractSlider, QComboBox)
+    TYPES = (QAbstractSpinBox, QComboBox)
 
     def guard(self, root):
         for widget in root.findChildren(self.TYPES):
-            if isinstance(widget, QScrollBar):
-                continue
             widget.setFocusPolicy(Qt.StrongFocus)       # the wheel does not give focus
             widget.installEventFilter(self)
 

@@ -420,3 +420,68 @@ class TestComponentsAtTheImageBorder:
         assert light_analyzer.total_length == pytest.approx(72.24264068711929, abs=1e-9)
         assert len(light_analyzer.subgraphs) == 1
         assert light_analyzer.skel_image[35, 30:33].max() == 0
+
+
+# ---------------------------------------------------------------------------
+# Speed-ups must not change results: compare with the plain reference loops
+# ---------------------------------------------------------------------------
+
+def _reference_key_points(fg):
+    """End and branch points by testing each structural element at each pixel
+    (the method used before the one-pass classification)."""
+    rot = lambda base: [np.rot90(b, k=j) for b in base for j in range(4)]  # noqa: E731
+    selems_2 = rot([np.array([[0, 0, 1], [0, 1, 1], [0, 0, 0]]), np.array([[1, 0, 0], [1, 1, 0], [0, 0, 0]])])
+    selems_3 = rot([np.array(m) for m in ([[0, 1, 0], [1, 1, 1], [0, 0, 0]], [[1, 0, 1], [0, 1, 0], [1, 0, 0]],
+                                           [[1, 0, 1], [0, 1, 0], [0, 1, 0]], [[0, 1, 0], [1, 1, 0], [0, 0, 1]],
+                                           [[0, 0, 1], [1, 1, 0], [0, 0, 1]])])
+    selems_4 = selems_3 + [np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]]), np.array([[1, 0, 1], [0, 1, 0], [1, 0, 1]])]
+    selems_4 += rot([np.array(m) for m in ([[0, 0, 1], [1, 1, 0], [0, 1, 1]], [[0, 1, 0], [0, 1, 1], [1, 1, 0]],
+                                            [[0, 1, 0], [1, 1, 1], [1, 0, 0]])])
+    padded = np.pad(fg, 1)
+    ends, branches = np.zeros_like(fg), np.zeros_like(fg)
+    for r, c in np.argwhere(fg):
+        window = padded[r:r + 3, c:c + 3]
+        n = int(window.sum()) - 1
+        match = lambda selems: any(np.array_equal(window, s.astype(bool)) for s in selems)  # noqa: E731
+        ends[r, c] = n == 1 or (n == 2 and match(selems_2))
+        branches[r, c] = (n == 3 and match(selems_3)) or (n == 4 and match(selems_4)) or n > 4
+    return ends, branches
+
+
+@pytest.mark.parametrize("density", [0.15, 0.35, 0.6])
+def test_key_points_match_the_per_pixel_reference(density):
+    from cabana.analyzer import skeleton_key_points
+    rng = np.random.default_rng(int(density * 100))
+    fg = rng.random((60, 70)) < density          # every neighbourhood pattern, including at the border
+    ends, branches = skeleton_key_points(fg)
+    ref_ends, ref_branches = _reference_key_points(fg)
+    np.testing.assert_array_equal(ends, ref_ends)
+    np.testing.assert_array_equal(branches, ref_branches)
+    assert ends.any() and branches.any() and not (ends & branches).any()
+
+
+def test_curvature_matches_the_point_by_point_reference():
+    # a path that turns, doubles back and passes one pixel twice
+    path = [(10, c) for c in range(5, 30)] + [(r, 29) for r in range(11, 25)] + \
+           [(24, c) for c in range(28, 12, -1)] + [(r, 13) for r in range(23, 9, -1)]
+    a = SkeletonAnalyzer(skel_thresh=5, branch_thresh=3, hole_threshold=4, dark_line=False)
+    a.pruned_image = np.zeros((40, 40), dtype=np.uint8)
+    G = nx.Graph()
+    G.add_edge(path[0], path[-1], path=path)
+    G.add_edge((0, 0), (0, 1), path=[])               # an edge without a path is skipped
+    a.subgraphs = [G]
+    for win_sz in (5, 11, 21):
+        a.calc_curve_all(win_sz)
+        side = win_sz // 2
+        points = np.pad(np.asarray(path), ((side, side), (0, 0)), mode='reflect', reflect_type='odd')
+        total, count = np.zeros((40, 40)), np.zeros((40, 40), dtype=int)
+        for j in range(side, len(points) - side):
+            t1 = np.arctan2(points[j - side, 0] - points[j, 0], points[j, 1] - points[j - side, 1])
+            t2 = np.arctan2(points[j, 0] - points[j + side, 0], points[j + side, 1] - points[j, 1])
+            diff = abs(t1 - t2)
+            total[points[j, 0], points[j, 1]] += np.rad2deg(2 * np.pi - diff if diff >= np.pi else diff)
+            count[points[j, 0], points[j, 1]] += 1
+        expected = np.divide(total, count, out=np.zeros_like(total), where=count > 0)
+        assert count.max() == 2                       # the doubled pixel is averaged over both passes
+        np.testing.assert_allclose(a.curve_map_all, expected, rtol=1e-12, atol=1e-12)
+        assert a.avg_curve_all == pytest.approx(expected[count > 0].mean(), rel=1e-12)

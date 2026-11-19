@@ -7,6 +7,10 @@ of the changelog (docs/source/changelog.md), which holds the full list.
 from .updates import is_newer
 
 NOTES = {
+    "0.4.3": [
+        "Faster analysis with unchanged results: about a third less time on a 3300 px test image.",
+        "The side panel now opens at its narrower width.",
+    ],
     "0.4.2": [
         "Help > Install GPU Support replaces a CPU-only PyTorch by the build for an NVIDIA "
         "graphics card (Windows and Linux).",

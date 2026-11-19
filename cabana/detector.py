@@ -7,6 +7,7 @@ from .constants import *
 from .log import Log
 import matplotlib.pyplot as plt
 from scipy.ndimage import convolve, gaussian_filter, gaussian_filter1d
+from numba import jit
 from .utils import (LinesUtil, Junction, Crossref, Line, convolve_gauss,
                    bresenham, fix_locations, regularize_normals, interpolate_gradient_test,
                    closest_point, normalize_to_half_circle)
@@ -62,6 +63,83 @@ def _eigh_2x2_symmetric(a, b, c):
     eigvecs[..., 0, 1] = cos_phi
     eigvecs[..., 1, 1] = sin_phi
     return eigvals, eigvecs
+
+
+@jit(nopython=True, cache=True)
+def _scan_edges(pos_y, pos_x, normal_y, normal_x, r0, c0, eigval, ev0, ev1, pp1, pp2, grad_rl,
+                gray_s, max_length, max_half_width, min_rise):
+    """Distance from every centre-line point to the fibre edge on its left and
+    right (0 where none is found), with the edge strength there.
+
+    From each point (``pos_y``, ``pos_x``; nearest pixel ``r0``, ``c0``) the
+    image is scanned along the normal in both directions, up to ``max_length``
+    pixels. The first pixel accepted as an edge must be a maximum of the
+    gradient magnitude (``eigval`` < 0 with the sub-pixel offset ``pp1``,
+    ``pp2`` inside the pixel) that passes three tests:
+
+    * its principal direction (``ev0``, ``ev1``) is within 60 degrees of the
+      normal. A scan that has walked into a neighbouring fibre lands on that
+      fibre's edge, whose direction is along this line: such spurs are dropped.
+    * the smoothed intensity ``gray_s`` has risen at least ``min_rise`` of the
+      way from the ridge to the brightest value of the scan (the local
+      background). A maximum one or two pixels from the ridge, still inside
+      the fibre plateau, is common on textured tissue and would collapse the
+      boundary onto the centre line.
+    * it lies within ``max_half_width`` of the centre line: beyond about
+      2.5 sigma of the largest detection scale it cannot belong to a line of
+      the requested width range. ``fill_gaps`` interpolates dropped points.
+
+    Compiled: this loop over every point of every fibre was the slowest part
+    of detection."""
+    height, width = gray_s.shape
+    num_points = pos_y.shape[0]
+    width_l = np.zeros(num_points)
+    width_r = np.zeros(num_points)
+    grad_l = np.zeros(num_points)
+    grad_r = np.zeros(num_points)
+    for j in range(num_points):
+        py, px = pos_y[j], pos_x[j]
+        r, c = r0[j], c0[j]
+        ny, nx = normal_y[j], normal_x[j]
+        line = bresenham(ny, nx, max_length)
+        num_line = line.shape[0]
+        for direct in (-1, 1):
+            # local background on this side: the brightest smoothed intensity along the scan
+            y = min(max(r + direct * line[0, 0], 0), height - 1)
+            x = min(max(c + direct * line[0, 1], 0), width - 1)
+            i_ridge = gray_s[y, x]
+            i_max = i_ridge
+            for k in range(1, num_line):
+                y = min(max(r + direct * line[k, 0], 0), height - 1)
+                x = min(max(c + direct * line[k, 1], 0), width - 1)
+                if gray_s[y, x] > i_max:
+                    i_max = gray_s[y, x]
+            i_range = i_max - i_ridge
+            if i_range <= 0.0:
+                continue
+            for k in range(num_line):
+                y = min(max(r + direct * line[k, 0], 0), height - 1)
+                x = min(max(c + direct * line[k, 1], 0), width - 1)
+                if not (-eigval[y, x] > 0.0):
+                    continue
+                p1, p2 = pp1[y, x], pp2[y, x]
+                if not (abs(p1) <= 0.5 and abs(p2) <= 0.5):
+                    continue
+                if abs(ev0[y, x] * ny + ev1[y, x] * nx) < 0.5:
+                    continue
+                if (gray_s[y, x] - i_ridge) < min_rise * i_range:
+                    continue
+                t = ny * (py - (r + direct * line[k, 0] + p1)) + nx * (px - (c + direct * line[k, 1] + p2))
+                if abs(t) > max_half_width:
+                    continue
+                if direct == 1:
+                    grad_r[j] = grad_rl[y, x]
+                    width_r[j] = abs(t)
+                else:
+                    grad_l[j] = grad_rl[y, x]
+                    width_l[j] = abs(t)
+                break
+    return width_l, width_r, grad_l, grad_r
 
 
 def _principal_eig_2x2(a, b, c):
@@ -494,6 +572,13 @@ class FibreDetector:
 
                         num_junc += 1
 
+    @staticmethod
+    def _half_circle(angle):
+        """Angles (radians, from arctan2) folded into [0, pi): the array form
+        of ``normalize_to_half_circle``."""
+        angle = np.where(angle < 0.0, angle + 2.0 * np.pi, angle)
+        return np.where(angle >= np.pi, angle - np.pi, angle)
+
     def compute_contours(self):
         height, width = self.eigval.shape[:2]
         label = np.zeros((height, width), dtype=int)
@@ -502,13 +587,18 @@ class FibreDetector:
         num_cont, num_junc = 0, 0
         self.junctions, self.contours = [], []
 
-        cross = []
-        area = 0
-        for r_idx in range(height):
-            for c_idx in range(width):
-                if self.ismax[r_idx, c_idx] >= 2:
-                    area += 1
-                    cross.append(Crossref(r_idx, c_idx, self.eigval[r_idx, c_idx], False))
+        # starting points in row-major order, as a pixel-by-pixel scan would find them
+        start_r, start_c = np.nonzero(self.ismax >= 2)
+        area = len(start_r)
+        cross = [Crossref(r_idx, c_idx, value, False)
+                 for r_idx, c_idx, value in zip(start_r.tolist(), start_c.tolist(),
+                                                self.eigval[start_r, start_c].tolist())]
+
+        # Direction of the line at every pixel, in [0, pi), and the direction
+        # of its normal: looked up at each step of the trace below (computing
+        # them point by point took about a quarter of the tracing time)
+        line_alpha = self._half_circle(np.arctan2(self.normy, -self.normx))
+        normal_beta = self._half_circle(np.arctan2(self.normy, self.normx))
 
         response_2d = self.eigval.reshape(height, width)
         resp_dr = convolve(response_2d, kernel_r, mode='mirror')
@@ -553,9 +643,7 @@ class FibreDetector:
             # so a loop closing on it is recognised (row[0] == posy[y, x])
             row.append(self.posy[maxy, maxx])
             col.append(self.posx[maxy, maxx])
-            nx = -self.normx[maxy, maxx]
-            ny = self.normy[maxy, maxx]
-            alpha = normalize_to_half_circle(np.arctan2(ny, nx))
+            alpha = line_alpha[maxy, maxx]
             octant = int(np.floor(4.0 / np.pi * alpha + 0.5)) % 4
 
             ''' * Select normal to the line. The normal points to the right of the line as the
@@ -583,9 +671,7 @@ class FibreDetector:
                 if nexty < 0 or nexty >= height or nextx < 0 or nextx >= width:
                     continue
                 if self.ismax[nexty, nextx] > 0:
-                    nx = -self.normx[nexty, nextx]
-                    ny = self.normy[nexty, nextx]
-                    nextalpha = normalize_to_half_circle(np.arctan2(ny, nx))
+                    nextalpha = line_alpha[nexty, nextx]
                     diff = abs(alpha - nextalpha)
                     if diff >= np.pi / 2.0:
                         diff = np.pi - diff
@@ -598,9 +684,7 @@ class FibreDetector:
                 if cls == LinesUtil.ContourClass.cont_closed:
                     break           # closed in the first pass: the reverse pass would re-trace the loop
                 y, x = maxy, maxx
-                ny, nx = self.normy[y, x], -self.normx[y, x]
-
-                alpha = normalize_to_half_circle(np.arctan2(ny, nx))
+                alpha = line_alpha[y, x]
                 last_octant = int(np.floor(4.0 / np.pi * alpha + 0.5)) % 4 if it == 1 else \
                     int(np.floor(4.0 / np.pi * alpha + 0.5)) % 4 + 4
                 last_beta = alpha + np.pi / 2.0
@@ -615,11 +699,10 @@ class FibreDetector:
                     resp.reverse()
 
                 while True:
-                    ny, nx = self.normy[y, x], -self.normx[y, x]
                     py, px = self.posy[y, x], self.posx[y, x]
 
                     # Orient line direction with respect to the last line direction
-                    alpha = normalize_to_half_circle(np.arctan2(ny, nx))
+                    alpha = line_alpha[y, x]
                     octant = int(np.floor(4.0 / np.pi * alpha + 0.5)) % 4
 
                     if octant == 0 and 3 <= last_octant <= 5:
@@ -645,8 +728,7 @@ class FibreDetector:
                         nextpy, nextpx = self.posy[nexty, nextx], self.posx[nexty, nextx]
                         dy, dx = nextpy - py, nextpx - px
                         dist = np.sqrt(dx ** 2 + dy ** 2)
-                        ny, nx = self.normy[nexty, nextx], -self.normx[nexty, nextx]
-                        nextalpha = normalize_to_half_circle(np.arctan2(ny, nx))
+                        nextalpha = line_alpha[nexty, nextx]
                         diff = abs(alpha - nextalpha)
                         if diff >= np.pi / 2.0:
                             diff = np.pi - diff
@@ -663,8 +745,7 @@ class FibreDetector:
                         if nexty < 0 or nexty >= height or nextx < 0 or nextx >= width:
                             continue
                         if self.ismax[nexty, nextx] > 0:
-                            ny, nx = self.normy[nexty, nextx], -self.normx[nexty, nextx]
-                            nextalpha = normalize_to_half_circle(np.arctan2(ny, nx))
+                            nextalpha = line_alpha[nexty, nextx]
                             diff = abs(alpha - nextalpha)
                             if diff >= np.pi / 2.0:
                                 diff = np.pi - diff
@@ -684,9 +765,7 @@ class FibreDetector:
                     row.append(self.posy[y, x])
                     col.append(self.posx[y, x])
                     # Orient normal to the line direction with respect to the last normal
-                    ny, nx = self.normy[y, x], self.normx[y, x]
-
-                    beta = normalize_to_half_circle(np.arctan2(ny, nx))
+                    beta = normal_beta[y, x]
                     diff1 = min(abs(beta - last_beta), 2.0 * np.pi - abs(beta - last_beta))
                     alt_beta = (beta + np.pi) % (2.0 * np.pi)  # Normalize alternative beta
                     diff2 = min(abs(alt_beta - last_beta), 2.0 * np.pi - abs(alt_beta - last_beta))
@@ -889,85 +968,18 @@ class FibreDetector:
         eigval, ev0, ev1, pp1, pp2, grad_rl = edge
         height, width = gray_s.shape[:2]
         regularize_normals(cont)
-        num_points = cont.num
-        width_l = np.zeros(num_points, dtype=float)
-        width_r = np.zeros(num_points, dtype=float)
-        grad_l = np.zeros(num_points, dtype=float)
-        grad_r = np.zeros(num_points, dtype=float)
-        pos_x = np.zeros(num_points, dtype=float)
-        pos_y = np.zeros(num_points, dtype=float)
-
-        for j in range(num_points):
-            py, px = cont.row[j], cont.col[j]
-            pos_y[j], pos_x[j] = py, px
-            r, c = LinesUtil.BR(round(py), height), LinesUtil.BC(round(px), width)
-            ny, nx = np.sin(cont.angle[j]), np.cos(cont.angle[j])
-
-            line = bresenham(ny, nx, max_length)
-            num_line = line.shape[0]
-            width_r[j] = width_l[j] = 0
-
-            for direct in [-1, 1]:
-                # Local background on this side: the brightest smoothed
-                # intensity along the scan (for a dark line). Candidates
-                # are accepted only if the intensity at the candidate has
-                # risen at least EDGE_MIN_RISE of the way from the ridge
-                # to that background. The reference implementation accepts
-                # the first gradient-magnitude maximum of any kind, but
-                # on textured tissue a maximum one or two pixels from the
-                # ridge, still inside the fibre plateau, is common and
-                # collapses the boundary onto the centre line.
-                scan_y = np.clip(r + direct * line[:, 0], 0, height - 1)
-                scan_x = np.clip(c + direct * line[:, 1], 0, width - 1)
-                scan_i = gray_s[scan_y, scan_x]
-                i_ridge = scan_i[0]
-                i_range = scan_i.max() - i_ridge
-                if i_range <= 0.0:
-                    continue
-                for k in range(num_line):
-                    y, x = scan_y[k], scan_x[k]
-                    val = -eigval[y, x]
-                    if val > 0.0:
-                        p1, p2 = pp1[y, x], pp2[y, x]
-
-                        if abs(p1) <= 0.5 and abs(p2) <= 0.5:
-                            # Require the |grad| Hessian's principal
-                            # eigenvector at this pixel to be roughly
-                            # parallel to the line normal (ny, nx). At a
-                            # genuine line edge the gradient is
-                            # perpendicular to the line, so the eigenvector
-                            # of the largest |grad|-Hessian eigenvalue
-                            # aligns with the line normal. A scan that has
-                            # walked into a neighbouring fibre tends to
-                            # land on that fibre's edge, whose eigenvector
-                            # points along OUR line direction (~90 deg off
-                            # our normal). Rejecting candidates more than
-                            # 60 deg off the normal kills those "spurs"
-                            # while still tolerating moderate curvature and
-                            # smoothing-induced misalignment.
-                            ev_dot = ev0[y, x] * ny + ev1[y, x] * nx
-                            if abs(ev_dot) < 0.5:
-                                continue
-                            # Edge must sit on the ridge-to-background
-                            # intensity ramp, not inside the plateau.
-                            if (scan_i[k] - i_ridge) < EDGE_MIN_RISE * i_range:
-                                continue
-                            t = ny * (py - (r + direct * line[k, 0] + p1)) + nx * (px - (c + direct * line[k, 1] + p2))
-                            # Cap by the largest detection scale: a half-
-                            # width beyond ~2.5*sigma_max cannot belong to
-                            # a line of the requested width range, so it
-                            # is almost certainly a neighbouring fibre's
-                            # edge. Drop it; fill_gaps interpolates from
-                            # neighbouring good points.
-                            if abs(t) > max_half_width:
-                                continue
-                            if direct == 1:
-                                grad_r[j] = grad_rl[y, x]
-                                width_r[j] = abs(t)
-                            else:
-                                grad_l[j] = grad_rl[y, x]
-                                width_l[j] = abs(t)
-                            break
+        pos_y = np.array(cont.row, dtype=float)
+        pos_x = np.array(cont.col, dtype=float)
+        angle = np.asarray(cont.angle, dtype=float)
+        # nearest pixel of each point, mirrored at the image border (LinesUtil.BR / BC)
+        r0 = np.rint(pos_y).astype(np.int64)
+        c0 = np.rint(pos_x).astype(np.int64)
+        r0 = np.where(r0 < 0, np.abs(r0), np.where(r0 >= height, 2 * height - r0 - 2, r0))
+        c0 = np.where(c0 < 0, np.abs(c0), np.where(c0 >= width, 2 * width - c0 - 2, c0))
+        width_l, width_r, grad_l, grad_r = _scan_edges(
+            pos_y, pos_x, np.sin(angle), np.cos(angle), r0, c0,
+            eigval, ev0, ev1, pp1, pp2, grad_rl, gray_s,
+            max_length, max_half_width, EDGE_MIN_RISE)
         fix_locations(cont, width_l, width_r, grad_l, grad_r, pos_y, pos_x,
                       sigma_c, self.correct_pos, self.mode)
 
@@ -1047,31 +1059,25 @@ class FibreDetector:
     def get_results(self):
         all_contour_points, all_width_left, all_width_right = [], [], []
         int_width_img = np.zeros(self.image.shape[:2], dtype=np.uint8)
+
+        def pixels(x, y):
+            # nearest pixel as (x, y) pairs; rint rounds halves to even, like round()
+            return np.stack((np.rint(x), np.rint(y)), axis=1).astype(np.int64)
+
         for cont in self.contours:
-            num_points = cont.num
-            # last_w_r, last_w_l = 0, 0
-            contour_points, width_left, width_right = [], [], []
-
-            for j in range(num_points):
-                px, py = cont.col[j], cont.row[j]
-                nx, ny = np.cos(cont.angle[j]), np.sin(cont.angle[j])
-                contour_points.append([round(px), round(py)])
-
-                px_r, py_r = px + cont.width_r[j] * nx, py + cont.width_r[j] * ny
-                px_l, py_l = px - cont.width_l[j] * nx, py - cont.width_l[j] * ny
-                int_width_img[int(py), int(px)] = int(cont.width_r[j] + cont.width_l[j])
-
-                # if last_w_r > 0 and cont.width_r[j] > 0:
-                width_right.append([round(px_r), round(py_r)])
-
-                # if last_w_l > 0 and cont.width_l[j] > 0:
-                width_left.append([round(px_l), round(py_l)])
-
-                # last_w_r, last_w_l = cont.width_r[j], cont.width_l[j]
-
-            all_contour_points.append(np.array(contour_points))
-            all_width_right.append(np.array(width_right))
-            all_width_left.append(np.array(width_left))
+            if cont.num == 0:
+                for points in (all_contour_points, all_width_right, all_width_left):
+                    points.append(np.array([]))
+                continue
+            px, py = np.asarray(cont.col, dtype=float), np.asarray(cont.row, dtype=float)
+            angle = np.asarray(cont.angle, dtype=float)
+            nx, ny = np.cos(angle), np.sin(angle)
+            w_r, w_l = np.asarray(cont.width_r, dtype=float), np.asarray(cont.width_l, dtype=float)
+            # where a line passes a pixel twice the later point's width is kept
+            int_width_img[py.astype(np.int64), px.astype(np.int64)] = (w_r + w_l).astype(np.int64)
+            all_contour_points.append(pixels(px, py))
+            all_width_right.append(pixels(px + w_r * nx, py + w_r * ny))
+            all_width_left.append(pixels(px - w_l * nx, py - w_l * ny))
 
         result_img = self.image.copy() if self.image.ndim > 2 else np.repeat(self.image[:, :, None], 3, axis=2)
         contour_img = cv2.polylines(result_img, all_contour_points, False, (255, 255, 0))
@@ -1084,8 +1090,9 @@ class FibreDetector:
         binary_contours = np.ones((height, width), dtype=np.uint8) * 255
 
         for contour_points in all_contour_points:
-            for points in contour_points:
-                binary_contours[min([points[1], height - 1]), min([points[0], width - 1])] = 0
+            if len(contour_points):
+                binary_contours[np.minimum(contour_points[:, 1], height - 1),
+                                np.minimum(contour_points[:, 0], width - 1)] = 0
 
         binary_widths = np.ones((height, width), dtype=np.uint8) * 255
         for width_left, width_right in zip(all_width_left, all_width_right):

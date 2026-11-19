@@ -244,15 +244,20 @@ def sbs_color_survey(img, info_map, save_name):
 
 
 def mean_image(image, labels):
-    im_rp = image.reshape(-1, image.shape[2])
-    labels_1d = np.reshape(labels, -1)
-    uni = np.unique(labels_1d)
-    uu = np.zeros(im_rp.shape)
-    for i in uni:
-        loc = np.where(labels_1d == i)[0]
-        mm = np.mean(im_rp[loc, :], axis=0)
-        uu[loc, :] = mm
-    return np.reshape(uu, [image.shape[0], image.shape[1], image.shape[2]]).astype('uint8')
+    """Image in which every pixel takes the mean colour of its label region
+    (truncated to uint8). One pass over the image per channel: the sums are
+    of whole numbers, so they are exact whatever the order of addition."""
+    channels = image.shape[2]
+    flat = np.reshape(labels, -1)
+    _, inverse = np.unique(flat, return_inverse=True)
+    inverse = inverse.reshape(-1)
+    counts = np.bincount(inverse)
+    pixels = image.reshape(-1, channels)
+    out = np.empty(pixels.shape, dtype=np.uint8)
+    for ch in range(channels):
+        means = np.bincount(inverse, weights=pixels[:, ch]) / counts
+        out[:, ch] = means[inverse].astype('uint8')
+    return out.reshape(image.shape[0], image.shape[1], channels)
 
 
 def is_greyscale(rgb_image):

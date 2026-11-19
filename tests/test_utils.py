@@ -518,3 +518,14 @@ def test_block_grid_matches_how_batch_runs_split():
     assert block_grid(14211, 10563, 0) == (1, 1, 14211, 10563)       # no limit
     rows, cols, bh, bw = block_grid(12001, 9999, 4096)
     assert bh <= 4096 and bw <= 4096 and rows * bh >= 12001 and cols * bw >= 9999
+
+
+def test_mean_image_matches_the_per_region_reference():
+    rng = np.random.default_rng(3)
+    img = rng.integers(0, 256, (40, 50, 3), dtype=np.uint8)
+    labels = rng.integers(0, 60, (40, 50))
+    labels[labels == 5] = 9000                        # label values need not be consecutive
+    expected = np.zeros(img.shape)
+    for value in np.unique(labels):
+        expected[labels == value] = img[labels == value].mean(axis=0)
+    np.testing.assert_array_equal(mean_image(img, labels), expected.astype('uint8'))

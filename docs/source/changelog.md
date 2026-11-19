@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.3
+
+- Faster analysis, with unchanged results: fibre detection, segmentation
+  and skeleton analysis take less time, most of all on large images. On a
+  3300 px test image a full run takes about a third less time. The first
+  fibre detection after installing takes a little longer, once.
+- Fixed: the side panel still opened at its former width; it now opens at
+  the narrower width introduced in 0.4.2.
+
 ## 0.4.2
 
 - **Help > Install GPU Support** (Windows and Linux) replaces a CPU-only

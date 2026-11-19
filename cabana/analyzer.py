@@ -11,6 +11,60 @@ from scipy.interpolate import splprep, splev
 from skimage.morphology import skeletonize, remove_small_holes
 
 
+def skeleton_key_points(foreground):
+    """End points and branch points of a skeleton, as two boolean maps.
+
+    ``foreground`` is the boolean skeleton. A pixel with one neighbour is an
+    end point and one with more than four a branch point; with two, three or
+    four neighbours it depends on how they are arranged, given by the
+    structural elements below (pixels outside the image count as background).
+
+    Every pixel is classified in one pass: its 3x3 neighbourhood is packed
+    into a 9-bit code, and a pixel matches a structural element when its code
+    equals the element's. Testing the elements pixel by pixel in Python took
+    most of the graph construction time."""
+    foreground = np.asarray(foreground, dtype=bool)
+    kernel = np.array([[1, 1, 1], [1, 0, 1], [1, 1, 1]], dtype=np.uint8)
+    num_neighbors = ndi.convolve(foreground.astype(np.uint8), kernel, mode="constant")
+
+    # Define structural elements for endpoint detection
+    selems_2 = list()
+    selems_2.append(np.array([[0, 0, 1], [0, 1, 1], [0, 0, 0]]))
+    selems_2.append(np.array([[1, 0, 0], [1, 1, 0], [0, 0, 0]]))
+    selems_2 = [np.rot90(selems_2[i], k=j) for i in range(2) for j in range(4)]
+
+    # Define structural elements for branch point detection with 3 neighbors
+    selems_3 = list()
+    selems_3.append(np.array([[0, 1, 0], [1, 1, 1], [0, 0, 0]]))
+    selems_3.append(np.array([[1, 0, 1], [0, 1, 0], [1, 0, 0]]))
+    selems_3.append(np.array([[1, 0, 1], [0, 1, 0], [0, 1, 0]]))
+    selems_3.append(np.array([[0, 1, 0], [1, 1, 0], [0, 0, 1]]))
+    selems_3.append(np.array([[0, 0, 1], [1, 1, 0], [0, 0, 1]]))
+    selems_3 = [np.rot90(selems_3[i], k=j) for i in range(5) for j in range(4)]
+
+    # Define structural elements for branch point detection with 4 neighbors
+    selems_4 = selems_3.copy()
+    selems_4.append(np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]]))
+    selems_4.append(np.array([[1, 0, 1], [0, 1, 0], [1, 0, 1]]))
+    selems_tmp = list()
+    selems_tmp.append(np.array([[0, 0, 1], [1, 1, 0], [0, 1, 1]]))
+    selems_tmp.append(np.array([[0, 1, 0], [0, 1, 1], [1, 1, 0]]))
+    selems_tmp.append(np.array([[0, 1, 0], [1, 1, 1], [1, 0, 0]]))
+    selems_4.extend([np.rot90(selems_tmp[i], k=j) for i in range(3) for j in range(4)])
+
+    weights = 1 << np.arange(9).reshape(3, 3)
+    codes = ndi.correlate(foreground.astype(np.int32), weights.astype(np.int32), mode="constant")
+
+    def matches(selems):
+        return np.isin(codes, [int((selem.astype(bool) * weights).sum()) for selem in selems])
+
+    is_endpoint = foreground & ((num_neighbors == 1) | ((num_neighbors == 2) & matches(selems_2)))
+    is_branchpoint = foreground & (((num_neighbors == 3) & matches(selems_3)) |
+                                   ((num_neighbors == 4) & matches(selems_4)) |
+                                   (num_neighbors > 4))
+    return is_endpoint, is_branchpoint
+
+
 class SkeletonAnalyzer:
     """
     Analyzes the morphology of skeletonized structures in binary images.
@@ -397,49 +451,8 @@ class SkeletonAnalyzer:
             # Relabel after deleting short skeletons
             labels, num = ndi.label(self.skel_image, eight_con)
 
-        # Count the number of neighbors for each pixel
-        kernel = np.array([[1, 1, 1], [1, 0, 1], [1, 1, 1]], dtype=np.uint8)
-        num_neighbors = ndi.convolve((self.skel_image == self.FOREGROUND).astype(np.uint8),
-                                     kernel, mode="constant")
-
         height, width = self.skel_image.shape[:2]
-
-        def get_binary_3x3(img, row, col):
-            i1 = False if row - 1 < 0 or col - 1 < 0 else img[row - 1, col - 1] == self.FOREGROUND
-            i2 = False if row - 1 < 0 else img[row - 1, col] == self.FOREGROUND
-            i3 = False if row - 1 < 0 or col + 1 >= width else img[row - 1, col + 1] == self.FOREGROUND
-            i4 = False if col - 1 < 0 else img[row, col - 1] == self.FOREGROUND
-            i5 = True  # Center pixel (always foreground in this context)
-            i6 = False if col + 1 >= width else img[row, col + 1] == self.FOREGROUND
-            i7 = False if row + 1 >= height or col - 1 < 0 else img[row + 1, col - 1] == self.FOREGROUND
-            i8 = False if row + 1 >= height else img[row + 1, col] == self.FOREGROUND
-            i9 = False if row + 1 >= height or col + 1 >= width else img[row + 1, col + 1] == self.FOREGROUND
-            return np.array([[i1, i2, i3], [i4, i5, i6], [i7, i8, i9]])
-
-        # Define structural elements for endpoint detection
-        selems_2 = list()
-        selems_2.append(np.array([[0, 0, 1], [0, 1, 1], [0, 0, 0]]))
-        selems_2.append(np.array([[1, 0, 0], [1, 1, 0], [0, 0, 0]]))
-        selems_2 = [np.rot90(selems_2[i], k=j) for i in range(2) for j in range(4)]
-
-        # Define structural elements for branch point detection with 3 neighbors
-        selems_3 = list()
-        selems_3.append(np.array([[0, 1, 0], [1, 1, 1], [0, 0, 0]]))
-        selems_3.append(np.array([[1, 0, 1], [0, 1, 0], [1, 0, 0]]))
-        selems_3.append(np.array([[1, 0, 1], [0, 1, 0], [0, 1, 0]]))
-        selems_3.append(np.array([[0, 1, 0], [1, 1, 0], [0, 0, 1]]))
-        selems_3.append(np.array([[0, 0, 1], [1, 1, 0], [0, 0, 1]]))
-        selems_3 = [np.rot90(selems_3[i], k=j) for i in range(5) for j in range(4)]
-
-        # Define structural elements for branch point detection with 4 neighbors
-        selems_4 = selems_3.copy()
-        selems_4.append(np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]]))
-        selems_4.append(np.array([[1, 0, 1], [0, 1, 0], [1, 0, 1]]))
-        selems_tmp = list()
-        selems_tmp.append(np.array([[0, 0, 1], [1, 1, 0], [0, 1, 1]]))
-        selems_tmp.append(np.array([[0, 1, 0], [0, 1, 1], [1, 1, 0]]))
-        selems_tmp.append(np.array([[0, 1, 0], [1, 1, 1], [1, 0, 0]]))
-        selems_4.extend([np.rot90(selems_tmp[i], k=j) for i in range(3) for j in range(4)])
+        is_endpoint, is_branchpoint = skeleton_key_points(self.skel_image == self.FOREGROUND)
 
         self.pruned_image = self.skel_image.copy()
 
@@ -459,33 +472,11 @@ class SkeletonAnalyzer:
             canvas = np.zeros((r1 - r0, c1 - c0), dtype=np.uint8)
             canvas[labels[r0:r1, c0:c1] == label] = self.FOREGROUND
 
-            # Find endpoints and branch points
-            endpoints, branchpoints = [], []
-            for row in range(row_start, row_end + 1):
-                for col in range(col_start, col_end + 1):
-                    if canvas[row - r0, col - c0] == self.FOREGROUND:
-                        if num_neighbors[row, col] == 1:
-                            endpoints.append((row, col))
-                        elif num_neighbors[row, col] == 2:
-                            binary = get_binary_3x3(self.skel_image, row, col)
-                            for selem in selems_2:
-                                if not np.logical_xor(binary, selem).any():
-                                    endpoints.append((row, col))
-                                    break
-                        elif num_neighbors[row, col] == 3:
-                            binary = get_binary_3x3(self.skel_image, row, col)
-                            for selem in selems_3:
-                                if not np.logical_xor(binary, selem).any():
-                                    branchpoints.append((row, col))
-                                    break
-                        elif num_neighbors[row, col] == 4:
-                            binary = get_binary_3x3(self.skel_image, row, col)
-                            for selem in selems_4:
-                                if not np.logical_xor(binary, selem).any():
-                                    branchpoints.append((row, col))
-                                    break
-                        elif num_neighbors[row, col] > 4:
-                            branchpoints.append((row, col))
+            # End points and branch points of this component, in row-major order
+            own = canvas == self.FOREGROUND
+            endpoints = [(r + r0, c + c0) for r, c in np.argwhere(own & is_endpoint[r0:r1, c0:c1]).tolist()]
+            branchpoints = [(r + r0, c + c0)
+                            for r, c in np.argwhere(own & is_branchpoint[r0:r1, c0:c1]).tolist()]
 
             # Create a graph for this component
             G = nx.Graph()
@@ -572,22 +563,18 @@ class SkeletonAnalyzer:
                     points = np.pad(np.asarray(edge_path), ((side, side), (0, 0)),
                                     mode='reflect', reflect_type='odd')
 
-                    # Calculate curvature at each point along the path
-                    for j in range(side, len(points) - side):
-                        # Calculate angles of line segments before and after the point
-                        theta1 = np.arctan2(
-                            points[j - side, 0] - points[j, 0], points[j, 1] - points[j - side, 1])
-                        theta2 = np.arctan2(
-                            points[j, 0] - points[j + side, 0], points[j + side, 1] - points[j, 1])
+                    # Curvature at every point of the path at once: the angle
+                    # between the segments reaching `side` points back and ahead
+                    n = len(points) - 2 * side
+                    before, here, after = points[:n], points[side:side + n], points[2 * side:]
+                    theta1 = np.arctan2(before[:, 0] - here[:, 0], here[:, 1] - before[:, 1])
+                    theta2 = np.arctan2(here[:, 0] - after[:, 0], after[:, 1] - here[:, 1])
+                    angle_diff = np.abs(theta1 - theta2)
+                    angle_diff = np.where(angle_diff >= np.pi, 2 * np.pi - angle_diff, angle_diff)
 
-                        # Calculate the angle difference (curvature)
-                        angle_diff = abs(theta1 - theta2)
-                        if angle_diff >= np.pi:
-                            angle_diff = 2 * np.pi - angle_diff
-
-                        # Store the curvature value and increment the count
-                        curve_map[points[j, 0], points[j, 1]] += np.rad2deg(angle_diff)
-                        count_map[points[j, 0], points[j, 1]] += 1
+                    # add.at adds in path order, also where a path passes a pixel twice
+                    np.add.at(curve_map, (here[:, 0], here[:, 1]), np.rad2deg(angle_diff))
+                    np.add.at(count_map, (here[:, 0], here[:, 1]), 1)
 
         # Calculate average curvature at each point
         calc_mask = count_map >= 1

@@ -272,21 +272,9 @@ class MainWindow(QMainWindow):
         margins = self.dock_layout.contentsMargins()
         self.dock_contents.setMinimumWidth(max(200, widest + margins.left() + margins.right() + 16))
 
-        # Set initial sizes so the left panel opens wide enough for the full Analysis tab labels.
-        # Account for all nesting: dock_layout margins, QGroupBox stylesheet padding+border,
-        # inner layout margins, and the splitter handle.
-        dock_margins = self.dock_layout.contentsMargins()
-        inner_margins = self.dock_inner_layout.contentsMargins()
-        # QGroupBox CSS: padding 8px L/R + border 1px L/R = 18px total
-        groupbox_chrome = 18
-        initial_dock_width = max(
-            self.dock_contents.minimumWidth(),
-            400
-            + dock_margins.left() + dock_margins.right()
-            + groupbox_chrome
-            + inner_margins.left() + inner_margins.right()
-            + self.splitter.handleWidth(),
-        )
+        # The panel opens at its minimum width (the widest page); the user can drag it wider.
+        # (A fixed 400 px plus margins, left from the tabbed layout, used to win here.)
+        initial_dock_width = self.dock_contents.minimumWidth()
         self.splitter.setSizes([initial_dock_width, 800])
 
         # Rail and splitter side by side in the main layout

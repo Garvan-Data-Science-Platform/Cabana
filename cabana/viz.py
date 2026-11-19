@@ -63,8 +63,12 @@ def _save_figure(fig, image_ax, image_height, save_path):
     fig.canvas.draw()
     shown = image_ax.get_window_extent().height      # image height in pixels at fig.dpi
     dpi = fig.dpi * image_height / max(shown, 1.0)
+    # matplotlib only hands over the cropped figure as an image file. Pass it
+    # on uncompressed (level 0) and compress once, on the final save:
+    # compressing it here too took about as long as writing the file.
     buf = io.BytesIO()
-    fig.savefig(buf, format='png', dpi=dpi, bbox_inches='tight', transparent=False, facecolor='white')
+    fig.savefig(buf, format='png', dpi=dpi, bbox_inches='tight', transparent=False, facecolor='white',
+                pil_kwargs={"compress_level": 0})
     buf.seek(0)
     Image.open(buf).convert('RGB').save(save_path)
 

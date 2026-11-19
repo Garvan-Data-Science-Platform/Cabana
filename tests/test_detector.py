@@ -763,3 +763,94 @@ class TestPrincipalEig:
         a[2, :10], b[2, :10], c[2, :10] = 0.0, 0.0, 0.0
         for got, want in zip(_principal_eig_2x2(a, b, c), self._reference(a, b, c)):
             assert np.array_equal(got, want)
+
+
+# ---------------------------------------------------------------------------
+# Speed-ups must not change results
+# ---------------------------------------------------------------------------
+
+def _reference_scan(pos_y, pos_x, angle, eigval, ev0, ev1, pp1, pp2, grad_rl, gray_s,
+                    max_length, max_half_width, min_rise):
+    """The width scan as the plain Python loop it was before being compiled."""
+    from cabana.utils import LinesUtil, bresenham
+    height, width = gray_s.shape
+    n = len(pos_y)
+    width_l, width_r, grad_l, grad_r = (np.zeros(n) for _ in range(4))
+    for j in range(n):
+        py, px = pos_y[j], pos_x[j]
+        r, c = LinesUtil.BR(round(py), height), LinesUtil.BC(round(px), width)
+        ny, nx = np.sin(angle[j]), np.cos(angle[j])
+        line = bresenham(ny, nx, max_length)
+        for direct in (-1, 1):
+            scan_y = np.clip(r + direct * line[:, 0], 0, height - 1)
+            scan_x = np.clip(c + direct * line[:, 1], 0, width - 1)
+            scan_i = gray_s[scan_y, scan_x]
+            i_ridge = scan_i[0]
+            i_range = scan_i.max() - i_ridge
+            if i_range <= 0.0:
+                continue
+            for k in range(line.shape[0]):
+                y, x = scan_y[k], scan_x[k]
+                if -eigval[y, x] > 0.0:
+                    p1, p2 = pp1[y, x], pp2[y, x]
+                    if abs(p1) <= 0.5 and abs(p2) <= 0.5:
+                        if abs(ev0[y, x] * ny + ev1[y, x] * nx) < 0.5:
+                            continue
+                        if (scan_i[k] - i_ridge) < min_rise * i_range:
+                            continue
+                        t = ny * (py - (r + direct * line[k, 0] + p1)) + nx * (px - (c + direct * line[k, 1] + p2))
+                        if abs(t) > max_half_width:
+                            continue
+                        if direct == 1:
+                            grad_r[j], width_r[j] = grad_rl[y, x], abs(t)
+                        else:
+                            grad_l[j], width_l[j] = grad_rl[y, x], abs(t)
+                        break
+    return width_l, width_r, grad_l, grad_r
+
+
+def test_compiled_width_scan_matches_the_python_loop():
+    from scipy.ndimage import gaussian_filter
+    from cabana.detector import _scan_edges, EDGE_MIN_RISE
+    rng = np.random.default_rng(11)
+    h, w, n = 48, 64, 400
+    smooth = lambda sigma: gaussian_filter(rng.standard_normal((h, w)), sigma)  # noqa: E731
+    eigval, grad_rl, gray_s = smooth(1.0), smooth(1.0), smooth(2.0) * 50
+    theta = rng.uniform(0, np.pi, (h, w))
+    ev0, ev1 = np.sin(theta), np.cos(theta)
+    pp1, pp2 = rng.uniform(-0.8, 0.8, (h, w)), rng.uniform(-0.8, 0.8, (h, w))
+    # points inside the image, on its border and just outside it (mirrored back in)
+    pos_y, pos_x = rng.uniform(-1.4, h + 0.4, n), rng.uniform(-1.4, w + 0.4, n)
+    angle = rng.uniform(0, 2 * np.pi, n)
+    r0 = np.rint(pos_y).astype(np.int64)
+    c0 = np.rint(pos_x).astype(np.int64)
+    r0 = np.where(r0 < 0, np.abs(r0), np.where(r0 >= h, 2 * h - r0 - 2, r0))
+    c0 = np.where(c0 < 0, np.abs(c0), np.where(c0 >= w, 2 * w - c0 - 2, c0))
+    got = _scan_edges(pos_y, pos_x, np.sin(angle), np.cos(angle), r0, c0,
+                      eigval, ev0, ev1, pp1, pp2, grad_rl, gray_s, 9, 6.0, EDGE_MIN_RISE)
+    expected = _reference_scan(pos_y, pos_x, angle, eigval, ev0, ev1, pp1, pp2, grad_rl, gray_s,
+                               9, 6.0, EDGE_MIN_RISE)
+    for g, e in zip(got, expected):
+        np.testing.assert_allclose(g, e, rtol=1e-12, atol=1e-12)
+    assert (got[0] > 0).sum() > 20 and (got[1] > 0).sum() > 20      # edges were found on both sides
+
+
+def test_detection_of_a_real_image_is_pinned():
+    """Lines, junctions and widths of one Picrosirius test image, recorded
+    from the release before the detector was sped up."""
+    import yaml
+    from cabana.stages import build_fibre_detector
+    root = os.path.join(os.path.dirname(__file__), '..')
+    image = os.path.join(root, "data", "Picrocirius",
+                         "540.vsi - 20x_BF multi-band_01Annotation (Ellipse) (Tumor)_0.tif")
+    with open(os.path.join(root, "cabana", "default_params.yml")) as f:
+        det = build_fibre_detector(yaml.safe_load(f))
+    det.detect_lines(image)
+    assert (len(det.contours), sum(c.num for c in det.contours), len(det.junctions)) == (515, 15885, 69)
+    width_l = sum(float(np.sum(c.width_l)) for c in det.contours)
+    width_r = sum(float(np.sum(c.width_r)) for c in det.contours)
+    assert width_l == pytest.approx(68772.54250202907, rel=1e-9)
+    assert width_r == pytest.approx(71128.33849266048, rel=1e-9)
+    _, _, centre_lines, width_mask, width_map = det.get_results()
+    assert (int((centre_lines == 0).sum()), int((width_mask == 0).sum()),
+            int(width_map.astype(int).sum())) == (15193, 119881, 123317)
